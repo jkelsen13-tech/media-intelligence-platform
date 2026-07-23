@@ -57,7 +57,7 @@ export const graphStylesheet = [
       'target-arrow-shape': 'triangle',
       'curve-style': 'bezier',
       'arrow-scale': 0.9,
-      opacity: 0.85,
+      opacity: 0.6,
       label: 'data(label)',
       'font-size': 8,
       color: '#9ca3af',
@@ -69,6 +69,20 @@ export const graphStylesheet = [
   },
   {
     selector: 'edge:selected',
+    style: {
+      opacity: 1,
+      'z-index': 10,
+    },
+  },
+  // Hover focus states (§4.2): connected edges full opacity, the rest fades.
+  {
+    selector: '.dimmed',
+    style: {
+      opacity: 0.15,
+    },
+  },
+  {
+    selector: 'edge.highlighted',
     style: {
       opacity: 1,
       'z-index': 10,

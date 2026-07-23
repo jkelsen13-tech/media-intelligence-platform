@@ -11,7 +11,7 @@ export default function GraphView({ nodes, edges, onSelect }) {
       container: containerRef.current,
       style: graphStylesheet,
       elements: {
-        nodes: nodes.map((n) => ({ data: n })),
+        nodes: nodes.map((n) => ({ data: { ...n, id: n.id ?? n.slug } })),
         edges: edges.map((e) => ({ data: e })),
       },
       layout: {
@@ -32,6 +32,17 @@ export default function GraphView({ nodes, edges, onSelect }) {
         if (evt.target === cy) onSelect(null)
       })
     }
+
+    // Hover focus (concept doc §4.2): hovering a node brings its edges to
+    // full opacity and fades everything else.
+    cy.on('mouseover', 'node', (evt) => {
+      const neighborhood = evt.target.closedNeighborhood()
+      cy.elements().not(neighborhood).addClass('dimmed')
+      neighborhood.connectedEdges().addClass('highlighted')
+    })
+    cy.on('mouseout', 'node', () => {
+      cy.elements().removeClass('dimmed highlighted')
+    })
 
     cyRef.current = cy
     return () => cy.destroy()
