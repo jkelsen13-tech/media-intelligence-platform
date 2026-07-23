@@ -11,9 +11,14 @@ npm run dev
 
 With no Supabase credentials configured, the app renders the bundled demo dataset (Fort Campbell drone theft story).
 
+## Status
+
+- Backend: **live** — Supabase project `niejaejtbxgakyrsntxm` (us-west-2), schema + Fort Campbell seed applied (10 nodes / 12 edges), anon read-only RLS enabled.
+- Frontend builds clean (`npm run build`). With `.env` configured, header shows `data: supabase`.
+
 ## Supabase setup
 
-1. In your Supabase project, open **SQL Editor** and run `supabase/schema.sql`, then `supabase/seed.sql`.
+1. In your Supabase project, open **SQL Editor** and run `supabase/schema.sql`, then `supabase/seed.sql`. (Already applied to the live project via migration `mip_knowledge_graph_schema`.)
 2. Copy `.env.example` to `.env` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from **Project Settings → API**.
 3. Restart `npm run dev`. The header shows `data: supabase` when it's reading from the database.
 
