@@ -7,6 +7,7 @@ export const demoNodes = [
   {
     id: 'evt-theft',
     slug: 'evt-theft',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'Drone Tech Theft at Fort Campbell',
     type: 'event',
     description:
@@ -19,6 +20,7 @@ export const demoNodes = [
   {
     id: 'evt-disclosure',
     slug: 'evt-disclosure',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'Public Disclosure After 108 Days',
     type: 'event',
     description:
@@ -31,6 +33,7 @@ export const demoNodes = [
   {
     id: 'evt-arrests',
     slug: 'evt-arrests',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'Arrests & Federal Charges',
     type: 'event',
     description: 'Suspects arrested; federal charges filed.',
@@ -42,6 +45,7 @@ export const demoNodes = [
   {
     id: 'act-soldier-1',
     slug: 'act-soldier-1',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'Suspect Soldier 1',
     type: 'actor',
     description: 'Primary suspect; alleged to have removed equipment from base.',
@@ -50,6 +54,7 @@ export const demoNodes = [
   {
     id: 'act-soldier-2',
     slug: 'act-soldier-2',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'Suspect Soldier 2',
     type: 'actor',
     description: 'Alleged co-conspirator.',
@@ -58,6 +63,7 @@ export const demoNodes = [
   {
     id: 'act-buyer',
     slug: 'act-buyer',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'Outside Buyer',
     type: 'actor',
     description: 'Alleged purchaser of the stolen drone tech.',
@@ -66,6 +72,7 @@ export const demoNodes = [
   {
     id: 'inst-ftcampbell',
     slug: 'inst-ftcampbell',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'Fort Campbell / 101st Airborne',
     type: 'institution',
     description: 'Installation where the theft occurred.',
@@ -74,6 +81,7 @@ export const demoNodes = [
   {
     id: 'inst-cid',
     slug: 'inst-cid',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'Army CID',
     type: 'institution',
     description: 'Criminal Investigation Division; led the investigation.',
@@ -82,6 +90,7 @@ export const demoNodes = [
   {
     id: 'inst-doj',
     slug: 'inst-doj',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'DOJ / U.S. Attorney',
     type: 'institution',
     description: 'Prosecuting office.',
@@ -90,6 +99,7 @@ export const demoNodes = [
   {
     id: 'doc-complaint',
     slug: 'doc-complaint',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'Criminal Complaint',
     type: 'document',
     description: 'Charging document laying out the alleged scheme.',
@@ -98,6 +108,7 @@ export const demoNodes = [
   {
     id: 'anom-coverage',
     slug: 'anom-coverage',
+    arc_id: 'arc-ftcampbell-drones',
     label: 'Coverage Drop-off',
     type: 'anomaly',
     description:
@@ -109,20 +120,20 @@ export const demoNodes = [
 ]
 
 export const demoEdges = [
-  { id: 'e1', source: 'act-soldier-1', target: 'evt-theft', type: 'actor', weight: 'heavy', label: 'carried out' },
-  { id: 'e2', source: 'act-soldier-2', target: 'evt-theft', type: 'actor', weight: 'medium', label: 'assisted' },
-  { id: 'e3', source: 'act-soldier-2', target: 'act-soldier-1', type: 'actor', weight: 'light', label: 'co-conspirator' },
-  { id: 'e4', source: 'inst-ftcampbell', target: 'evt-theft', type: 'actor', weight: 'light', label: 'site of' },
-  { id: 'e5', source: 'act-buyer', target: 'act-soldier-1', type: 'financial', weight: 'heavy', label: 'paid' },
-  { id: 'e6', source: 'act-soldier-1', target: 'act-buyer', type: 'financial', weight: 'medium', label: 'delivered goods' },
-  { id: 'e7', source: 'evt-theft', target: 'evt-disclosure', type: 'causal', weight: 'heavy', label: 'disclosed after 108 days' },
-  { id: 'e7b', source: 'evt-disclosure', target: 'evt-arrests', type: 'causal', weight: 'medium', label: 'tip line preceded' },
-  { id: 'e8', source: 'evt-theft', target: 'evt-arrests', type: 'causal', weight: 'heavy', label: 'led to' },
-  { id: 'e9', source: 'inst-cid', target: 'evt-arrests', type: 'causal', weight: 'medium', label: 'investigation produced' },
-  { id: 'e10', source: 'inst-cid', target: 'act-soldier-1', type: 'conflict', weight: 'medium', label: 'investigated' },
-  { id: 'e11', source: 'inst-doj', target: 'doc-complaint', type: 'documentary', weight: 'medium', label: 'filed' },
-  { id: 'e12', source: 'doc-complaint', target: 'evt-arrests', type: 'documentary', weight: 'heavy', label: 'charges' },
-  { id: 'e13', source: 'evt-arrests', target: 'anom-coverage', type: 'causal', weight: 'light', label: 'followed by' },
+  { id: 'e1', source: 'act-soldier-1', target: 'evt-theft', type: 'actor', weight: 'heavy', label: 'carried out', similarity: 0.92 },
+  { id: 'e2', source: 'act-soldier-2', target: 'evt-theft', type: 'actor', weight: 'medium', label: 'assisted', similarity: 0.75 },
+  { id: 'e3', source: 'act-soldier-2', target: 'act-soldier-1', type: 'actor', weight: 'light', label: 'co-conspirator', similarity: 0.55 },
+  { id: 'e4', source: 'inst-ftcampbell', target: 'evt-theft', type: 'actor', weight: 'light', label: 'site of', similarity: 0.5 },
+  { id: 'e5', source: 'act-buyer', target: 'act-soldier-1', type: 'financial', weight: 'heavy', label: 'paid', similarity: 0.9 },
+  { id: 'e6', source: 'act-soldier-1', target: 'act-buyer', type: 'financial', weight: 'medium', label: 'delivered goods', similarity: 0.7 },
+  { id: 'e7', source: 'evt-theft', target: 'evt-disclosure', type: 'causal', weight: 'heavy', label: 'disclosed after 108 days', similarity: 0.95 },
+  { id: 'e7b', source: 'evt-disclosure', target: 'evt-arrests', type: 'causal', weight: 'medium', label: 'tip line preceded', similarity: 0.68 },
+  { id: 'e8', source: 'evt-theft', target: 'evt-arrests', type: 'causal', weight: 'heavy', label: 'led to', similarity: 0.93 },
+  { id: 'e9', source: 'inst-cid', target: 'evt-arrests', type: 'causal', weight: 'medium', label: 'investigation produced', similarity: 0.72 },
+  { id: 'e10', source: 'inst-cid', target: 'act-soldier-1', type: 'conflict', weight: 'medium', label: 'investigated', similarity: 0.65 },
+  { id: 'e11', source: 'inst-doj', target: 'doc-complaint', type: 'documentary', weight: 'medium', label: 'filed', similarity: 0.7 },
+  { id: 'e12', source: 'doc-complaint', target: 'evt-arrests', type: 'documentary', weight: 'heavy', label: 'charges', similarity: 0.9 },
+  { id: 'e13', source: 'evt-arrests', target: 'anom-coverage', type: 'causal', weight: 'light', label: 'followed by', similarity: 0.52 },
 ]
 
 // node_slug references demoNodes ids above.

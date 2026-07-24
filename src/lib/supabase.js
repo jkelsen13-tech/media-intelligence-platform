@@ -32,8 +32,8 @@ export async function loadGraph() {
   const [nodesRes, edgesRes] = await Promise.all([
     supabase
       .from('nodes')
-      .select('id, slug, label, type, description, confidence, summary, occurred_at'),
-    supabase.from('edges').select('id, source_id, target_id, type, weight, label'),
+      .select('id, slug, label, type, description, confidence, summary, occurred_at, arc_id'),
+    supabase.from('edges').select('id, source_id, target_id, type, weight, label, similarity'),
   ])
 
   if (nodesRes.error) throw nodesRes.error
@@ -52,6 +52,7 @@ export async function loadGraph() {
       type: e.type,
       weight: e.weight,
       label: e.label,
+      similarity: e.similarity,
     })),
     source: 'supabase',
   }
