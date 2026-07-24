@@ -56,8 +56,80 @@ function fcoseOptions({ firstRun }) {
   }
 }
 
-export default function GraphView({ nodes, edges, onSelect }) {
+// --- Pass C C3: background grid -------------------------------------------
+// Thin graph-paper lines fixed to the CANVAS coordinate space: drawn on a
+// synced <canvas> under the cytoscape layers, redrawn from pan/zoom so the
+// grid pans and zooms with the graph rather than the viewport.
+const GRID_SPACING = 48 // model px between lines
+const GRID_OPACITY = 0.07
+
+function drawGrid(canvas, cy) {
+  const ctx = canvas.getContext('2d')
+  const dpr = window.devicePixelRatio || 1
+  const w = canvas.clientWidth
+  const h = canvas.clientHeight
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr
+    canvas.height = h * dpr
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, w, h)
+  const zoom = cy.zoom()
+  const pan = cy.pan()
+  const step = GRID_SPACING * zoom
+  if (step < 8) return // too dense to read; fade out at far zoom
+  ctx.strokeStyle = `rgba(255, 255, 255, ${GRID_OPACITY})`
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  // First grid line at/left-of the viewport's left edge, in screen space.
+  const x0 = ((pan.x % step) + step) % step
+  for (let x = x0; x <= w; x += step) {
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x, h)
+  }
+  const y0 = ((pan.y % step) + step) % step
+  for (let y = y0; y <= h; y += step) {
+    ctx.moveTo(0, y)
+    ctx.lineTo(w, y)
+  }
+  ctx.stroke()
+}
+
+// --- Pass C C4: radial label declutter ------------------------------------
+// Additive local perturbation on top of fcose — NOT a re-layout. When the
+// user zooms/pans toward a focal node (labeled node nearest the viewport
+// center), labeled neighbors whose label boxes collide with the focal label
+// are pushed radially outward just enough to clear the collision; strength
+// scales with proximity. Everything eases (260ms) and eases back on
+// zoom-out/pan-away. Honors prefers-reduced-motion.
+const DECLUTTER_RADIUS_PX = 320 // rendered-px search radius around focus
+const DECLUTTER_DURATION = 260
+
+function prefersReducedMotion() {
+  return (
+    typeof window !== 'undefined' &&
+    window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+function labelBox(node) {
+  // Rendered bounding box of just the label text.
+  return node.renderedBoundingBox({ includeLabels: true, includeNodes: false })
+}
+
+function boxesOverlap(a, b, pad = 4) {
+  return !(
+    a.x2 + pad < b.x1 ||
+    b.x2 + pad < a.x1 ||
+    a.y2 + pad < b.y1 ||
+    b.y2 + pad < a.y1
+  )
+}
+
+export default function GraphView({ nodes, edges, onSelect, panelOpen }) {
   const containerRef = useRef(null)
+  const gridRef = useRef(null)
   const cyRef = useRef(null)
 
   useEffect(() => {
@@ -73,6 +145,145 @@ export default function GraphView({ nodes, edges, onSelect }) {
       maxZoom: 3,
       wheelSensitivity: 0.3,
     })
+
+    // --- C3: grid layer, synced to viewport changes ---
+    const gridCanvas = gridRef.current
+    const redrawGrid = () => {
+      if (gridCanvas) drawGrid(gridCanvas, cy)
+    }
+    cy.on('zoom pan resize', redrawGrid)
+    cy.on('layoutstop', redrawGrid)
+
+    // --- Label policy by zoom level ---
+    // < 0.6x: no labels. 0.6-1.2x: top-N nodes by degree centrality only.
+    // > 1.2x: all nodes and edges. A tapped node keeps its label at any zoom.
+    const LABEL_HUB_COUNT = 20
+    const topHubs = cy
+      .nodes()
+      .sort((a, b) => b.degree(false) - a.degree(false))
+      .slice(0, LABEL_HUB_COUNT)
+    const manualLabels = new Set()
+
+    const applyLabels = () => {
+      const z = cy.zoom()
+      cy.elements().removeClass('lbl')
+      if (z >= 1.2) {
+        cy.elements().addClass('lbl')
+      } else if (z >= 0.6) {
+        topHubs.forEach((n) => n.addClass('lbl'))
+      }
+      manualLabels.forEach((id) => {
+        const n = cy.getElementById(id)
+        if (n.nonempty()) n.addClass('lbl')
+      })
+    }
+    cy.one('layoutstop', applyLabels)
+    cy.on('zoom', applyLabels)
+    cy.on('tap', 'node', (evt) => {
+      manualLabels.add(evt.target.id())
+      applyLabels()
+    })
+
+    // --- C4: radial label declutter ---
+    // Rest positions are the fcose output (captured after every layout
+    // settle); displacement targets are offsets from those positions.
+    const restPositions = new Map() // id -> {x, y}
+    const displaced = new Set() // ids currently pushed out
+    const captureRest = () => {
+      restPositions.clear()
+      cy.nodes().forEach((n) => {
+        restPositions.set(n.id(), { ...n.position() })
+      })
+    }
+    cy.on('layoutstop', captureRest)
+
+    const restoreNode = (node) => {
+      const rest = restPositions.get(node.id())
+      if (!rest) return
+      displaced.delete(node.id())
+      if (prefersReducedMotion()) {
+        node.position(rest)
+      } else {
+        node.animate({ position: rest }, { duration: DECLUTTER_DURATION, easing: 'ease-out' })
+      }
+    }
+
+    const declutter = () => {
+      const labeled = cy.nodes('.lbl')
+      if (labeled.length === 0) return
+      // Focal node: labeled node nearest the viewport center.
+      const cw = cy.width()
+      const ch = cy.height()
+      const cx = cw / 2
+      const cyC = ch / 2
+      let focal = null
+      let focalDist = Infinity
+      labeled.forEach((n) => {
+        const rp = n.renderedPosition()
+        const d = Math.hypot(rp.x - cx, rp.y - cyC)
+        if (d < focalDist) {
+          focalDist = d
+          focal = n
+        }
+      })
+      if (!focal || focalDist > DECLUTTER_RADIUS_PX) {
+        // Panned/zoomed away from any labeled node: everyone eases home.
+        displaced.forEach((id) => {
+          const n = cy.getElementById(id)
+          if (n.nonempty()) restoreNode(n)
+        })
+        return
+      }
+      const focalBox = labelBox(focal)
+      const focalRest = restPositions.get(focal.id()) ?? focal.position()
+      const zoom = cy.zoom()
+      const keep = new Set([focal.id()])
+      labeled.forEach((n) => {
+        if (n.id() === focal.id()) return
+        const rp = n.renderedPosition()
+        const frp = focal.renderedPosition()
+        const dist = Math.hypot(rp.x - frp.x, rp.y - frp.y)
+        if (dist > DECLUTTER_RADIUS_PX) return // outside the radius: untouched
+        if (!boxesOverlap(focalBox, labelBox(n))) return
+        // Overlapping neighbor: push radially away from the focal node's
+        // REST position; closer nodes move more.
+        const rest = restPositions.get(n.id()) ?? n.position()
+        let dx = rest.x - focalRest.x
+        let dy = rest.y - focalRest.y
+        const len = Math.hypot(dx, dy)
+        if (len < 1e-3) {
+          dx = 1
+          dy = 0
+        } else {
+          dx /= len
+          dy /= len
+        }
+        const proximity = 1 - dist / DECLUTTER_RADIUS_PX // 0..1, closer = more
+        const push = (50 + 110 * proximity) / zoom // model px
+        const target = { x: rest.x + dx * push, y: rest.y + dy * push }
+        keep.add(n.id())
+        displaced.add(n.id())
+        if (prefersReducedMotion()) {
+          n.position(target)
+        } else {
+          n.animate({ position: target }, { duration: DECLUTTER_DURATION, easing: 'ease-out' })
+        }
+      })
+      // Anything displaced last pass that no longer collides eases back.
+      ;[...displaced].forEach((id) => {
+        if (keep.has(id)) return
+        const n = cy.getElementById(id)
+        if (n.nonempty()) restoreNode(n)
+      })
+    }
+
+    let declutterTimer = null
+    const scheduleDeclutter = () => {
+      clearTimeout(declutterTimer)
+      declutterTimer = setTimeout(declutter, 140)
+    }
+    cy.on('zoom pan', scheduleDeclutter)
+    cy.on('layoutstop', scheduleDeclutter)
 
     if (onSelect) {
       cy.on('tap', 'node, edge', (evt) => onSelect(evt.target.data()))
@@ -99,9 +310,46 @@ export default function GraphView({ nodes, edges, onSelect }) {
       cy.layout(fcoseOptions({ firstRun: false })).run()
     })
 
+    // §4.4: the article panel shrinks the canvas container (flex), so the
+    // cytoscape instance must be told its size changed — otherwise it keeps
+    // rendering at the stale extent and the graph looks covered/shifted.
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            cy.resize()
+            redrawGrid()
+          })
+        : null
+    resizeObserver?.observe(containerRef.current)
+
+    redrawGrid()
     cyRef.current = cy
-    return () => cy.destroy()
+    return () => {
+      clearTimeout(declutterTimer)
+      resizeObserver?.disconnect()
+      cy.destroy()
+    }
   }, [nodes, edges, onSelect])
 
-  return <div ref={containerRef} className="graph-canvas" />
+  // Panel open/close: after the container settles at its new width, refit
+  // the graph into the remaining viewport so nothing sits under the panel.
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy || cy.destroyed()) return
+    const timer = setTimeout(() => {
+      cy.resize()
+      cy.animate(
+        { fit: { eles: cy.elements(), padding: 60 } },
+        { duration: prefersReducedMotion() ? 0 : 300, easing: 'ease-out' },
+      )
+    }, 60)
+    return () => clearTimeout(timer)
+  }, [panelOpen])
+
+  return (
+    <div className="graph-canvas-wrap">
+      <canvas ref={gridRef} className="graph-grid" aria-hidden="true" />
+      <div ref={containerRef} className="graph-canvas" />
+    </div>
+  )
 }

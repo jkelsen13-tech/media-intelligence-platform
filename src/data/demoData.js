@@ -163,13 +163,15 @@ export const demoArcs = [
   },
 ]
 
+// Statuses use the §2.5.4 four-state taxonomy: pending / confirmed /
+// failed / abandoned. The demo arc exercises all four.
 export const demoMilestones = [
-  { id: 'm1', arc_slug: 'arc-ftcampbell-drones', title: 'CID investigation opened', status: 'confirmed_complete', notes: 'Army CID led the investigation.', updated_at: '2025-11-05T00:00:00Z' },
-  { id: 'm2', arc_slug: 'arc-ftcampbell-drones', title: 'Public disclosure of the theft', status: 'confirmed_complete', notes: 'Disclosed via Facebook tip-line post after 108 days.', updated_at: '2026-02-18T00:00:00Z' },
-  { id: 'm3', arc_slug: 'arc-ftcampbell-drones', title: 'Federal charges filed', status: 'confirmed_complete', notes: 'Criminal complaint filed by U.S. Attorney.', updated_at: '2026-03-05T00:00:00Z' },
-  { id: 'm4', arc_slug: 'arc-ftcampbell-drones', title: 'Stolen drones recovered', status: 'unresolved', notes: 'No documented recovery of the four X10D units.', updated_at: '2026-03-05T00:00:00Z' },
+  { id: 'm1', arc_slug: 'arc-ftcampbell-drones', title: 'CID investigation opened', status: 'confirmed', notes: 'Army CID led the investigation.', updated_at: '2025-11-05T00:00:00Z' },
+  { id: 'm2', arc_slug: 'arc-ftcampbell-drones', title: 'Public disclosure of the theft', status: 'confirmed', notes: 'Disclosed via Facebook tip-line post after 108 days.', updated_at: '2026-02-18T00:00:00Z' },
+  { id: 'm3', arc_slug: 'arc-ftcampbell-drones', title: 'Federal charges filed', status: 'confirmed', notes: 'Criminal complaint filed by U.S. Attorney.', updated_at: '2026-03-05T00:00:00Z' },
+  { id: 'm4', arc_slug: 'arc-ftcampbell-drones', title: 'Stolen drones recovered', status: 'failed', notes: 'No documented recovery of the four X10D units; asset-tracking signatures never resurfaced.', updated_at: '2026-03-05T00:00:00Z' },
   { id: 'm5', arc_slug: 'arc-ftcampbell-drones', title: 'Trial / judicial outcome', status: 'pending', notes: 'Proceedings not yet concluded.', updated_at: '2026-03-05T00:00:00Z' },
-  { id: 'm6', arc_slug: 'arc-ftcampbell-drones', title: 'Institutional review of asset-tracking failure', status: 'unresolved', notes: 'No announced review of how tracked military hardware left base undetected.', updated_at: '2026-03-05T00:00:00Z' },
+  { id: 'm6', arc_slug: 'arc-ftcampbell-drones', title: 'Institutional review of asset-tracking failure', status: 'abandoned', notes: 'No announced review of how tracked military hardware left base undetected; the institution has moved on.', updated_at: '2026-03-05T00:00:00Z' },
 ]
 
 export const demoArcEvents = [

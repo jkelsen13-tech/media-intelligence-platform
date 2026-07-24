@@ -29,8 +29,17 @@ function fmtDate(iso) {
 function strengthBadge(strength) {
   if (strength == null) return null
   const pct = Math.round(strength * 100)
-  const color = strength >= 0.75 ? '#4ade80' : strength >= 0.5 ? '#facc15' : '#9ca3af'
-  return <span className="news-cit-strength" style={{ color }}>{pct}% doc</span>
+  const color =
+    strength >= 0.75
+      ? 'var(--green-bright)'
+      : strength >= 0.5
+        ? 'var(--flag-yellow)'
+        : 'var(--cat-grey)'
+  return (
+    <span className="news-cit-strength num" style={{ color }}>
+      {pct}% doc
+    </span>
+  )
 }
 
 export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
@@ -47,6 +56,8 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
   const [detail, setDetail] = useState(null)
   const [graphLinks, setGraphLinks] = useState([])
   const [detailError, setDetailError] = useState(null)
+  // Mobile: filters collapse into a bottom sheet behind a single button.
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const debounceRef = useRef(null)
 
   useEffect(() => {
@@ -125,6 +136,42 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
   return (
     <div className="news-view">
       <div className="news-controls">
+        <div className="news-result-row">
+          <span className="news-count">
+            {loading ? (
+              'loading…'
+            ) : (
+              <>
+                <span className="num">{total}</span> article{total === 1 ? '' : 's'}
+              </>
+            )}
+          </span>
+          <button className="news-filters-btn" onClick={() => setFiltersOpen(true)}>
+            Filters
+          </button>
+        </div>
+        {(outlet !== null || status !== 'all') && (
+          <div className="news-filter-row news-active-filters">
+            {outlet !== null && (
+              <button
+                className="news-chip active"
+                title="Clear outlet filter"
+                onClick={() => setOutlet(null)}
+              >
+                {outlet} ×
+              </button>
+            )}
+            {status !== 'all' && (
+              <button
+                className="news-chip active"
+                title="Clear status filter"
+                onClick={() => setStatus('all')}
+              >
+                {STATUS_FILTERS.find((f) => f.key === status)?.label} ×
+              </button>
+            )}
+          </div>
+        )}
         <input
           className="news-search"
           type="search"
@@ -132,38 +179,92 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <div className="news-filter-row">
-          <button
-            className={`news-chip${outlet === null ? ' active' : ''}`}
-            onClick={() => setOutlet(null)}
-          >
-            All outlets
-          </button>
-          {outlets.map((o) => (
+        <div className="news-desktop-filters">
+          <div className="news-filter-row">
             <button
-              key={o}
-              className={`news-chip${outlet === o ? ' active' : ''}`}
-              onClick={() => setOutlet(o)}
+              className={`news-chip${outlet === null ? ' active' : ''}`}
+              onClick={() => setOutlet(null)}
             >
-              {o}
+              All outlets
             </button>
-          ))}
-        </div>
-        <div className="news-filter-row">
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              className={`news-chip${status === f.key ? ' active' : ''}`}
-              onClick={() => setStatus(f.key)}
-            >
-              {f.label}
-            </button>
-          ))}
-          <span className="news-count">
-            {loading ? 'loading…' : `${total} article${total === 1 ? '' : 's'}`}
-          </span>
+            {outlets.map((o) => (
+              <button
+                key={o}
+                className={`news-chip${outlet === o ? ' active' : ''}`}
+                onClick={() => setOutlet(o)}
+              >
+                {o}
+              </button>
+            ))}
+          </div>
+          <div className="news-filter-row">
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                className={`news-chip${status === f.key ? ' active' : ''}`}
+                onClick={() => setStatus(f.key)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
+      {filtersOpen && (
+        <div className="sheet-backdrop" onClick={() => setFiltersOpen(false)}>
+          <div
+            className="sheet filter-sheet"
+            role="dialog"
+            aria-label="Article filters"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sheet-head">
+              <h2>Filters</h2>
+              <button
+                className="sheet-close"
+                aria-label="Close filters"
+                onClick={() => setFiltersOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <span className="ap-label">Outlet</span>
+            <div className="news-filter-row">
+              <button
+                className={`news-chip${outlet === null ? ' active' : ''}`}
+                onClick={() => setOutlet(null)}
+              >
+                All outlets
+              </button>
+              {outlets.map((o) => (
+                <button
+                  key={o}
+                  className={`news-chip${outlet === o ? ' active' : ''}`}
+                  onClick={() => setOutlet(o)}
+                >
+                  {o}
+                </button>
+              ))}
+            </div>
+            <span className="ap-label">Status</span>
+            <div className="news-filter-row">
+              {STATUS_FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  className={`news-chip${status === f.key ? ' active' : ''}`}
+                  onClick={() => setStatus(f.key)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <button className="sheet-done" onClick={() => setFiltersOpen(false)}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && <div className="notice error">Failed to load articles: {error}</div>}
       {!loading && !error && articles.length === 0 && !focusedMissing && (
@@ -308,7 +409,7 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
 
       {articles.length < total && !loading && (
         <button className="news-load-more" onClick={loadMore}>
-          Load more ({total - articles.length} remaining)
+          Load more (<span className="num">{total - articles.length}</span> remaining)
         </button>
       )}
     </div>

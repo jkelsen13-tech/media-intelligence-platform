@@ -58,6 +58,37 @@ export async function loadGraph() {
   }
 }
 
+// Category tag for the article panel (§4.4): nodes carry no category column,
+// so the tag comes from the story arc the node belongs to (nodes.arc_id,
+// falling back to an arc rooted at this node). Returns null when the node
+// is in no arc — the panel then shows the neutral Unclassified tag.
+export async function loadNodeCategory(node) {
+  if (!node) return null
+  if (!supabase) {
+    const arc = demoArcs.find((a) => a.id === node.arc_id || a.slug === node.arc_id)
+    return arc?.category ?? null
+  }
+  if (node.arc_id) {
+    const { data, error } = await supabase
+      .from('story_arcs')
+      .select('category')
+      .eq('id', node.arc_id)
+      .maybeSingle()
+    if (error) throw error
+    if (data?.category) return data.category
+  }
+  if (node.id) {
+    const { data, error } = await supabase
+      .from('story_arcs')
+      .select('category')
+      .eq('root_node_id', node.id)
+      .limit(1)
+    if (error) throw error
+    return data?.[0]?.category ?? null
+  }
+  return null
+}
+
 // Sources backing a single node (article panel source list).
 // nodeKey is the node uuid (supabase) or slug (demo data).
 export async function loadSources(nodeKey) {
@@ -73,17 +104,72 @@ export async function loadSources(nodeKey) {
   return data
 }
 
-// All story arcs, newest activity first.
+// A4 — Arc status derivation. The stored story_arcs.status column is a weak
+// signal; the UI dot is wired to status derived from real signals instead:
+//   - resolved: the arc has milestones and every milestone is in a
+//     terminal state (confirmed or failed — §2.5.4 four-state taxonomy;
+//     legacy confirmed_complete / confirmed_failed also count),
+//   - dormant:  newest arc_event is older than `dormantDays`,
+//   - active:   recent arc_events with unresolved milestones,
+//   - null:     no real signal (no events, no milestones) — show no dot.
+export function deriveArcStatus(events, milestones, dormantDays = 14) {
+  const ms = milestones ?? []
+  const resolvedStates = new Set(['confirmed', 'failed', 'confirmed_complete', 'confirmed_failed'])
+  if (ms.length > 0 && ms.every((m) => resolvedStates.has(m.status))) return 'resolved'
+  const dates = (events ?? [])
+    .map((e) => e.occurred_at)
+    .filter(Boolean)
+    .sort()
+  const lastEvent = dates.length ? dates[dates.length - 1] : null
+  if (!lastEvent) {
+    if (ms.length === 0) return null
+    // Milestones open but no dated events at all — nothing recent to track.
+    return 'dormant'
+  }
+  const ageDays = (Date.now() - new Date(lastEvent).getTime()) / 86400000
+  return ageDays > dormantDays ? 'dormant' : 'active'
+}
+
+// All story arcs, newest activity first, with derived status attached.
 export async function loadArcs() {
   if (!supabase) {
-    return demoArcs
+    return demoArcs.map((a) => ({
+      ...a,
+      derived_status: deriveArcStatus(
+        demoArcEvents.filter((e) => e.arc_slug === a.slug),
+        demoMilestones.filter((m) => m.arc_slug === a.slug),
+      ),
+    }))
   }
-  const { data, error } = await supabase
-    .from('story_arcs')
-    .select('id, slug, title, category, status, root_node_id, coverage_gap, summary, started_at, last_update_at')
-    .order('last_update_at', { ascending: false })
-  if (error) throw error
-  return data
+  const [arcsRes, eventsRes, milestonesRes, cfgRes] = await Promise.all([
+    supabase
+      .from('story_arcs')
+      .select('id, slug, title, category, category_confidence, category_evidence, status, root_node_id, coverage_gap, summary, started_at, last_update_at')
+      .order('last_update_at', { ascending: false }),
+    supabase.from('arc_events').select('arc_id, occurred_at'),
+    supabase.from('arc_milestones').select('arc_id, status'),
+    supabase.from('pipeline_config').select('value').eq('key', 'status_dormant_days').maybeSingle(),
+  ])
+  if (arcsRes.error) throw arcsRes.error
+  if (eventsRes.error) throw eventsRes.error
+  if (milestonesRes.error) throw milestonesRes.error
+  const dormantDays = Number(cfgRes.data?.value ?? 14) || 14
+  const eventsByArc = new Map()
+  for (const e of eventsRes.data) {
+    const arr = eventsByArc.get(e.arc_id) ?? []
+    arr.push(e)
+    eventsByArc.set(e.arc_id, arr)
+  }
+  const milestonesByArc = new Map()
+  for (const m of milestonesRes.data) {
+    const arr = milestonesByArc.get(m.arc_id) ?? []
+    arr.push(m)
+    milestonesByArc.set(m.arc_id, arr)
+  }
+  return arcsRes.data.map((a) => ({
+    ...a,
+    derived_status: deriveArcStatus(eventsByArc.get(a.id), milestonesByArc.get(a.id), dormantDays),
+  }))
 }
 
 // Milestones + consequence events for one arc.
@@ -168,7 +254,7 @@ export async function loadArticles({ q, outlet, status, limit = 30, offset = 0 }
   let query = supabase
     .from('articles')
     .select(
-      'id, title, url, summary, published_at, outlet, monoculture, unattributed, arc_id, authors(name), story_arcs(title)',
+      'id, title, url, summary, published_at, outlet, monoculture, unattributed, arc_id, authors(name), story_arcs!articles_arc_id_fkey(title)',
       { count: 'exact' },
     )
     .order('published_at', { ascending: false, nullsFirst: false })
@@ -206,7 +292,7 @@ export async function loadArticleDetail(id) {
   const [artRes, citRes] = await Promise.all([
     supabase
       .from('articles')
-      .select('id, title, url, summary, published_at, outlet, claims, monoculture, unattributed, authors(name), story_arcs(title)')
+      .select('id, title, url, summary, published_at, outlet, claims, monoculture, unattributed, authors(name), story_arcs!articles_arc_id_fkey(title)')
       .eq('id', id)
       .single(),
     supabase

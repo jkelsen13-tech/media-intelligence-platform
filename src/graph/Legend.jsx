@@ -20,7 +20,7 @@ export default function Legend() {
         aria-expanded={false}
         aria-label="Expand legend"
       >
-        <span className="legend-octagon" style={{ borderColor: '#6b7280' }} />
+        <span className="legend-octagon" style={{ borderColor: 'var(--border-strong)' }} />
         Legend
       </button>
     )
@@ -41,18 +41,18 @@ export default function Legend() {
       </div>
       <section>
         <h3>Nodes</h3>
-        {Object.entries(NODE_TYPES).map(([key, { color, label }]) => (
+        {Object.entries(NODE_TYPES).map(([key, { cssVar, label }]) => (
           <div key={key} className="legend-row">
-            <span className="legend-octagon" style={{ borderColor: color }} />
+            <span className="legend-octagon" style={{ borderColor: `var(${cssVar})` }} />
             {label}
           </div>
         ))}
       </section>
       <section>
         <h3>Edges</h3>
-        {Object.entries(EDGE_TYPES).map(([key, { color, label }]) => (
+        {Object.entries(EDGE_TYPES).map(([key, { cssVar, label }]) => (
           <div key={key} className="legend-row">
-            <span className="legend-line" style={{ background: color }} />
+            <span className="legend-line" style={{ background: `var(${cssVar})` }} />
             {label}
           </div>
         ))}
@@ -61,7 +61,7 @@ export default function Legend() {
         <h3>Weight</h3>
         {Object.entries(EDGE_WEIGHTS).map(([key, px]) => (
           <div key={key} className="legend-row">
-            <span className="legend-line" style={{ background: '#9ca3af', height: px }} />
+            <span className="legend-line" style={{ background: 'var(--cat-grey)', height: px }} />
             {key}
           </div>
         ))}
