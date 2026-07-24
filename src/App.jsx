@@ -1,12 +1,14 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import GraphView from './graph/GraphView'
 import Legend from './graph/Legend'
 import ArticlePanel from './panels/ArticlePanel'
 import TimelineView from './views/TimelineView'
 import ArcsView from './views/ArcsView'
+import NewsView from './views/NewsView'
 import { loadGraph } from './lib/supabase'
 
 const VIEWS = [
+  { key: 'news', label: 'News Feed' },
   { key: 'graph', label: 'Knowledge Graph' },
   { key: 'timeline', label: 'Causal Timeline' },
   { key: 'arcs', label: 'Story Arcs' },
@@ -17,7 +19,8 @@ export default function App() {
   const [error, setError] = useState(null)
   const [selected, setSelected] = useState(null) // selected node data
   const [pinned, setPinned] = useState(false)
-  const [view, setView] = useState('graph')
+  const [view, setView] = useState('news')
+  const [nodeQuery, setNodeQuery] = useState('')
 
   useEffect(() => {
     loadGraph().then(setGraph).catch((err) => setError(err.message))
@@ -49,6 +52,20 @@ export default function App() {
     setPinned(false)
   }, [])
 
+  // Graph node search: label substring match, top 8 suggestions.
+  const nodeMatches = useMemo(() => {
+    if (!graph || !nodeQuery.trim()) return []
+    const term = nodeQuery.trim().toLowerCase()
+    return graph.nodes
+      .filter((n) => (n.label ?? '').toLowerCase().includes(term))
+      .slice(0, 8)
+  }, [graph, nodeQuery])
+
+  const pickNode = (node) => {
+    setSelected(node)
+    setNodeQuery('')
+  }
+
   return (
     <div className="app">
       <header className="app-header">
@@ -71,12 +88,34 @@ export default function App() {
       <main className="app-main">
         {error && <div className="notice error">Failed to load graph: {error}</div>}
 
+        {view === 'news' && <NewsView />}
+
         {view === 'graph' && (
           <>
             {!graph && !error && <div className="notice">Loading graph…</div>}
             {graph && (
               <div className="graph-layout">
                 <div className="graph-area">
+                  <div className="graph-search">
+                    <input
+                      type="search"
+                      placeholder="Search nodes…"
+                      value={nodeQuery}
+                      onChange={(e) => setNodeQuery(e.target.value)}
+                    />
+                    {nodeMatches.length > 0 && (
+                      <ul className="graph-search-results">
+                        {nodeMatches.map((n) => (
+                          <li key={n.id ?? n.slug}>
+                            <button onClick={() => pickNode(n)}>
+                              <span className="graph-search-label">{n.label}</span>
+                              <span className="graph-search-type">{n.type}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                   <GraphView nodes={graph.nodes} edges={graph.edges} onSelect={handleSelect} />
                   <Legend />
                 </div>

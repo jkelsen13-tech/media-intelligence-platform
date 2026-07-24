@@ -16,6 +16,11 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? 'sb_publishable_rlHzge
 
 export const supabase = url && anonKey ? createClient(url, anonKey) : null
 
+// PostgREST .or() filters break on commas/parens/quotes in user input.
+function sanitizeSearch(q) {
+  return (q ?? '').replace(/[(),"\\%_]/g, ' ').trim()
+}
+
 // Loads the graph from Supabase when configured, otherwise returns the
 // bundled demo dataset. Both paths return { nodes, edges, source } in the
 // shape GraphView expects.
@@ -138,5 +143,83 @@ export async function loadTimeline() {
       label: e.label,
     })),
     labels: labelsRes.data,
+  }
+}
+
+// ---------- News Feed ----------
+
+// Distinct outlet names present in the article stream (for filter chips).
+export async function loadOutlets() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('articles')
+    .select('outlet')
+    .not('outlet', 'is', null)
+  if (error) throw error
+  const names = [...new Set(data.map((r) => r.outlet))]
+  names.sort()
+  return names
+}
+
+// Paged, searchable article stream across all outlets.
+export async function loadArticles({ q, outlet, status, limit = 30, offset = 0 } = {}) {
+  if (!supabase) return { articles: [], total: 0 }
+  let query = supabase
+    .from('articles')
+    .select(
+      'id, title, url, summary, published_at, outlet, monoculture, unattributed, arc_id, authors(name), story_arcs(title)',
+      { count: 'exact' },
+    )
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .order('fetched_at', { ascending: false })
+    .range(offset, offset + limit - 1)
+
+  const term = sanitizeSearch(q)
+  if (term) {
+    query = query.or(
+      `title.ilike.%${term}%,summary.ilike.%${term}%,body_text.ilike.%${term}%`,
+    )
+  }
+  if (outlet) query = query.eq('outlet', outlet)
+  if (status === 'arc') query = query.not('arc_id', 'is', null)
+  if (status === 'unattributed') query = query.eq('unattributed', true)
+  if (status === 'monoculture') query = query.eq('monoculture', true)
+
+  const { data, error, count } = await query
+  if (error) throw error
+  return {
+    articles: data.map((a) => ({
+      ...a,
+      author_name: a.authors?.name ?? null,
+      arc_title: a.story_arcs?.title ?? null,
+      authors: undefined,
+      story_arcs: undefined,
+    })),
+    total: count ?? data.length,
+  }
+}
+
+// Full detail for one article: claims + provenance citations.
+export async function loadArticleDetail(id) {
+  if (!supabase) return null
+  const [artRes, citRes] = await Promise.all([
+    supabase
+      .from('articles')
+      .select('id, title, url, summary, published_at, outlet, claims, monoculture, unattributed, authors(name), story_arcs(title)')
+      .eq('id', id)
+      .single(),
+    supabase
+      .from('citations')
+      .select('cited_entity, cited_type, documentation_strength')
+      .eq('article_id', id)
+      .order('documentation_strength', { ascending: false, nullsFirst: false }),
+  ])
+  if (artRes.error) throw artRes.error
+  if (citRes.error) throw citRes.error
+  return {
+    ...artRes.data,
+    author_name: artRes.data.authors?.name ?? null,
+    arc_title: artRes.data.story_arcs?.title ?? null,
+    citations: citRes.data,
   }
 }
