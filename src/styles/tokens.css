@@ -1,0 +1,65 @@
+/* ---------- Pass C: design tokens (§3 C1) ----------
+   Single source of truth for the visual system. JS/cytoscape reads these
+   at runtime via getComputedStyle (see src/graph/theme.js); DOM inline
+   styles reference the var() names directly. */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Surfaces — page trends to true near-black (C2). */
+  --bg-page: #0b0b0a;
+  --bg-panel: #14161d; /* cards, panels, sheets */
+  --bg-elevated: #1d2230; /* nested chips, hover states */
+  --bg-inset: #10131a; /* recessed areas (detail wells, list column) */
+  --bg-selected: #2d3550;
+  --bg-panel-rgb: 20, 22, 29; /* for rgba() translucent overlays */
+
+  /* Borders — every card/panel gets a visible case-file edge (C2). */
+  --border-color: #363e52;
+  --border-strong: #4a5470;
+  --border-width: 1px;
+
+  /* Text */
+  --text-primary: #e8eaf0;
+  --text-body: #c4c9d4;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+
+  /* Category hues — same hues as before, more saturation/signal (C2). */
+  --cat-blue: #4d9aff;
+  --cat-amber: #ffb01f;
+  --cat-green: #2fdc6f;
+  --cat-red: #ff5252;
+  --cat-grey: #9ca3af; /* Unclassified stays neutral grey (Pass A) */
+
+  /* Accent + soft derivatives */
+  --accent: var(--cat-blue);
+  --accent-soft: #93c5fd;
+  --accent-rgb: 77, 154, 255;
+  --flag-yellow: #ffd029;
+  --red-soft: #fca5a5;
+  --green-bright: #4ade80;
+
+  /* Type roles */
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs-label: 11px; /* uppercase micro-labels */
+  --fs-meta: 12px;
+  --fs-body: 13px;
+  --fs-title: 15px;
+  --fw-label: 600;
+
+  /* Card rhythm (C6) */
+  --card-pad-y: 14px;
+  --card-pad-x: 18px;
+  --card-radius: 8px;
+  --view-pad-top: 24px;
+}
+
+/* C5: one numeric language app-wide — the "92% DOCUMENTED" treatment
+   (monospace, uppercase, tabular figures) extended to every number. */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
