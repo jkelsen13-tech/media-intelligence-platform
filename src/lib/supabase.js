@@ -8,8 +8,11 @@ import {
   demoArcEvents,
 } from '../data/demoData'
 
-const url = import.meta.env.VITE_SUPABASE_URL
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+// Env vars are used when present (local dev). The hardcoded fallbacks let the
+// static GitHub Pages build reach the live project — the anon key is a
+// publishable key and all tables are protected by read-only RLS policies.
+const url = import.meta.env.VITE_SUPABASE_URL ?? 'https://niejaejtbxgakyrsntxm.supabase.co'
+const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? 'sb_publishable_rlHzgeDjVuw9kO3cqcVa-g_ZavxEY7V'
 
 export const supabase = url && anonKey ? createClient(url, anonKey) : null
 
