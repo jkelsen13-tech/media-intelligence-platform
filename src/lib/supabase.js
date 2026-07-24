@@ -106,23 +106,28 @@ export async function loadArcDetail(arcKey) {
 }
 
 // Causal timeline: event nodes with dates plus causal edges between them.
+// `labels` covers ALL node types so edges that point at non-event nodes
+// (institutions, anomalies, documents) resolve to a label, not a raw uuid.
 export async function loadTimeline() {
   if (!supabase) {
     return {
       events: demoNodes.filter((n) => n.type === 'event'),
       causalEdges: demoEdges.filter((e) => e.type === 'causal'),
+      labels: demoNodes.map((n) => ({ id: n.id ?? n.slug, slug: n.slug, label: n.label })),
     }
   }
-  const [nodesRes, edgesRes] = await Promise.all([
+  const [nodesRes, edgesRes, labelsRes] = await Promise.all([
     supabase
       .from('nodes')
       .select('id, slug, label, description, confidence, summary, occurred_at')
       .eq('type', 'event')
       .order('occurred_at', { ascending: true, nullsFirst: false }),
     supabase.from('edges').select('id, source_id, target_id, weight, label').eq('type', 'causal'),
+    supabase.from('nodes').select('id, slug, label'),
   ])
   if (nodesRes.error) throw nodesRes.error
   if (edgesRes.error) throw edgesRes.error
+  if (labelsRes.error) throw labelsRes.error
   return {
     events: nodesRes.data,
     causalEdges: edgesRes.data.map((e) => ({
@@ -132,5 +137,6 @@ export async function loadTimeline() {
       weight: e.weight,
       label: e.label,
     })),
+    labels: labelsRes.data,
   }
 }

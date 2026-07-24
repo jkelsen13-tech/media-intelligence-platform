@@ -21,20 +21,24 @@ export default function TimelineView() {
 
   const rows = useMemo(() => {
     if (!data) return []
-    const eventById = new Map(data.events.map((e) => [e.id ?? e.slug, e]))
+    // Label lookup covers every node type (data.labels), so causal edges
+    // ending at institutions/anomalies resolve to names, not raw uuids.
+    const labelById = new Map(
+      (data.labels ?? data.events).map((n) => [n.id ?? n.slug, n.label]),
+    )
     return data.events.map((evt) => {
       const key = evt.id ?? evt.slug
       const outbound = data.causalEdges
         .filter((e) => e.source === key)
         .map((e) => ({
           ...e,
-          targetLabel: eventById.get(e.target)?.label ?? e.target,
+          targetLabel: labelById.get(e.target) ?? e.target,
         }))
       const inbound = data.causalEdges
         .filter((e) => e.target === key)
         .map((e) => ({
           ...e,
-          sourceLabel: eventById.get(e.source)?.label ?? e.source,
+          sourceLabel: labelById.get(e.source) ?? e.source,
         }))
       return { evt, outbound, inbound }
     })
