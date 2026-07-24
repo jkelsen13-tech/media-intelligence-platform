@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadArcs, loadArcDetail } from '../lib/supabase'
+import { loadArcs, loadArcDetail, loadArcArticles } from '../lib/supabase'
 
 // Story Arcs (concept doc §2.5): persistent longitudinal tracking through a
 // story's full consequence arc. Arc panel = status indicator, milestone
-// checklist, consequence timeline, coverage gap indicator.
+// checklist, consequence timeline, coverage gap indicator — plus the
+// articles attached to the arc and a link back to its root graph node.
 
 const STATUS_META = {
   active: { color: '#22c55e', label: 'Active' },
@@ -37,12 +38,13 @@ function arcAgeDays(startedAt) {
   return Math.max(0, Math.round((Date.now() - new Date(startedAt).getTime()) / 86400000))
 }
 
-export default function ArcsView() {
+export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
   const [arcs, setArcs] = useState(null)
   const [error, setError] = useState(null)
   const [selectedSlug, setSelectedSlug] = useState(null)
   const [detail, setDetail] = useState(null)
   const [detailError, setDetailError] = useState(null)
+  const [arcArticles, setArcArticles] = useState([])
 
   useEffect(() => {
     loadArcs()
@@ -52,6 +54,13 @@ export default function ArcsView() {
       })
       .catch((err) => setError(err.message))
   }, [])
+
+  // Cross-view entry: a news article's arc badge asked us to open this arc.
+  useEffect(() => {
+    if (!focusArcId || !arcs) return
+    const match = arcs.find((a) => a.id === focusArcId || a.slug === focusArcId)
+    if (match) setSelectedSlug(match.slug)
+  }, [focusArcId, arcs])
 
   const selected = useMemo(
     () => arcs?.find((a) => a.slug === selectedSlug) ?? null,
@@ -71,6 +80,11 @@ export default function ArcsView() {
       .catch((err) => {
         if (!cancelled) setDetailError(err.message)
       })
+    loadArcArticles(selected.id)
+      .then((rows) => {
+        if (!cancelled) setArcArticles(rows)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -124,6 +138,15 @@ export default function ArcsView() {
             <span className="arc-category">{CATEGORY_LABELS[selected.category] ?? selected.category}</span>
             {selected.summary && <p className="arc-summary">{selected.summary}</p>}
 
+            {selected.root_node_id && onOpenNode && (
+              <button
+                className="news-chip graph-link arc-graph-btn"
+                onClick={() => onOpenNode(selected.root_node_id)}
+              >
+                ◈ Open root event in knowledge graph
+              </button>
+            )}
+
             <div className="arc-age-row">
               <span className="ap-label">Arc age</span>
               <div className="arc-age-bar">
@@ -142,6 +165,29 @@ export default function ArcsView() {
               </div>
             )}
           </header>
+
+          {arcArticles.length > 0 && (
+            <section className="ap-section">
+              <span className="ap-label">Attached articles ({arcArticles.length})</span>
+              <ul className="ap-sources">
+                {arcArticles.map((a) => (
+                  <li key={a.id} className="ap-source">
+                    <span className="ap-source-outlet">{a.outlet}</span>
+                    <button
+                      className="ap-source-headline ap-article-link"
+                      title="Open in News Feed"
+                      onClick={() => onOpenArticle?.(a.id)}
+                    >
+                      {a.title}
+                    </button>
+                    {a.published_at && (
+                      <span className="ap-source-date">{String(a.published_at).slice(0, 10)}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {detailError && (
             <div className="notice error">Failed to load arc detail: {detailError}</div>

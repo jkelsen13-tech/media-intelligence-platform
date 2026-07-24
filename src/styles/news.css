@@ -57,6 +57,17 @@
   background: rgba(59, 130, 246, 0.12);
 }
 
+.news-chip.graph-link {
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.news-chip.graph-link:hover {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.12);
+  color: #93c5fd;
+}
+
 .news-count {
   margin-left: auto;
   font-size: 12px;
@@ -138,9 +149,17 @@
   padding: 1px 8px;
 }
 
+.news-badge.clickable {
+  cursor: pointer;
+}
+
 .news-badge.arc {
   color: #3b82f6;
   border-color: #3b82f6;
+}
+
+.news-badge.arc.clickable:hover {
+  background: rgba(59, 130, 246, 0.15);
 }
 
 .news-badge.mono {
@@ -163,6 +182,15 @@
 .news-detail-loading {
   font-size: 12px;
   color: #6b7280;
+}
+
+.news-graph-links {
+  margin-bottom: 14px;
+}
+
+.news-focus-title {
+  font-size: 16px;
+  margin-bottom: 10px;
 }
 
 .news-detail-grid {
@@ -309,4 +337,26 @@
   color: #6b7280;
   font-size: 10px;
   text-transform: uppercase;
+}
+
+/* ---------- Cross-view integration ---------- */
+
+.ap-article-link {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #e5e7eb;
+  line-height: 1.35;
+}
+
+.ap-article-link:hover {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.arc-graph-btn {
+  margin: 4px 0 12px;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadSources } from '../lib/supabase'
+import { loadSources, loadNodeArticles } from '../lib/supabase'
 import { NODE_TYPES, EDGE_TYPES } from '../graph/theme'
 
 // Full article panel (concept doc §4.4): title + category tag, confidence
@@ -21,12 +21,15 @@ export default function ArticlePanel({
   pinned,
   onTogglePin,
   onNavigate,
+  onOpenArticle,
   onClose,
 }) {
   const [sources, setSources] = useState(null)
   const [sourcesError, setSourcesError] = useState(null)
+  const [backing, setBacking] = useState(null)
 
   const nodeKey = node.id ?? node.slug
+  const isUuid = typeof node.id === 'string' && node.id.includes('-')
 
   useEffect(() => {
     let cancelled = false
@@ -43,6 +46,26 @@ export default function ArticlePanel({
       cancelled = true
     }
   }, [nodeKey])
+
+  // Articles backing this node (citation-resolved + arc-attached).
+  useEffect(() => {
+    let cancelled = false
+    setBacking(null)
+    if (!isUuid) {
+      setBacking([])
+      return
+    }
+    loadNodeArticles(node.id)
+      .then((rows) => {
+        if (!cancelled) setBacking(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setBacking([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [node.id, isUuid])
 
   const connections = useMemo(() => {
     const nodeById = new Map(nodes.map((n) => [n.id ?? n.slug, n]))
@@ -116,6 +139,29 @@ export default function ArticlePanel({
         <section className="ap-section">
           <span className="ap-label">Summary</span>
           <p className="ap-summary">{summary}</p>
+        </section>
+      )}
+
+      {backing && backing.length > 0 && (
+        <section className="ap-section">
+          <span className="ap-label">Backing articles ({backing.length})</span>
+          <ul className="ap-sources">
+            {backing.map((a) => (
+              <li key={a.id} className="ap-source">
+                <span className="ap-source-outlet">{a.outlet}</span>
+                <button
+                  className="ap-source-headline ap-article-link"
+                  title="Open in News Feed"
+                  onClick={() => onOpenArticle?.(a.id)}
+                >
+                  {a.title}
+                </button>
+                {a.published_at && (
+                  <span className="ap-source-date">{String(a.published_at).slice(0, 10)}</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
