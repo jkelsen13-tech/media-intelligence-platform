@@ -1,5 +1,8 @@
 import { NODE_TYPES, EDGE_TYPES, EDGE_WEIGHTS } from './theme'
 
+// Encoding: node FILL color = story arc (distinct muted hue per arc_id),
+// node BORDER color + octagon shape = node type. Edges keep type/weight
+// encoding (color = edge type, width = edge weight).
 const FALLBACK_NODE_COLOR = '#6b7280'
 const FALLBACK_EDGE_COLOR = '#6b7280'
 
@@ -7,6 +10,21 @@ const FALLBACK_EDGE_COLOR = '#6b7280'
 // edge, capped so hubs don't swallow the canvas.
 function nodeSize(ele) {
   return Math.min(36 + ele.degree(false) * 8, 110)
+}
+
+// Golden-angle hue per arc_id: hash the string, spread hashes around the
+// color wheel by 137.508° so distinct arcs land on distinct hues. Muted
+// saturation/lightness keeps the project's dark, low-key tone.
+function arcFillColor(ele) {
+  const arcId = ele.data('arc_id')
+  if (!arcId) return '#1f2430'
+  let hash = 0
+  const s = String(arcId)
+  for (let i = 0; i < s.length; i++) {
+    hash = (hash * 31 + s.charCodeAt(i)) >>> 0
+  }
+  const hue = (hash * 137.508) % 360
+  return `hsl(${hue}, 45%, 55%)`
 }
 
 function nodeColor(ele) {
@@ -28,7 +46,7 @@ export const graphStylesheet = [
       shape: 'octagon',
       width: nodeSize,
       height: nodeSize,
-      'background-color': '#1f2430',
+      'background-color': arcFillColor,
       'border-width': 3,
       'border-color': nodeColor,
       label: 'data(label)',

@@ -30,6 +30,9 @@ export default function Legend() {
           </div>
         ))}
       </section>
+      <section>
+        <p className="legend-note">Node fill color = story arc; border &amp; shape = node type.</p>
+      </section>
     </aside>
   )
 }
