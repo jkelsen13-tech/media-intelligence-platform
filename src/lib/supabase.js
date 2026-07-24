@@ -223,3 +223,80 @@ export async function loadArticleDetail(id) {
     citations: citRes.data,
   }
 }
+
+// ---------- Cross-view graph integration ----------
+
+// Graph nodes an article is connected to via its resolved citations.
+export async function loadArticleGraphLinks(articleId) {
+  if (!supabase) return []
+  const { data: cits, error } = await supabase
+    .from('citations')
+    .select('cited_entity, cited_type, resolved_node_id')
+    .eq('article_id', articleId)
+    .not('resolved_node_id', 'is', null)
+  if (error) throw error
+  if (!cits.length) return []
+  const ids = [...new Set(cits.map((c) => c.resolved_node_id))]
+  const { data: nodes, error: nErr } = await supabase
+    .from('nodes')
+    .select('id, label, type')
+    .in('id', ids)
+  if (nErr) throw nErr
+  const byId = new Map((nodes ?? []).map((n) => [n.id, n]))
+  return cits.map((c) => ({
+    nodeId: c.resolved_node_id,
+    label: byId.get(c.resolved_node_id)?.label ?? c.cited_entity,
+    type: byId.get(c.resolved_node_id)?.type ?? null,
+    citedEntity: c.cited_entity,
+    citedType: c.cited_type,
+  }))
+}
+
+// Articles backing a graph node: citations resolved to it, plus articles
+// attached to any arc rooted at this node.
+export async function loadNodeArticles(nodeId) {
+  if (!supabase || !nodeId) return []
+  const [citRes, arcRes] = await Promise.all([
+    supabase
+      .from('citations')
+      .select('article_id')
+      .eq('resolved_node_id', nodeId),
+    supabase.from('story_arcs').select('id').eq('root_node_id', nodeId),
+  ])
+  if (citRes.error) throw citRes.error
+  if (arcRes.error) throw arcRes.error
+
+  const ids = new Set((citRes.data ?? []).map((r) => r.article_id))
+  const arcIds = (arcRes.data ?? []).map((r) => r.id)
+  if (arcIds.length > 0) {
+    const { data: arcArts, error: aErr } = await supabase
+      .from('articles')
+      .select('id')
+      .in('arc_id', arcIds)
+    if (aErr) throw aErr
+    for (const a of arcArts ?? []) ids.add(a.id)
+  }
+  if (ids.size === 0) return []
+
+  const { data, error } = await supabase
+    .from('articles')
+    .select('id, title, outlet, published_at, url')
+    .in('id', [...ids])
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .limit(30)
+  if (error) throw error
+  return data
+}
+
+// Articles attached to a story arc.
+export async function loadArcArticles(arcId) {
+  if (!supabase || !arcId) return []
+  const { data, error } = await supabase
+    .from('articles')
+    .select('id, title, outlet, published_at, url')
+    .eq('arc_id', arcId)
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .limit(50)
+  if (error) throw error
+  return data
+}

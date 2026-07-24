@@ -21,6 +21,10 @@ export default function App() {
   const [pinned, setPinned] = useState(false)
   const [view, setView] = useState('news')
   const [nodeQuery, setNodeQuery] = useState('')
+  // Cross-view focus: clicking an arc/article/node link in one view opens
+  // the target in its own view.
+  const [focusArc, setFocusArc] = useState(null)
+  const [focusArticle, setFocusArticle] = useState(null)
 
   useEffect(() => {
     loadGraph().then(setGraph).catch((err) => setError(err.message))
@@ -50,6 +54,27 @@ export default function App() {
   const handleClose = useCallback(() => {
     setSelected(null)
     setPinned(false)
+  }, [])
+
+  // --- Cross-view navigation ---
+  const openNodeInGraph = useCallback(
+    (nodeKey) => {
+      if (!graph) return
+      const next = graph.nodes.find((n) => (n.id ?? n.slug) === nodeKey)
+      setView('graph')
+      if (next) setSelected(next)
+    },
+    [graph],
+  )
+
+  const openArcInView = useCallback((arcKey) => {
+    setFocusArc(arcKey)
+    setView('arcs')
+  }, [])
+
+  const openArticleInNews = useCallback((articleId) => {
+    setFocusArticle(articleId)
+    setView('news')
   }, [])
 
   // Graph node search: label substring match, top 8 suggestions.
@@ -88,7 +113,13 @@ export default function App() {
       <main className="app-main">
         {error && <div className="notice error">Failed to load graph: {error}</div>}
 
-        {view === 'news' && <NewsView />}
+        {view === 'news' && (
+          <NewsView
+            onOpenArc={openArcInView}
+            onOpenNode={openNodeInGraph}
+            focusArticleId={focusArticle}
+          />
+        )}
 
         {view === 'graph' && (
           <>
@@ -127,6 +158,7 @@ export default function App() {
                     pinned={pinned}
                     onTogglePin={() => setPinned((p) => !p)}
                     onNavigate={handleNavigate}
+                    onOpenArticle={openArticleInNews}
                     onClose={handleClose}
                   />
                 )}
@@ -136,7 +168,13 @@ export default function App() {
         )}
 
         {view === 'timeline' && <TimelineView />}
-        {view === 'arcs' && <ArcsView />}
+        {view === 'arcs' && (
+          <ArcsView
+            focusArcId={focusArc}
+            onOpenArticle={openArticleInNews}
+            onOpenNode={openNodeInGraph}
+          />
+        )}
       </main>
     </div>
   )
