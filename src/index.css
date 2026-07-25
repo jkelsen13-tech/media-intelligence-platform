@@ -230,6 +230,764 @@ body {
   border-radius: 2px;
 }
 
+/* Step 7 (§3.3): dashed sample for MIP hypothesis edges. */
+.legend-line--dashed {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--cat-grey) 0 4px,
+    transparent 4px 7px
+  );
+}
+
+/* Step 6 (§4): shape vocabulary — legend swatches mirror the cytoscape
+   silhouettes keyed off node type (theme.js NODE_TYPES[].shape). */
+.legend-shape {
+  width: 14px;
+  height: 14px;
+  border: 3px solid;
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+
+.legend-shape--octagon {
+  clip-path: polygon(
+    30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%
+  );
+}
+
+.legend-shape--round {
+  border-radius: 4px;
+}
+
+.legend-shape--diamond {
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+}
+
+.legend-shape--barrel {
+  border-radius: 45% / 25%;
+}
+
+/* Step 7 (§6): reliability scale, 1 = highest. */
+.legend-reliability {
+  gap: 6px;
+}
+
+.legend-rel-pip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.legend-rel-note {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* ---------- Step 7/8: graph filter controls (bottom-left, near legend) ---------- */
+
+.graph-controls {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(var(--bg-panel-rgb), 0.92);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.graph-control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.graph-control-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+
+.graph-stepper-btn {
+  min-width: 28px;
+  min-height: 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.graph-stepper-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.graph-stepper-btn:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.graph-stepper-value {
+  min-width: 14px;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.graph-control-toggle {
+  cursor: pointer;
+}
+
+.graph-control-toggle input {
+  accent-color: var(--accent);
+}
+
+.graph-topics-btn {
+  min-height: 32px;
+  background: rgba(var(--accent-rgb), 0.12);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--accent-soft);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.graph-topics-btn:hover {
+  color: var(--text-primary);
+}
+
+/* ---------- Step 9: focus breadcrumb trail ---------- */
+
+.focus-trail {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(70%, 720px);
+  padding: 6px 10px;
+  background: rgba(var(--bg-panel-rgb), 0.92);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.focus-back {
+  flex-shrink: 0;
+  min-width: 28px;
+  min-height: 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.focus-back:hover {
+  border-color: var(--accent);
+}
+
+.focus-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  padding: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.focus-crumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.focus-sep {
+  color: var(--text-muted);
+}
+
+.focus-crumb-btn {
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--accent-soft);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-crumb-btn:hover {
+  background: var(--bg-elevated);
+}
+
+.focus-crumb-btn.current {
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: default;
+}
+
+.focus-show-all {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--accent-soft);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.focus-show-all:hover {
+  color: var(--text-primary);
+}
+
+/* ---------- Step 7: edge evidence popover ---------- */
+
+.edge-evidence-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+}
+
+.edge-evidence {
+  position: fixed;
+  /* Default (e.g. opened from the article panel): centered card. Tapped
+     edges override with inline left/top + transform:none. */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 56;
+  width: 290px;
+  max-width: calc(100vw - 16px);
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--card-radius);
+  padding: 12px 14px;
+  font-size: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+
+.edge-evidence-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.edge-evidence-kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--cat-green);
+}
+
+.edge-evidence-kind.inferred {
+  color: var(--cat-amber);
+}
+
+.edge-evidence-pair {
+  color: var(--text-body);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.edge-evidence-row {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.edge-evidence-key {
+  flex-shrink: 0;
+  width: 108px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 10px;
+  padding-top: 1px;
+}
+
+.edge-evidence-val {
+  color: var(--text-body);
+  line-height: 1.45;
+  min-width: 0;
+}
+
+/* ---------- Step 8: topic browser ---------- */
+
+.topic-browser .topic-back {
+  background: none;
+  border: none;
+  color: var(--accent-soft);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 8px;
+}
+
+.topic-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.topic-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.topic-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.topic-name.topic-leaf {
+  cursor: default;
+}
+
+.topic-count {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.topic-focus-btn {
+  flex-shrink: 0;
+  background: rgba(var(--accent-rgb), 0.12);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--accent-soft);
+  font-size: 12px;
+  min-height: 32px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.topic-focus-btn:disabled {
+  opacity: 0.4;
+  border-color: var(--border-color);
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* Step 7: evidence affordance on connected-node rows (article panel). */
+.ap-connection-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.ap-connection-row .ap-connection {
+  flex: 1;
+  min-width: 0;
+}
+
+.ap-conn-evidence {
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.ap-conn-evidence:hover {
+  color: var(--accent-soft);
+  border-color: var(--border-color);
+  background: var(--bg-elevated);
+}
+
+/* ---------- Sky tasks 5–6: sky verification badge + credibility boost ---------- */
+
+/* Muted, honest block in the classifier-transparency visual language —
+   bordered case-file card, small-caps label, mono numbers. */
+.sky-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: var(--border-width) solid var(--border-color);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--card-radius);
+  background: var(--bg-panel);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.sky-badge-label {
+  font-size: var(--fs-label);
+  font-weight: var(--fw-label);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+
+.sky-badge-line {
+  font-size: var(--fs-body);
+  color: var(--text-body);
+  line-height: 1.45;
+}
+
+.sky-badge-caption {
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+}
+
+/* Task 6: the boost marker sits next to the adjusted score so the shift
+   is legible, not silent. */
+.sky-boost-marker {
+  margin-left: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+
+.sky-companion-hint {
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.news-badge.sky {
+  border-color: var(--accent);
+  color: var(--accent-soft);
+}
+
+@media (max-width: 767px) {
+  .sky-badge-line,
+  .sky-badge-caption,
+  .sky-companion-hint {
+    font-size: 15px;
+  }
+}
+
+/* ---------- Step 10 (§7.4): policy consequence view ---------- */
+
+.policy-panel {
+  width: 420px;
+}
+
+.pp-status,
+.pp-instrument {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.pp-center {
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--card-radius);
+  padding: var(--card-pad-y) var(--card-pad-x);
+  background: var(--bg-inset);
+}
+
+.pp-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0;
+}
+
+.pp-facts dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+
+.pp-facts dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-body);
+}
+
+.pp-links {
+  display: flex;
+  gap: 14px;
+  margin: 10px 0 0;
+}
+
+.pp-links a {
+  color: var(--accent-soft);
+  font-size: 13px;
+}
+
+.pp-track-filter {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.pp-filter-chip {
+  flex: 1;
+  min-height: 32px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pp-filter-chip.active {
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.pp-track {
+  margin-bottom: 18px;
+}
+
+.pp-track-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* §3.4: the two evidence tracks sit side by side when they fit. */
+.pp-evidence-tracks {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.pp-evidence-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.pp-evidence-label {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.pp-evidence-label.supports {
+  color: var(--cat-green);
+}
+
+.pp-evidence-label.disputes {
+  color: var(--cat-red);
+}
+
+.pp-items {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pp-item {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.pp-item.inferred {
+  border-style: dashed;
+}
+
+.pp-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.pp-item-rel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+/* Consequence TYPE chip — neutral, never valence-colored. */
+.pp-ctype {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.pp-hypothesis-tag {
+  border: 1px dashed var(--cat-amber);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--cat-amber);
+}
+
+.pp-item-target {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pp-item-target:hover {
+  color: var(--accent-soft);
+}
+
+.pp-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.pp-alternatives {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+/* §3.4: unexamined alternatives are always visible, never hidden. */
+.pp-alt-chip {
+  border: 1px solid var(--cat-amber);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--cat-amber);
+}
+
+.pp-reasoning {
+  margin-top: 6px;
+}
+
+.pp-reasoning-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--cat-amber);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.pp-reasoning-body {
+  margin: 6px 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+}
+
+.pp-reasoning-body dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.pp-reasoning-body dd {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-body);
+}
+
+.pp-sequence-only {
+  grid-column: 1 / -1;
+  color: var(--cat-amber);
+}
+
+@media (max-width: 767px) {
+  .policy-panel {
+    width: 100%;
+  }
+
+  .policy-panel.sheet-mode {
+    max-height: 75vh;
+  }
+
+  .pp-evidence-tracks {
+    flex-direction: column;
+  }
+
+  .pp-evidence-col {
+    width: 100%;
+  }
+
+  .pp-filter-chip {
+    min-height: 44px;
+    font-size: 15px;
+  }
+
+  .pp-item-target,
+  .pp-facts dd,
+  .pp-reasoning-body dd {
+    font-size: 15px;
+  }
+}
+
 /* ---------- Article panel (§4.4) ---------- */
 
 .article-panel {
@@ -1433,14 +2191,81 @@ body {
     min-height: 0;
   }
 
+  /* §2.7: the collapsed legend chip also sits at top:16px; left:16px —
+     drop the full-width search bar below it so they don't collide, and
+     keep the legend (chip or expanded) stacked above the search field
+     and its results list. */
   .graph-search {
+    top: 64px;
     left: 16px;
     right: 16px;
     width: auto;
+    z-index: 10;
+  }
+
+  .legend,
+  .legend-collapsed {
+    z-index: 11;
   }
 
   .graph-search input {
     font-size: 15px;
+    min-height: 44px;
+  }
+
+  /* Focus trail drops below the full-width search bar on mobile so it
+     never collides with the legend chip or the search field. */
+  .focus-trail {
+    top: 118px;
+    left: 16px;
+    right: 16px;
+    transform: none;
+    max-width: none;
+    font-size: 15px;
+  }
+
+  .focus-crumb-btn,
+  .focus-show-all {
+    font-size: 15px;
+    min-height: 44px;
+  }
+
+  .focus-back {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .graph-controls {
+    bottom: 16px;
+    font-size: 15px;
+  }
+
+  .graph-control-label {
+    font-size: 12px;
+  }
+
+  .graph-stepper-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .graph-topics-btn {
+    min-height: 44px;
+    font-size: 15px;
+  }
+
+  .edge-evidence {
+    left: 8px !important;
+    right: 8px;
+    top: auto !important;
+    bottom: 16px;
+    width: auto;
+    max-height: 50vh;
+    font-size: 15px;
+  }
+
+  .ap-conn-evidence {
+    min-width: 44px;
     min-height: 44px;
   }
 
@@ -1491,6 +2316,8 @@ body {
   align-items: baseline;
   gap: 12px;
   margin-bottom: 8px;
+  /* §2.7: let the metric row wrap instead of clipping on narrow viewports. */
+  flex-wrap: wrap;
 }
 
 .gap-bar-title {
@@ -1503,10 +2330,28 @@ body {
 
 .gap-bar-stats {
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 4px 14px;
   font-size: var(--fs-meta);
   color: var(--text-secondary);
-  white-space: nowrap;
+}
+
+/* §2.7: short metric labels only render on narrow viewports (see the
+   480px media query below); full labels are the default. */
+.gap-bar-stats .stat-short {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .gap-bar-stats .stat-full {
+    display: none;
+  }
+  .gap-bar-stats .stat-short {
+    display: inline;
+  }
+  .gap-bar-stats {
+    gap: 4px 10px;
+  }
 }
 
 .gap-bar-stats .num {
@@ -1552,3 +2397,4 @@ body {
   letter-spacing: 1px;
   color: var(--text-muted);
 }
+
