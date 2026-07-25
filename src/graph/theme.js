@@ -14,13 +14,34 @@ export function cssToken(name, fallback) {
   return v || fallback
 }
 
+// Step 6 (§4): node type also determines the silhouette. Events KEEP the
+// octagon. Actors read as people/orgs → round-rectangle. Topics get a tag/
+// barrel silhouette and policies a diamond, prepared for when those node
+// types land in the data. `shape` is the cytoscape shape name; the legend
+// renders the matching CSS icon via `legendShapeClass` in Legend.jsx.
 export const NODE_TYPES = {
-  event: { color: '#4d9aff', cssVar: '--cat-blue', label: 'Event' }, // blue
-  actor: { color: '#9ca3af', cssVar: '--cat-grey', label: 'Actor' }, // grey
-  institution: { color: '#ffb01f', cssVar: '--cat-amber', label: 'Institution' }, // amber
-  document: { color: '#2fdc6f', cssVar: '--cat-green', label: 'Document' }, // green
-  anomaly: { color: '#ff5252', cssVar: '--cat-red', label: 'Anomaly' }, // red
+  event: { color: '#4d9aff', cssVar: '--cat-blue', label: 'Event', shape: 'octagon' }, // blue
+  actor: { color: '#9ca3af', cssVar: '--cat-grey', label: 'Actor', shape: 'round-rectangle' }, // grey
+  institution: { color: '#ffb01f', cssVar: '--cat-amber', label: 'Institution', shape: 'octagon' }, // amber
+  document: { color: '#2fdc6f', cssVar: '--cat-green', label: 'Document', shape: 'octagon' }, // green
+  anomaly: { color: '#ff5252', cssVar: '--cat-red', label: 'Anomaly', shape: 'octagon' }, // red
+  // Prepared for upcoming node types (no CSS token yet — hex fallback only).
+  topic: { color: '#2dd4bf', cssVar: null, label: 'Topic', shape: 'barrel' }, // teal
+  policy: { color: '#a78bfa', cssVar: null, label: 'Policy', shape: 'diamond' }, // violet
 }
+
+export const DEFAULT_NODE_SHAPE = 'octagon'
+
+// Step 7 (§6): edge provenance. `claimed_by === 'MIP_inferred'` marks a
+// machine-inferred hypothesis edge (dashed, no arrow, toggleable, default
+// off). Sourced values are source_document | analysis | reporting (solid).
+export const INFERRED_CLAIMED_BY = 'MIP_inferred'
+
+// Reliability is a 1–4 integer where 1 = highest reliability. The graph
+// filter shows edges with reliability >= threshold; edges with no
+// reliability value always pass the filter.
+export const RELIABILITY_MIN = 1
+export const RELIABILITY_MAX = 4
 
 export const EDGE_TYPES = {
   causal: { color: '#4d9aff', cssVar: '--cat-blue', label: 'Causal' }, // blue
@@ -54,6 +75,7 @@ export const CATEGORY_TYPES = {
 
 // Resolved canvas color for a NODE_TYPES/EDGE_TYPES entry.
 export function typeColor(meta) {
+  if (!meta?.cssVar) return meta?.color ?? '#6b7280'
   return cssToken(meta.cssVar, meta.color)
 }
 
