@@ -471,6 +471,7 @@ export default function App() {
                     edges={displayEdges}
                     onSelect={handleSelect}
                     panelOpen={!!(selected || policyNode) && !isMobile}
+                    joystickDimmed={isMobile && !!(selected || policyNode)}
                     minReliability={minReliability}
                     showInferred={showInferred}
                     onEdgeSelect={setEdgeEvidence}

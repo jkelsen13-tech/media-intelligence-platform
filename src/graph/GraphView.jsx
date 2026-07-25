@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import cytoscape from 'cytoscape'
 import fcose from 'cytoscape-fcose'
 import { graphStylesheet } from './styles'
+import PanJoystick from './PanJoystick'
 
 cytoscape.use(fcose)
 
@@ -137,6 +138,8 @@ export default function GraphView({
   showInferred = false,
   // Step 7: edge tap → evidence popover.
   onEdgeSelect,
+  // Fade the pan/zoom joystick while a mobile bottom sheet is open.
+  joystickDimmed = false,
 }) {
   const containerRef = useRef(null)
   const gridRef = useRef(null)
@@ -415,6 +418,7 @@ export default function GraphView({
     <div className="graph-canvas-wrap">
       <canvas ref={gridRef} className="graph-grid" aria-hidden="true" />
       <div ref={containerRef} className="graph-canvas" />
+      <PanJoystick cyRef={cyRef} dimmed={joystickDimmed} />
     </div>
   )
 }
