@@ -29,12 +29,23 @@ export async function loadGraph() {
     return { nodes: demoNodes, edges: demoEdges, source: 'demo' }
   }
 
-  const [nodesRes, edgesRes] = await Promise.all([
-    supabase
-      .from('nodes')
-      .select('id, slug, label, type, description, confidence, summary, occurred_at, arc_id'),
-    supabase.from('edges').select('id, source_id, target_id, type, weight, label, similarity'),
+  const EDGE_BASE = 'id, source_id, target_id, type, weight, label, similarity'
+  // Evidence columns land with the Steps 6–9 backend migration. Try the
+  // extended select first; if the columns don't exist yet (PostgREST 400),
+  // fall back to the base select so the graph keeps working pre-migration.
+  const EDGE_EVIDENCE =
+    ', signal_source, doc_strength, claimed_by, stance, disputed_by, alternative_causes, counterfactual_test, reliability, metadata'
+
+  const nodesReq = supabase
+    .from('nodes')
+    .select('id, slug, label, type, description, confidence, summary, occurred_at, arc_id')
+  let [nodesRes, edgesRes] = await Promise.all([
+    nodesReq,
+    supabase.from('edges').select(EDGE_BASE + EDGE_EVIDENCE),
   ])
+  if (edgesRes.error) {
+    edgesRes = await supabase.from('edges').select(EDGE_BASE)
+  }
 
   if (nodesRes.error) throw nodesRes.error
   if (edgesRes.error) throw edgesRes.error
@@ -53,8 +64,75 @@ export async function loadGraph() {
       weight: e.weight,
       label: e.label,
       similarity: e.similarity,
+      // Optional evidence fields — present only once the backend migration
+      // lands; every consumer treats them as possibly undefined.
+      signal_source: e.signal_source,
+      doc_strength: e.doc_strength,
+      claimed_by: e.claimed_by,
+      stance: e.stance,
+      disputed_by: e.disputed_by,
+      alternative_causes: e.alternative_causes,
+      counterfactual_test: e.counterfactual_test,
+      reliability: e.reliability,
+      metadata: e.metadata,
     })),
     source: 'supabase',
+  }
+}
+
+// Step 10 (§7.4): policy detail for the Consequence view. The `policies`
+// table (and policy_actors / policy_topics) may not exist yet — every
+// query is feature-detected and failures degrade to empty values so the
+// panel can still render from graph edges alone. The consequence edges
+// themselves come from the already-loaded graph (they carry the evidence
+// columns selected in loadGraph).
+export async function loadPolicyDetail(policyNodeId) {
+  const out = { policy: null, actors: [], topics: [] }
+  if (!supabase || !policyNodeId) return out
+  try {
+    const { data, error } = await supabase
+      .from('policies')
+      .select(
+        'id, name, jurisdiction, instrument_type, enacted_date, effective_date, status, source_url, full_text_url, external_id, metadata',
+      )
+      .eq('id', policyNodeId)
+      .maybeSingle()
+    if (error) return out // table likely absent — policy nodes just lack detail
+    out.policy = data
+  } catch {
+    return out
+  }
+  try {
+    const { data, error } = await supabase
+      .from('policy_actors')
+      .select('actor_id, role')
+      .eq('policy_id', policyNodeId)
+    if (!error) out.actors = data ?? []
+  } catch {}
+  try {
+    const { data, error } = await supabase
+      .from('policy_topics')
+      .select('topic_id')
+      .eq('policy_id', policyNodeId)
+    if (!error) out.topics = data ?? []
+  } catch {}
+  return out
+}
+
+// Step 8 (§5): topic taxonomy. The `topics` / `node_topics` tables may not
+// exist yet — feature-detect them and return null so the UI can hide the
+// Topics affordance instead of breaking.
+export async function loadTopics() {
+  if (!supabase) return null
+  try {
+    const [topicsRes, nodeTopicsRes] = await Promise.all([
+      supabase.from('topics').select('id, slug, name, parent_id'),
+      supabase.from('node_topics').select('node_id, topic_id, confidence'),
+    ])
+    if (topicsRes.error || nodeTopicsRes.error) return null
+    return { topics: topicsRes.data ?? [], nodeTopics: nodeTopicsRes.data ?? [] }
+  } catch {
+    return null
   }
 }
 
@@ -373,6 +451,66 @@ export async function loadNodeArticles(nodeId) {
     .limit(30)
   if (error) throw error
   return data
+}
+
+// ---------- Sky verification (companion-app feature) ----------
+
+const SKY_COLUMNS =
+  'id, article_id, arc_id, observed_azimuth_deg, observed_altitude_deg, captured_at, centroid_lat, centroid_lng, confidence_radius_km, sensor_quality, angular_error_deg, image_hash, method'
+
+// Latest sky_verifications row for one article. The table may be absent
+// (or simply have no rows — it's a native-companion feature): any error
+// feature-detects to null and the UI renders nothing.
+export async function loadSkyVerification(articleId) {
+  if (!supabase || !articleId) return null
+  try {
+    const { data, error } = await supabase
+      .from('sky_verifications')
+      .select(SKY_COLUMNS)
+      .eq('article_id', articleId)
+      .order('captured_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+    if (error) return null
+    return data?.[0] ?? null
+  } catch {
+    return null
+  }
+}
+
+// Latest sky verification across the articles backing a graph node
+// (citation-resolved + arc-attached), so the node panel can surface the
+// same badge and credibility boost.
+export async function loadSkyVerificationForNode(nodeId) {
+  if (!supabase || !nodeId) return null
+  try {
+    const [citRes, arcRes] = await Promise.all([
+      supabase.from('citations').select('article_id').eq('resolved_node_id', nodeId),
+      supabase.from('story_arcs').select('id').eq('root_node_id', nodeId),
+    ])
+    if (citRes.error) return null
+    const ids = new Set((citRes.data ?? []).map((r) => r.article_id))
+    if (!arcRes.error) {
+      const arcIds = (arcRes.data ?? []).map((r) => r.id)
+      if (arcIds.length > 0) {
+        const { data: arcArts, error } = await supabase
+          .from('articles')
+          .select('id')
+          .in('arc_id', arcIds)
+        if (!error) for (const a of arcArts ?? []) ids.add(a.id)
+      }
+    }
+    if (ids.size === 0) return null
+    const { data, error } = await supabase
+      .from('sky_verifications')
+      .select(SKY_COLUMNS)
+      .in('article_id', [...ids])
+      .order('captured_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+    if (error) return null
+    return data?.[0] ?? null
+  } catch {
+    return null
+  }
 }
 
 // Articles attached to a story arc.

@@ -113,10 +113,16 @@ function CoverageGapBar({ articles, startedAt }) {
       <div className="gap-bar-head">
         <span className="gap-bar-title">Coverage over time</span>
         <span className="gap-bar-stats">
-          <span className="num">{articles.length} ARTICLES</span>
-          <span className="num">{outlets} OUTLETS</span>
+          <span className="num">
+            {articles.length} <span className="stat-full">ARTICLES</span>
+            <span className="stat-short">ART</span>
+          </span>
+          <span className="num">
+            {outlets} <span className="stat-full">OUTLETS</span>
+            <span className="stat-short">OUT</span>
+          </span>
           <span className={`num${stale ? ' gap-flag' : ''}`}>
-            {daysSinceLatest}D SINCE LAST
+            {daysSinceLatest}D<span className="stat-full"> SINCE LAST</span>
           </span>
         </span>
       </div>
