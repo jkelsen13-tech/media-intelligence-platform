@@ -2004,11 +2004,14 @@ body {
   cursor: pointer;
 }
 
-/* Mobile graph mode controls, floating above the canvas. */
+/* Mobile graph mode controls, floating above the canvas. Anchored
+   bottom-LEFT (mirrored from its original bottom-right spot, now home
+   to the pan joystick); the EdgeControls panel stacks above it. */
 .graph-mobile-bar {
   position: absolute;
-  bottom: 16px;
-  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  left: calc(16px + env(safe-area-inset-left));
+  right: auto;
   z-index: 10;
   display: flex;
   gap: 8px;
@@ -2023,6 +2026,87 @@ body {
   color: var(--accent-soft);
   font-size: 15px;
   cursor: pointer;
+}
+
+/* ---------- Pan/zoom joystick (bottom-right floating layer) ---------- */
+
+/* Zoom pair stacked above the joystick base; the whole stack sits where
+   the Hub list button used to be, clear of the fixed bottom tab bar. */
+.pan-joystick-stack {
+  position: absolute;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  right: calc(16px + env(safe-area-inset-right));
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: opacity 150ms ease;
+}
+
+/* Faded + inert while a mobile bottom sheet (article/policy panel) is
+   open so it never interferes with the sheet's drag-handle zone. */
+.pan-joystick-stack.dimmed {
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.pan-zoom-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pan-zoom-btn {
+  width: 36px;
+  height: 36px;
+  background: rgba(var(--bg-panel-rgb), 0.95);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  color: var(--accent-soft);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pan-zoom-btn:hover {
+  border-color: var(--accent);
+}
+
+.pan-joystick {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  background: rgba(var(--bg-panel-rgb), 0.92);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  cursor: grab;
+}
+
+.pan-joystick:active {
+  cursor: grabbing;
+}
+
+.pan-joystick-nub {
+  width: 28px;
+  height: 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  pointer-events: none; /* the base owns all pointer capture */
+  transition: transform 120ms ease-out; /* spring back on release */
+}
+
+.pan-joystick-nub.dragging {
+  transition: none;
 }
 
 /* ---------- Story Arcs: split-pane only >= 1024px ---------- */
@@ -2235,8 +2319,11 @@ body {
     min-height: 44px;
   }
 
+  /* Lift the EdgeControls panel above the relocated Hub list button
+     (44px min-height + 16px padding + border ≈ 62px, plus an 8px gap)
+     so the two bottom-left floating layers never overlap. */
   .graph-controls {
-    bottom: 16px;
+    bottom: calc(88px + env(safe-area-inset-bottom));
     font-size: 15px;
   }
 
