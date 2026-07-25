@@ -1,13 +1,20 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // ---------------------------------------------------------------------------
-// Pass A — Data Correctness.
-// A1: hard arc-origination gate (outlets x window x edges x named actor).
-// A2: classifier returns category + confidence + evidence span and may
-//     decline ('unclassified' below the configured confidence floor).
-// A3: arc titles are "[primary actor/institution] — [process]"; the seed
-//     article headline is kept only as seed_article_id provenance.
-// All thresholds come from pipeline_config (single settings table).
+// MIP Build Directive v2 — Steps 1-4.
+// Step 1: sanitize once at the boundary (strip CDATA/HTML, retain image
+//         provenance, DECODE HTML entities — never delete them).
+// Step 2: hybrid NER behind a single extractEntities() seam (heuristic now,
+//         optional model when NER_API_URL/NER_API_KEY or HF_API_TOKEN secrets
+//         are set) + persistent entity resolution (entities, article_entities,
+//         arc_entities). Attachment requires a shared resolved entity;
+//         embedding similarity only shortlists candidates.
+// Step 3: digest exclusion; consequence rules (shared entity + causal
+//         language or citation — date proximity removed); arc titles
+//         "[actor] — [process]" with no 'developments' fallback (no process
+//         => no arc); calibrated classifier.
+// Step 4: arc_milestones generated at origination; ingest-time evidence
+//         check confirms/fails pending milestones from article text.
 // ---------------------------------------------------------------------------
 
 async function loadConfig(supabase: any) {
@@ -16,6 +23,75 @@ async function loadConfig(supabase: any) {
   const cfg: Record<string, any> = {}
   for (const row of data) cfg[row.key] = row.value
   return cfg
+}
+
+// ---------- Step 1: sanitization ----------
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+  mdash: '—', ndash: '–', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
+  hellip: '…', middot: '·', bull: '•', dagger: '†', Dagger: '‡',
+  prime: '′', Prime: '″', minus: '−', permil: '‰', frasl: '⁄',
+  trade: '™', copy: '©', reg: '®', deg: '°', plusmn: '±', times: '×', divide: '÷',
+  pound: '£', euro: '€', yen: '¥', cent: '¢', sect: '§', para: '¶', micro: 'µ',
+  eacute: 'é', Eacute: 'É', egrave: 'è', Egrave: 'È', agrave: 'à', Agrave: 'À',
+  ccedil: 'ç', Ccedil: 'Ç', uuml: 'ü', Uuml: 'Ü', ouml: 'ö', Ouml: 'Ö',
+  auml: 'ä', Auml: 'Ä', iuml: 'ï', euml: 'ë', iacute: 'í', Iacute: 'Í',
+  oacute: 'ó', Oacute: 'Ó', uacute: 'ú', Uacute: 'Ú', ntilde: 'ñ', Ntilde: 'Ñ',
+  szlig: 'ß', oelig: 'œ', OElig: 'Œ', aelig: 'æ', AElig: 'Æ', aring: 'å', Aring: 'Å',
+  oslash: 'ø', Oslash: 'Ø', ecirc: 'ê', Ecirc: 'Ê', acirc: 'â', Acirc: 'Â',
+  ocirc: 'ô', Ocirc: 'Ô', ucirc: 'û', Ucirc: 'Û', icirc: 'î', Icirc: 'Î',
+  atilde: 'ã', Atilde: 'Ã', otilde: 'õ', Otilde: 'Õ',
+  rsaquo: '›', lsaquo: '‹', laquo: '«', raquo: '»', rarr: '→', larr: '←', harr: '↔',
+  sup2: '²', sup3: '³', frac12: '½', frac14: '¼', frac34: '¾',
+  brvbar: '¦', uml: '¨', acute: '´', cedil: '¸', ordf: 'ª', ordm: 'º',
+  iexcl: '¡', iquest: '¿', shy: '',
+}
+
+function decodeEntities(s: string): string {
+  // Two passes handle double-encoded input (e.g. &amp;#8217;).
+  for (let pass = 0; pass < 2; pass++) {
+    s = s.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{0,9});/g, (m, g) => {
+      if (g[0] === '#') {
+        const n = g[1] === 'x' || g[1] === 'X' ? parseInt(g.slice(2), 16) : parseInt(g.slice(1), 10)
+        if (Number.isFinite(n) && n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff)) {
+          try { return String.fromCodePoint(n) } catch { return m }
+        }
+        return m
+      }
+      return NAMED_ENTITIES[g] ?? m
+    })
+  }
+  return s
+}
+
+interface Sanitized {
+  text: string
+  imageUrl: string | null
+  imageAlt: string | null
+}
+
+// Sanitize ONCE at the boundary: strip CDATA wrappers, pull image provenance
+// into separate fields, strip HTML tags (alt text kept in its own field),
+// decode entities, drop residual unknown entities, collapse whitespace.
+function sanitize(raw: string | null | undefined): Sanitized {
+  if (!raw) return { text: '', imageUrl: null, imageAlt: null }
+  let s = String(raw).replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '')
+  let imageUrl: string | null = null
+  let imageAlt: string | null = null
+  const img = s.match(/<img\b[^>]*>/i) ?? s.match(/<img\b[\s\S]*$/i)
+  if (img) {
+    const src = img[0].match(/src\s*=\s*"([^"]+)"/i) ?? img[0].match(/src\s*=\s*'([^']+)'/i)
+    const alt = img[0].match(/alt\s*=\s*"([^"]*)"/i) ?? img[0].match(/alt\s*=\s*'([^']*)'/i)
+    imageUrl = src ? src[1] : null
+    imageAlt = alt ? alt[1] : null
+  }
+  s = s.replace(/<img\b[^>]*>?/gi, ' ')
+  s = s.replace(/<[^>]+>/g, ' ')
+  s = decodeEntities(s)
+  s = s.replace(/&[a-zA-Z#0-9]{1,10};/g, ' ') // residual unknown entities
+  s = s.replace(/\s+/g, ' ').trim()
+  return { text: s, imageUrl, imageAlt }
 }
 
 function tag(block: string, name: string): string | null {
@@ -28,12 +104,7 @@ function tag(block: string, name: string): string | null {
   const closeTag = '</' + name + '>'
   const j = block.indexOf(closeTag, gt)
   if (gt < 0 || j < 0) return null
-  const content = block.slice(gt + 1, j)
-  return content.replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '').trim()
-}
-
-function stripHtml(s: string): string {
-  return s.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/g, ' ').replace(/\s+/g, ' ').trim()
+  return block.slice(gt + 1, j)
 }
 
 function parseDate(s: string | null): string | null {
@@ -43,11 +114,7 @@ function parseDate(s: string | null): string | null {
 }
 
 function absoluteUrl(base: string, href: string): string {
-  try {
-    return new URL(href, base).toString()
-  } catch {
-    return href
-  }
+  try { return new URL(href, base).toString() } catch { return href }
 }
 
 interface RawItem {
@@ -56,44 +123,54 @@ interface RawItem {
   summary: string | null
   published_at: string | null
   byline: string | null
+  image_url: string | null
+  image_alt: string | null
 }
 
 function parseFeed(xml: string, feedUrl: string): RawItem[] {
   const items: RawItem[] = []
   for (const m of xml.matchAll(/<item[\s>]([\s\S]*?)<\/item>/gi)) {
     const b = m[1]
-    const title = tag(b, 'title')
-    const link = tag(b, 'link') ?? tag(b, 'guid')
-    if (!title || !link) continue
+    const t = sanitize(tag(b, 'title'))
+    const link = sanitize(tag(b, 'link') ?? tag(b, 'guid')).text
+    if (!t.text || !link) continue
+    const d = sanitize(tag(b, 'description'))
     items.push({
-      title: stripHtml(title),
+      title: t.text,
       url: absoluteUrl(feedUrl, link),
-      summary: stripHtml(tag(b, 'description') ?? '').slice(0, 2000) || null,
-      published_at: parseDate(tag(b, 'pubDate') ?? tag(b, 'dc:date')),
-      byline: tag(b, 'dc:creator') ?? tag(b, 'author'),
+      summary: d.text.slice(0, 2000) || null,
+      published_at: parseDate(sanitize(tag(b, 'pubDate') ?? tag(b, 'dc:date')).text),
+      byline: sanitize(tag(b, 'dc:creator') ?? tag(b, 'author')).text || null,
+      image_url: d.imageUrl ?? t.imageUrl,
+      image_alt: d.imageAlt ?? t.imageAlt,
     })
   }
   for (const m of xml.matchAll(/<entry[\s>]([\s\S]*?)<\/entry>/gi)) {
     const b = m[1]
-    const title = tag(b, 'title')
+    const t = sanitize(tag(b, 'title'))
     const linkMatch = b.match(/<link[^>]*href=["']([^"']+)["']/i)
-    if (!title || !linkMatch) continue
+    if (!t.text || !linkMatch) continue
     const authorBlock = b.match(/<author[\s>]([\s\S]*?)<\/author>/i)
+    const d = sanitize(tag(b, 'summary') ?? tag(b, 'content'))
     items.push({
-      title: stripHtml(title),
+      title: t.text,
       url: absoluteUrl(feedUrl, linkMatch[1]),
-      summary: stripHtml(tag(b, 'summary') ?? tag(b, 'content') ?? '').slice(0, 2000) || null,
-      published_at: parseDate(tag(b, 'published') ?? tag(b, 'updated')),
-      byline: authorBlock ? tag(authorBlock[1], 'name') : null,
+      summary: d.text.slice(0, 2000) || null,
+      published_at: parseDate(sanitize(tag(b, 'published') ?? tag(b, 'updated')).text),
+      byline: authorBlock ? sanitize(tag(authorBlock[1], 'name')).text || null : null,
+      image_url: d.imageUrl ?? t.imageUrl,
+      image_alt: d.imageAlt ?? t.imageAlt,
     })
   }
   return items
 }
 
+// ---------- citations & claims (unchanged behaviour, sanitized input) ----------
+
 const CITATION_PATTERNS: Array<{ type: string; re: RegExp }> = [
   { type: 'court_doc', re: /(court documents?|court filing|court records?|indictment|affidavit|criminal complaint|lawsuit)([^.]{0,80})/i },
   { type: 'agency_release', re: /(press release|official statement|statement from the [A-Z][^.]{0,60}|agency (said|confirmed|reported)[^.]{0,60})/i },
-  { type: 'named_official', re: /([A-Z][a-zA-Z'-]+ [A-Z][a-zA-Z'-]+ (?:said|told|announced|confirmed|stated)[^.]{0,60})/ },
+  { type: 'named_official', re: /([A-Z][a-zA-Z'’-]+ [A-Z][a-zA-Z'’-]+ (?:said|told|announced|confirmed|stated)[^.]{0,60})/ },
   { type: 'anonymous_official', re: /((?:officials?|sources?)(?: familiar with| close to| briefed on)?[^.]{0,40}said|unnamed official[^.]{0,60}|anonymous official[^.]{0,60})/i },
   { type: 'study', re: /((?:study|report|poll|research|analysis)[^.]{0,40}(?:found|shows|published|concluded)[^.]{0,60})/i },
   { type: 'prior_reporting', re: /(previously reported[^.]{0,60}|according to (?:the )?(?:New York Times|BBC|CNN|Fox News|Al Jazeera|Reuters|AP)[^.]{0,60})/i },
@@ -128,96 +205,404 @@ function extractClaims(text: string) {
   return claims
 }
 
-// ---------------------------------------------------------------------------
-// Graph-signal extraction: candidate edges + named actors from article text.
-// Used by the A1 origination gate (needs >= originate_min_edges edges and a
-// named institution or public official) and by A3 title generation.
-// ---------------------------------------------------------------------------
+// ---------- Step 2: heuristic NER + persistent entity resolution ----------
 
-const INSTITUTION_RE =
-  /\b((?:[A-Z][A-Za-z'&-]*\s+){0,3}(?:Police|Ministry|Department|Agency|Court|Senate|Congress|Parliament|Government|Army|Navy|Air Force|Garda|Gardaí|PSNI|NATO|UN|FBI|CIA|Federal Reserve|Commission|Authority|Council|Marine Park))\b/g
-const OFFICIAL_TITLE_FIRST_RE =
-  /\b(?:President|Prime Minister|Minister|Mayor|Senator|Governor|Secretary|Chancellor|Chancellor of the Exchequer|Spokesperson)\s+([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+)?)/g
-const OFFICIAL_NAME_FIRST_RE =
-  /\b([A-Z][a-z'-]+\s+[A-Z][a-z'-]+)\s*,?\s*(?:the\s+)?(?:president|prime minister|minister|mayor|senator|governor|secretary|chancellor|mp\b)/gi
+const MONTHS_DAYS = new Set([
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+  'september', 'october', 'november', 'december', 'monday', 'tuesday',
+  'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+])
 
-interface Actor {
-  name: string
-  kind: 'institution' | 'official'
+const STOP_SINGLE = new Set([
+  ...MONTHS_DAYS,
+  'the', 'a', 'an', 'in', 'on', 'at', 'as', 'it', 'he', 'she', 'but', 'and',
+  'or', 'if', 'by', 'to', 'from', 'with', 'after', 'before', 'this', 'that',
+  'these', 'those', 'there', 'here', 'what', 'how', 'why', 'when', 'where',
+  'who', 'will', 'would', 'could', 'should', 'is', 'are', 'was', 'were',
+  'has', 'have', 'had', 'not', 'no', 'yes', 'now', 'new', 'more', 'most',
+  'all', 'one', 'two', 'first', 'last', 'latest', 'breaking', 'watch',
+  'video', 'live', 'opinion', 'analysis', 'explainer', 'quiz', 'podcast',
+  'newsletter', 'according', 'report', 'reports', 'source', 'sources',
+  'official', 'officials', 'government', 'police', 'ministry', 'department',
+  'court', 'senate', 'parliament', 'congress', 'army', 'navy', 'spokesperson',
+  'headlines', 'digest', 'briefing', 'roundup', 'bulletin', 'updates',
+  'uk', 'us', 'eu', 'un', 'mp', 'mps', 'pm',
+])
+
+const ROLE_TITLES_RE = /^(?:President|Prime Minister|Vice President|Deputy Prime Minister|Minister|Foreign Minister|Defence Minister|Senator|Governor|Mayor|Secretary(?: of State)?|Chancellor(?: of the Exchequer)?|Attorney General|MP|Mr|Ms|Mrs|Miss|Dr|Sir|Dame|Judge|Justice|Chief|General|Admiral|Captain|Colonel|Spokesperson|Officer|Professor|Father|Rabbi|Pope|King|Queen|Prince|Princess)\s+/i
+
+// Capitalized multi-word proper-noun phrases, allowing lowercase connectors
+// so "Ministry of Defence" / "Bank of England" resolve as ONE entity.
+const PROPER_RE = /\b([A-Z][\w'’.\-]*(?:(?:\s+(?:of|the|de|del|van|von|der|al|bin|and|&|for)\s+|\s+)[A-Z][\w'’.\-]*)*)/g
+
+interface EntityCandidate {
+  surface: string
+  role: string | null
+  mentions: number
 }
 
-function extractActors(text: string): Actor[] {
-  const actors: Actor[] = []
-  const seen = new Set<string>()
-  const push = (name: string, kind: Actor['kind']) => {
-    const clean = name.trim().replace(/\s+/g, ' ')
-    const key = clean.toLowerCase()
-    if (clean.length < 3 || seen.has(key)) return
-    seen.add(key)
-    actors.push({ name: clean, kind })
+function extractEntityCandidates(text: string, outletNames: Set<string>): EntityCandidate[] {
+  const candidates = new Map<string, EntityCandidate>()
+  for (const m of text.matchAll(PROPER_RE)) {
+    let surface = m[1].trim().replace(/[\s.,;:]+$/, '').replace(/^[\s.,;:]+/, '')
+    if (surface.length < 2) continue
+    let role: string | null = null
+    for (let k = 0; k < 3; k++) {
+      const r = surface.match(ROLE_TITLES_RE)
+      if (!r) break
+      role = role ? `${role} ${r[0].trim()}` : r[0].trim()
+      surface = surface.slice(r[0].length).trim()
+    }
+    if (surface.length < 2) continue
+    const words = surface.split(/\s+/)
+    const norm = normalizeEntityName(surface)
+    if (!norm) continue
+    if (words.length === 1) {
+      const isAcronym = /^[A-Z0-9&]{2,6}$/.test(surface)
+      const occurrences = (text.match(new RegExp(`\\b${surface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g')) ?? []).length
+      if (STOP_SINGLE.has(norm)) continue
+      if (!isAcronym && occurrences < 2) continue // sentence-start noise
+    } else {
+      if (STOP_SINGLE.has(norm.split(' ')[0])) continue // "The Papers", "In ..."
+      if (words.every((w) => STOP_SINGLE.has(w.toLowerCase()))) continue
+    }
+    if (outletNames.has(norm)) continue // outlet names are not story entities
+    const cur = candidates.get(norm)
+    if (cur) {
+      cur.mentions++
+      if (!cur.role && role) cur.role = role
+      if (surface.length > cur.surface.length) cur.surface = surface
+    } else {
+      candidates.set(norm, { surface, role, mentions: 1 })
+    }
   }
-  for (const m of text.matchAll(INSTITUTION_RE)) push(m[1], 'institution')
-  for (const m of text.matchAll(OFFICIAL_TITLE_FIRST_RE)) push(m[1], 'official')
-  for (const m of text.matchAll(OFFICIAL_NAME_FIRST_RE)) push(m[1], 'official')
-  return actors
+  return [...candidates.values()]
 }
 
-const RELATION_PATTERNS: Array<{ type: string; re: RegExp }> = [
-  { type: 'causal', re: /\b(after|following|amid|because of|citing|in response to|sparked by|triggered by)\b/i },
-  { type: 'conflict', re: /\b(threat(?:ens|ened)?|accus\w+|against|versus|clash\w*|attack\w*|strike\w*|seiz\w+|intercept\w+)\b/i },
-  { type: 'financial', re: /\b(tariff\w*|sanction\w*|\$\d|billion|million|fund\w*|pay\w*|fine\w*)\b/i },
-  { type: 'actor', re: /\b(said|announced|ordered|vowed|pledged|ruled out|backs off|called for|confirmed)\b/i },
-  { type: 'documentary', re: /\b(documents?|filing|report|statement|release|records?)\b/i },
-]
+function normalizeEntityName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[''’]s\b/g, '') // strip possessives
+    .replace(/\bs’$/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
-// Candidate graph edges = relation hits + citations + actor mentions.
-function countExtractedEdges(text: string, citationCount: number, actorCount: number): number {
-  let relations = 0
-  for (const { re } of RELATION_PATTERNS) {
-    const hits = text.match(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g'))
-    if (hits) relations += Math.min(hits.length, 3)
+function guessEntityType(name: string): string {
+  if (/\b(ministry|department|agency|police|court|senate|congress|parliament|government|army|navy|air force|commission|authority|council|committee|office|bureau|service|garda|gardaí|psni|nato|fbi|cia|federal reserve|met office|white house|downing street|pentagon|treasury|home office)\b/i.test(name)) return 'institution'
+  if (/\b(inc|ltd|corp|corporation|company|group|holdings|airlines?|airways|bank|university|college|hospital|school|club|fc|party|union|association|institute|foundation|charity|trust|media|news|broadcasting)\b/i.test(name)) return 'organization'
+  const words = name.split(/\s+/)
+  if (words.length === 2 && words.every((w) => /^[A-Z][a-zA-Z'’.\-]+$/.test(w) && !/^[A-Z]{2,}$/.test(w))) return 'person'
+  return 'other'
+}
+
+interface ResolvedEntity {
+  id: string
+  canonical_name: string
+  entity_type: string
+  confidence: number
+  role: string | null
+  isNew: boolean
+}
+
+// Persistent resolver: exact canonical/alias match (high) > unambiguous
+// token-subset fuzzy match (medium) > create new entity. Every extraction is
+// logged to article_entities with its confidence and method.
+class EntityResolver {
+  byNorm = new Map<string, any>()
+  aliasIdx = new Map<string, any>()
+  exactConf: number
+  fuzzyConf: number
+  newConf: number
+
+  constructor(cfg: any) {
+    this.exactConf = Number(cfg.entity_exact_confidence ?? 0.95)
+    this.fuzzyConf = Number(cfg.entity_fuzzy_confidence ?? 0.7)
+    this.newConf = Number(cfg.entity_new_confidence ?? 0.5)
   }
-  return citationCount + actorCount + relations
+
+  async load(supabase: any) {
+    let from = 0
+    for (;;) {
+      const { data, error } = await supabase
+        .from('entities')
+        .select('id, canonical_name, normalized_name, aliases, entity_type, mention_count')
+        .range(from, from + 999)
+      if (error) throw error
+      if (!data || data.length === 0) break
+      for (const e of data) this.index(e)
+      if (data.length < 1000) break
+      from += 1000
+    }
+  }
+
+  index(e: any) {
+    this.byNorm.set(e.normalized_name, e)
+    for (const a of e.aliases ?? []) {
+      const an = normalizeEntityName(a)
+      if (an) this.aliasIdx.set(an, e)
+    }
+  }
+
+  async resolve(supabase: any, cand: EntityCandidate): Promise<ResolvedEntity | null> {
+    const norm = normalizeEntityName(cand.surface)
+    if (!norm) return null
+    let ent = this.byNorm.get(norm) ?? this.aliasIdx.get(norm)
+    let conf = ent ? this.exactConf : 0
+    if (!ent) {
+      // Fuzzy: token-subset match, only when exactly ONE candidate matches.
+      const toks = new Set(norm.split(' '))
+      if (toks.size >= 2) {
+        const hits: any[] = []
+        for (const [en, e] of this.byNorm) {
+          const et = new Set(en.split(' '))
+          const sub = [...toks].every((t) => et.has(t)) || [...et].every((t) => toks.has(t))
+          if (sub) hits.push(e)
+        }
+        if (hits.length === 1) {
+          ent = hits[0]
+          conf = this.fuzzyConf
+        }
+      }
+    }
+    if (!ent) {
+      const { data, error } = await supabase
+        .from('entities')
+        .upsert(
+          {
+            canonical_name: cand.surface.slice(0, 160),
+            normalized_name: norm,
+            entity_type: (cand as ModelEntityCandidate).entityType ?? guessEntityType(cand.surface),
+            mention_count: 0,
+            last_seen: new Date().toISOString(),
+          },
+          { onConflict: 'normalized_name' },
+        )
+        .select('id, canonical_name, normalized_name, aliases, entity_type, mention_count')
+        .single()
+      if (error || !data) return null
+      ent = data
+      this.index(ent)
+      if (cand.surface !== ent.canonical_name) {
+        const aliases = new Set(ent.aliases ?? [])
+        aliases.add(cand.surface.slice(0, 160))
+        await supabase.from('entities').update({ aliases: [...aliases] }).eq('id', ent.id)
+        ent.aliases = [...aliases]
+        this.aliasIdx.set(norm, ent)
+      }
+      return { id: ent.id, canonical_name: ent.canonical_name, entity_type: ent.entity_type, confidence: this.newConf, role: cand.role, isNew: true }
+    }
+    // Existing entity: alias unseen surface forms (obvious duplicate merge).
+    if (cand.surface !== ent.canonical_name && !(ent.aliases ?? []).includes(cand.surface)) {
+      const aliases = [...(ent.aliases ?? []), cand.surface.slice(0, 160)]
+      await supabase.from('entities').update({ aliases }).eq('id', ent.id)
+      ent.aliases = aliases
+      this.aliasIdx.set(norm, ent)
+    }
+    await supabase
+      .from('entities')
+      .update({ last_seen: new Date().toISOString(), mention_count: (ent.mention_count ?? 0) + cand.mentions })
+      .eq('id', ent.id)
+    ent.mention_count = (ent.mention_count ?? 0) + cand.mentions
+    return { id: ent.id, canonical_name: ent.canonical_name, entity_type: ent.entity_type, confidence: conf, role: cand.role, isNew: false }
+  }
 }
 
-// ---------------------------------------------------------------------------
-// A2 — Category classifier.
-// TODO(spec): rubric below is RECONSTRUCTED from the directive examples and
-// the pre-existing keyword lists. Replace with the verbatim spec §2.5.3
-// category definitions when the spec doc is available.
-//   - Institutional Accountability: scrutiny of whether an institution or
-//     officeholder discharged their duties — investigations, failures,
-//     misconduct, oversight, legal exposure of officials.
-//   - Geopolitical Consequence: state / armed-actor actions and their
-//     cross-border effects (incl. commercial fallout, e.g. "Tankers make
-//     sharp U-turns after Houthi shipping threat" — the shipping disruption
-//     is a CONSEQUENCE of a geopolitical actor, not accountability).
-//   - Economic Policy: policy levers acting on the economy — tariffs,
-//     rates, budgets, trade measures, industrial policy.
-//   - Legislative / Regulatory: the lawmaking and rulemaking process —
-//     bills, votes, rulings, executive orders, regulatory decisions.
-// Returns category + confidence (0..1) + the evidence span that justified it.
-// Below category_confidence_floor the classifier declines: 'unclassified'.
-// ---------------------------------------------------------------------------
+// ---------- Entity extraction seam (hybrid heuristic/model) ----------
+//
+// extractEntities(text, outletNames) is THE single seam for NER. Everything
+// downstream (entities table, EntityResolver canonicalization, article_entities
+// confidence logging, arc attachment) consumes only its return value and never
+// cares which path produced the candidates.
+//
+// Paths:
+//   - 'heuristic'        : regex/stoplist extractor only (default today).
+//   - 'model'            : external NER model only (heuristics produced nothing).
+//   - 'model+heuristic'  : merged; model spans win on overlap.
+//
+// OPTIONAL MODEL PATH — config-only to enable:
+//   Set Supabase secrets `NER_API_URL` and `NER_API_KEY` (or `HF_API_TOKEN`
+//   with no NER_API_URL to use the HF Inference API default bert-base-NER).
+//   When the secret is absent the model path is skipped silently.
+//
+// Expected model request shape:
+//   POST <NER_API_URL>
+//   headers: Authorization: Bearer <NER_API_KEY|HF_API_TOKEN>,
+//            Content-Type: application/json
+//   body: { "inputs": "<article text>" }            // HF inference style
+//
+// Accepted response shapes (any of):
+//   1. HF token-classification: [[{ entity_group|entity, word, start, end,
+//      score }...]] (also accepted unwrapped: [...])
+//   2. Generic span list: { "entities": [{ "text"|"surface", "type"?,
+//      "start"?, "end"?, "score"? }...] }
+// Model entity types are mapped onto our entity_type vocabulary
+// (person/organization/institution/other) at merge time; PER->person,
+// ORG->organization, LOC/MISC->other.
 
-const CATEGORY_RUBRIC: Array<{
-  category: string
-  weight: number
-  re: RegExp
-}> = [
-  // Geopolitical consequence first: armed actors / inter-state actions and
-  // their knock-on effects (shipping reroutes, displacement, escalation).
-  { category: 'geopolitical_consequence', weight: 0.45, re: /\b(war|ceasefire|missile\w*|troops|invasion|drone strike|nato|treaty|houthis?|red sea|escalation)\b/i },
-  { category: 'geopolitical_consequence', weight: 0.35, re: /\b(sanctions?|shipping threat|tanker\w*|u-turn\w*|evacuation|displacement|cross-border)\b/i },
-  // Economic policy.
-  { category: 'economic_policy', weight: 0.45, re: /\b(tariff\w*|inflation|interest rate\w*|federal reserve|trade (deal|war|dispute|crosshairs)|recession|budget)\b/i },
-  { category: 'economic_policy', weight: 0.3, re: /\b(supply chain|jobs report|dairy sector|auto industry|rent control\w*)\b/i },
-  // Legislative / regulatory process.
-  { category: 'legislative_regulatory', weight: 0.45, re: /\b(bill|senate|house passes|regulation|supreme court|executive order|congress|parliament|vote\w*|ruling)\b/i },
-  { category: 'legislative_regulatory', weight: 0.3, re: /\b(rules out|backs off|pledge|ban\w*|controls|amendment|legislation)\b/i },
-  // Institutional accountability.
-  { category: 'institutional_accountability', weight: 0.45, re: /\b(investigation|probe|misconduct|cover-up|oversight|indictment|arrest\w*|charged|jailed|blackmail)\b/i },
-  { category: 'institutional_accountability', weight: 0.3, re: /\b(lack of authority|accountability|failure\w*|negligence|whistleblow\w*|lawsuit|inquiry)\b/i },
+type ExtractionMethod = 'heuristic' | 'model' | 'model+heuristic'
+
+interface ModelEntityCandidate extends EntityCandidate {
+  entityType?: string
+}
+
+function mapModelEntityType(t: string): string | undefined {
+  const u = t.toUpperCase()
+  if (u.startsWith('PER')) return 'person'
+  if (u.startsWith('ORG')) return 'organization'
+  if (u === 'INSTITUTION') return 'institution'
+  if (u.startsWith('LOC') || u.startsWith('GPE') || u.startsWith('MISC')) return 'other'
+  return undefined
+}
+
+// Calls the configured NER model. Returns null when unconfigured OR on any
+// failure — callers always fall back to heuristics.
+async function extractEntitiesModel(text: string): Promise<ModelEntityCandidate[] | null> {
+  const url = Deno.env.get('NER_API_URL') ??
+    (Deno.env.get('HF_API_TOKEN')
+      ? 'https://api-inference.huggingface.co/models/dslim/bert-base-NER'
+      : undefined)
+  const key = Deno.env.get('NER_API_KEY') ?? Deno.env.get('HF_API_TOKEN')
+  if (!url || !key) return null // secrets absent: heuristic-only (today's default)
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputs: text.slice(0, 8000) }),
+    })
+    if (!res.ok) {
+      console.warn(`ner-model: HTTP ${res.status}; falling back to heuristics`)
+      return null
+    }
+    const body = await res.json()
+    const raw: any[] = Array.isArray(body)
+      ? (Array.isArray(body[0]) ? body[0] : body)
+      : (body?.entities ?? [])
+    const byNorm = new Map<string, ModelEntityCandidate>()
+    for (const e of raw) {
+      const surface = String(e.text ?? e.surface ?? e.word ?? '').replace(/^##/, '').trim()
+      if (surface.length < 2) continue
+      const norm = normalizeEntityName(surface)
+      if (!norm || STOP_SINGLE.has(norm)) continue
+      const cur = byNorm.get(norm)
+      if (cur) cur.mentions++
+      else {
+        byNorm.set(norm, {
+          surface,
+          role: null,
+          mentions: 1,
+          entityType: mapModelEntityType(String(e.type ?? e.entity_group ?? e.entity ?? '')),
+        })
+      }
+    }
+    return [...byNorm.values()]
+  } catch (err) {
+    console.warn(`ner-model: call failed (${String(err)}); falling back to heuristics`)
+    return null
+  }
+}
+
+// Single NER seam. Model spans win on overlap: a heuristic candidate is
+// dropped when its normalized name is a token-subset/superset of any model
+// candidate's normalized name. Canonicalization/resolution downstream is
+// shared regardless of path.
+async function extractEntities(
+  text: string,
+  outletNames: Set<string>,
+): Promise<{ candidates: EntityCandidate[]; method: ExtractionMethod }> {
+  const heuristic = extractEntityCandidates(text, outletNames)
+  const model = await extractEntitiesModel(text)
+  if (!model) return { candidates: heuristic, method: 'heuristic' }
+  const modelNorms = model.map((c) => new Set(normalizeEntityName(c.surface).split(' ')))
+  const keptHeuristic = heuristic.filter((h) => {
+    const ht = new Set(normalizeEntityName(h.surface).split(' '))
+    return !modelNorms.some(
+      (mt) => [...ht].every((t) => mt.has(t)) || [...mt].every((t) => ht.has(t)),
+    )
+  })
+  const candidates: EntityCandidate[] = [...model, ...keptHeuristic]
+  return { candidates, method: keptHeuristic.length > 0 ? 'model+heuristic' : 'model' }
+}
+
+async function extractAndResolveEntities(
+  supabase: any,
+  resolver: EntityResolver,
+  articleId: string,
+  text: string,
+  outletNames: Set<string>,
+): Promise<ResolvedEntity[]> {
+  const { candidates, method } = await extractEntities(text, outletNames)
+  console.log(`ner-path: article=${articleId} method=${method} candidates=${candidates.length}`)
+  const resolved: ResolvedEntity[] = []
+  const seenIds = new Set<string>()
+  for (const cand of candidates.slice(0, 25)) {
+    try {
+      const r = await resolver.resolve(supabase, cand)
+      if (!r || seenIds.has(r.id)) continue
+      seenIds.add(r.id)
+      resolved.push(r)
+      await supabase.from('article_entities').upsert(
+        {
+          article_id: articleId,
+          entity_id: r.id,
+          confidence: r.confidence,
+          extraction_method: method,
+          role: r.role,
+        },
+        { onConflict: 'article_id,entity_id' },
+      )
+    } catch {
+      // entity resolution is best-effort per candidate
+    }
+  }
+  return resolved
+}
+
+// ---------- Step 3a: digest exclusion ----------
+
+const DIGEST_TITLE_RE = /\b(headlines? for|the papers|what we know|daily briefing|morning (digest|briefing|roundup)|evening (digest|briefing|roundup)|news digest|(news|sport)s? roundup|round-up|the week in|week in review|catch[- ]up|live updates?|news bulletin|at a glance|recap|in pictures)\b/i
+
+function isDigest(title: string, entityCount: number, digestEntityCount: number): boolean {
+  if (DIGEST_TITLE_RE.test(title)) return true
+  return entityCount >= digestEntityCount
+}
+
+// ---------- Step 3b: consequence signals (causal language OR citation) ----------
+
+const CAUSAL_RE = /\b(as a result of|following|in response to|in the wake of|on the back of|after|amid|because of|due to|owing to|sparked by|triggered by|prompted by|citing|linked to|in retaliation for|in protest (of|at|against)|days? after|hours? after)\b/i
+
+function causalEvidence(text: string): string | null {
+  const m = text.match(CAUSAL_RE)
+  return m ? m[0] : null
+}
+
+// ---------- classifier ----------
+// Spec §2.5.3 defines exactly four named categories; 'unclassified' only when
+// genuinely ambiguous. Keyword/weight rubric operationalises those category
+// definitions; confidence is logged for every arc and the floor is calibrated
+// from the measured distribution (stored in pipeline_config).
+
+const CATEGORY_RUBRIC: Array<{ category: string; weight: number; re: RegExp }> = [
+  // Institutional accountability: scrutiny of whether an institution or
+  // officeholder discharged their duties — investigations, failures,
+  // misconduct, oversight, legal exposure of officials.
+  { category: 'institutional_accountability', weight: 0.45, re: /\b(investigation|investigating|probe|inquiry|inquest|misconduct|cover-up|oversight|indictment|indicted|arrest\w*|charged|jailed|blackmail|sacked|suspended|resignation|resigned)\b/i },
+  { category: 'institutional_accountability', weight: 0.3, re: /\b(lack of authority|accountability|failure\w*|failings|negligence|whistleblow\w*|lawsuit|scandal|corruption|disciplinary|grooming|abuse)\b/i },
+  { category: 'institutional_accountability', weight: 0.15, re: /\b(apolog\w+|compensation|report found|review found|criticis\w+)\b/i },
+  // Geopolitical consequence: state / armed-actor actions and their
+  // cross-border effects (shipping disruption, displacement, escalation).
+  { category: 'geopolitical_consequence', weight: 0.45, re: /\b(war|ceasefire|missile\w*|troops|invasion|drone strike|nato|treaty|houthis?|red sea|escalation|airstrike\w*|hostages?|gaza|ukraine)\b/i },
+  { category: 'geopolitical_consequence', weight: 0.35, re: /\b(sanctions?|shipping threat|tanker\w*|u-turn\w*|evacuation|displacement|cross-border|diplomat\w*|embassy|militia|insurgent\w*)\b/i },
+  { category: 'geopolitical_consequence', weight: 0.15, re: /\b(allies|summit|foreign minister|defence|defense|security council|border)\b/i },
+  // Economic policy: policy levers acting on the economy.
+  { category: 'economic_policy', weight: 0.45, re: /\b(tariff\w*|inflation|interest rate\w*|federal reserve|trade (deal|war|dispute|crosshairs)|recession|budget|gdp|central bank)\b/i },
+  { category: 'economic_policy', weight: 0.3, re: /\b(supply chain|jobs report|dairy sector|auto industry|rent control\w*|cost of living|wages?|deficit|spending|economy|economic)\b/i },
+  { category: 'economic_policy', weight: 0.15, re: /\b(markets?|stocks?|shares|oil prices?|energy prices?|prices?)\b/i },
+  // Legislative / regulatory: the lawmaking and rulemaking process.
+  { category: 'legislative_regulatory', weight: 0.45, re: /\b(bill|senate|house passes|regulation|supreme court|executive order|congress|parliament|vote\w*|ruling|legislation|lawmakers)\b/i },
+  { category: 'legislative_regulatory', weight: 0.3, re: /\b(rules out|backs off|pledge|ban\w*|controls|amendment|regulator\w*|white paper|statutory|clause|committee stage)\b/i },
+  { category: 'legislative_regulatory', weight: 0.15, re: /\b(law|legal|court|judge|appeal|hearing)\b/i },
 ]
 
 interface Classification {
@@ -226,7 +611,9 @@ interface Classification {
   evidence: string | null
 }
 
-function classifyArc(text: string, floor: number): Classification {
+// Confidence is computed and logged regardless of floor; applyFloor decides
+// whether the label stands.
+function classifyArc(text: string): Classification {
   const scores = new Map<string, { score: number; evidence: string | null }>()
   for (const { category, weight, re } of CATEGORY_RUBRIC) {
     const m = text.match(re)
@@ -241,14 +628,12 @@ function classifyArc(text: string, floor: number): Classification {
     const confidence = Math.min(1, score)
     if (!best || confidence > best.confidence) best = { category, confidence, evidence }
   }
-  if (!best || best.confidence < floor) {
-    return {
-      category: 'unclassified',
-      confidence: best?.confidence ?? 0,
-      evidence: best?.evidence ?? null,
-    }
-  }
-  return best
+  return best ?? { category: 'unclassified', confidence: 0, evidence: null }
+}
+
+function applyFloor(cls: Classification, floor: number): Classification {
+  if (cls.confidence < floor) return { ...cls, category: 'unclassified' }
+  return cls
 }
 
 const ARC_EVENT_CATEGORY: Record<string, string> = {
@@ -259,38 +644,141 @@ const ARC_EVENT_CATEGORY: Record<string, string> = {
   unclassified: 'accountability',
 }
 
-// ---------------------------------------------------------------------------
-// A3 — Arc titles: "[primary actor or institution] — [process]".
-// ---------------------------------------------------------------------------
+// ---------- Step 3c: arc titles "[actor] — [process]" (expanded processes) ----------
 
 const PROCESS_PATTERNS: Array<{ process: string; re: RegExp }> = [
-  { process: 'cross-border explosives interdiction', re: /\b(bomb|explosive\w*|ied)\b.*\b(intercept\w*|seiz\w*)\b/i },
-  { process: 'shipping interdiction', re: /\b(tanker\w*|shipping|vessel\w*).*(threat|u-turn|rerout\w*)|\b(shipping threat)\b/i },
-  { process: 'military escalation', re: /\b(missile\w*|strike\w*|attack\w*|war)\b/i },
+  { process: 'cross-border explosives interdiction', re: /\b(bomb|explosive\w*|ied)\b[\s\S]{0,80}\b(intercept\w*|seiz\w*)\b|\b(intercept\w*|seiz\w*)\b[\s\S]{0,80}\b(bomb|explosive\w*|ied)\b/i },
+  { process: 'shipping interdiction', re: /\b(tanker\w*|shipping|vessel\w*)[\s\S]{0,80}(threat|u-turn|rerout\w*)|\b(shipping threat)\b/i },
+  { process: 'ceasefire talks', re: /\b(ceasefire|truce|peace talks|peace deal)\b/i },
+  { process: 'military escalation', re: /\b(missile\w*|airstrike\w*|drone strike|strike\w*|attack\w*|war|invasion|troops)\b/i },
+  { process: 'sanctions regime', re: /\bsanction\w*\b/i },
+  { process: 'hostage negotiations', re: /\bhostage\w*\b/i },
   { process: 'trade dispute', re: /\b(tariff\w*|trade (war|deal|dispute|crosshairs))\b/i },
-  { process: 'criminal prosecution', re: /\b(arrest\w*|charged|indict\w*|jailed|prosecut\w*)\b/i },
-  { process: 'legislative action', re: /\b(bill|vote\w*|executive order|rules out|regulation)\b/i },
-  { process: 'policy reversal', re: /\b(backs off|revers\w*|drops|abandon\w*)\b/i },
-  { process: 'medical evacuation', re: /\b(evacuation)\b/i },
+  { process: 'interest-rate decision', re: /\b(interest rate\w*|rate (cut|rise|hike|decision)|central bank)\b/i },
+  { process: 'budget decision', re: /\b(budget|spending review|fiscal)\b/i },
+  { process: 'rent-control decision', re: /\brent control\w*\b/i },
+  { process: 'procurement', re: /\b(procurement|contract awarded|tender|defence contract|arms deal)\b/i },
+  { process: 'criminal prosecution', re: /\b(arrest\w*|charged|indict\w*|jailed|prosecut\w*|trial)\b/i },
+  { process: 'sentencing', re: /\b(sentenc\w+|jailed for)\b/i },
+  { process: 'public inquiry', re: /\b(inquiry|inquest)\b/i },
+  { process: 'investigation', re: /\b(investigat\w*|probe)\b/i },
+  { process: 'misconduct case', re: /\b(misconduct|blackmail|harassment|abuse|scandal)\b/i },
+  { process: 'resignation', re: /\b(resign\w+|steps down|quit\w*)\b/i },
+  { process: 'appointment', re: /\b(appoint\w*|named as|takes office)\b/i },
+  { process: 'policy reversal', re: /\b(backs off|revers\w*|u-turn|abandon\w*|scrap\w*)\b/i },
+  { process: 'legislative action', re: /\b(bill|vote\w*|executive order|amendment|legislation|act passed)\b/i },
+  { process: 'regulatory decision', re: /\b(regulat\w+|rules out|ban\w*|approv\w+|licen[cs]\w+)\b/i },
+  { process: 'legal ruling', re: /\b(ruling|verdict|court rules|judgment|appeal)\b/i },
+  { process: 'medical evacuation', re: /\b(evacuation|evacuate\w*)\b/i },
+  { process: 'disaster response', re: /\b(flood\w*|wildfire\w*|storm|earthquake|hurricane)\b/i },
+  { process: 'election campaign', re: /\b(election|campaign|ballot)\b/i },
+  { process: 'diplomatic talks', re: /\b(summit|diplomat\w*|talks|envoy)\b/i },
+  { process: 'rollout', re: /\b(rollout|roll-out|launch\w*|deploy\w+)\b/i },
+  { process: 'data breach', re: /\b(data breach|hack\w*|cyberattack\w*)\b/i },
+  { process: 'recall', re: /\brecall\w*\b/i },
+  { process: 'funding decision', re: /\b(funding|allocat\w+|grant\w*|bailout)\b/i },
+  { process: 'enforcement action', re: /\b(enforcement|fine\w*|penalt\w+|crackdown|raid\w*)\b/i },
 ]
 
-function makeArcTitle(text: string, actors: Actor[]): string {
-  const actor = actors.find((a) => a.kind === 'institution') ?? actors[0]
-  let process: string | null = null
-  for (const { process: p, re } of PROCESS_PATTERNS) {
-    if (re.test(text)) {
-      process = p
-      break
-    }
+function findProcess(text: string): string | null {
+  for (const { process, re } of PROCESS_PATTERNS) {
+    if (re.test(text)) return process
   }
-  if (!process) process = 'developments'
-  if (!actor) return `Unattributed cluster — ${process}`
-  return `${actor.name} — ${process}`.slice(0, 140)
+  return null
 }
 
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
+// NO 'developments' fallback: callers must not originate without a process.
+function makeArcTitle(actorName: string | null, process: string | null): string | null {
+  if (!process) return null
+  if (!actorName) return `Unattributed cluster — ${process}`
+  return `${actorName} — ${process}`.slice(0, 140)
 }
+
+// ---------- Step 4: milestones ----------
+
+interface MilestoneTemplate {
+  key: string
+  title: string
+  confirm: RegExp
+  fail?: RegExp
+}
+
+const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
+  institutional_accountability: [
+    { key: 'ia_concludes', title: 'Investigation or inquiry concludes', confirm: /\b(findings?|report)\b[\s\S]{0,40}\b(published|released)\b|\b(investigat\w*|inquiry|probe|inquest)\b[\s\S]{0,80}\b(conclud\w*|complet\w*|publishes?|releases?)\b/i, fail: /\b(investigat\w*|inquiry|probe)\b[\s\S]{0,60}\b(dropped|abandoned|closed without|shelved)\b/i },
+    { key: 'ia_charges', title: 'Charges or disciplinary action filed', confirm: /\b(charged|charges (filed|brought)|indict\w+|prosecut\w+|disciplin\w+|suspended|dismissed|sacked)\b/i, fail: /\b(cleared|no charges|charges dropped|acquit\w+|exonerat\w+)\b/i },
+    { key: 'ia_policy', title: 'Institution policy change announced', confirm: /\b(policy change|reform\w*|new (rules|guidelines|protocols)|overhaul|code of conduct)\b/i },
+    { key: 'ia_remedy', title: 'Remedy or settlement for affected party', confirm: /\b(settlement|compensation|payout|remedy|apolog\w+|damages awarded|redress)\b/i },
+  ],
+  geopolitical_consequence: [
+    { key: 'gp_ceasefire', title: 'Ceasefire or de-escalation agreed', confirm: /\b(ceasefire|truce|de-escalat\w+|peace (deal|agreement)|armistice|withdraw\w*)\b/i, fail: /\b(talks? (collapse\w*|fail\w*)|ceasefire (broken|collapses?|ends?))\b/i },
+    { key: 'gp_sanctions', title: 'Sanctions or retaliation imposed', confirm: /\b(sanctions? (imposed|announced|extended)|retaliat\w+|expel\w+|travel ban)\b/i },
+    { key: 'gp_routes', title: 'Disrupted routes or activity normalize', confirm: /\b(resum\w+|reopen\w*|normali\w*|returns? to (the )?(red sea|route|port))\b/i },
+    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w+|strike\w*|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
+  ],
+  economic_policy: [
+    { key: 'ep_enacted', title: 'Policy measure enacted or implemented', confirm: /\b(takes effect|comes into force|enacted|implement\w+|signed into law|approved)\b/i },
+    { key: 'ep_market', title: 'Market or sector adjustment', confirm: /\b(markets? (react\w*|fall|rise|slide)|shares? (fell|fall|rose|rise)|prices? (rise|fall|rose|fell)|adjust\w+)\b/i },
+    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w+|withdraw\w+|scrapped|backs off|abandon\w+|u-turn)\b/i },
+    { key: 'ep_funding', title: 'Funding or budget allocated', confirm: /\b(funding|allocat\w+|budget|appropriat\w+|bailout)\b/i },
+  ],
+  legislative_regulatory: [
+    { key: 'lr_funding', title: 'Implementation funding allocated', confirm: /\b(funding|allocat\w+|appropriat\w+|budget)\b/i },
+    { key: 'lr_enforcement', title: 'Enforcement action filed', confirm: /\b(enforcement|fined|fine\w*|penalt\w+|crackdown|sanctioned)\b/i },
+    { key: 'lr_challenge', title: 'Legal challenge filed', confirm: /\b(lawsuit|legal challenge|judicial review|court challenge|appeal|injunction)\b/i },
+    { key: 'lr_deadline', title: 'Implementation deadline met', confirm: /\b(takes effect|comes into force|deadline|implement\w+|in force)\b/i, fail: /\b(delayed|postponed|missed deadline|pushed back)\b/i },
+  ],
+  unclassified: [
+    { key: 'gen_response', title: 'Official response issued', confirm: /\b(respond\w+|statement|comment\w+|reaction)\b/i },
+    { key: 'gen_development', title: 'Further developments reported', confirm: /\b(develop\w+|update\w+|continu\w+|latest)\b/i },
+    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w+|criticis\w+|criticiz\w+|praise\w+|backlash|condemn\w+)\b/i },
+  ],
+}
+
+async function generateMilestones(supabase: any, arcId: string, category: string, process: string) {
+  const templates = MILESTONE_TEMPLATES[category] ?? MILESTONE_TEMPLATES.unclassified
+  const rows = templates.slice(0, 6).map((t) => ({
+    arc_id: arcId,
+    title: t.title,
+    milestone_key: t.key,
+    status: 'pending',
+    notes: `Expected outcome for ${category} arc (${process}).`,
+  }))
+  await supabase.from('arc_milestones').insert(rows)
+}
+
+// Ingest-time milestone check: pending milestones change status only on
+// evidence from an ingested source.
+async function checkMilestones(supabase: any, arc: any, articleText: string, art: any): Promise<number> {
+  const { data: pending } = await supabase
+    .from('arc_milestones')
+    .select('id, title, milestone_key, status')
+    .eq('arc_id', arc.id)
+    .eq('status', 'pending')
+  let updated = 0
+  for (const ms of pending ?? []) {
+    const tpl = (MILESTONE_TEMPLATES[arc.category] ?? MILESTONE_TEMPLATES.unclassified).find(
+      (t) => t.key === ms.milestone_key,
+    )
+    if (!tpl) continue
+    let status: string | null = null
+    if (tpl.fail && tpl.fail.test(articleText)) status = 'failed'
+    else if (tpl.confirm.test(articleText)) status = 'confirmed'
+    if (!status) continue
+    await supabase
+      .from('arc_milestones')
+      .update({
+        status,
+        notes: `Evidence: "${art.title}" (${art.url ?? 'no url'})`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', ms.id)
+    updated++
+  }
+  return updated
+}
+
+// ---------- embeddings (unchanged: gte-small via Supabase.ai) ----------
 
 let aiSession: any = null
 function getSession(model: string) {
@@ -322,11 +810,13 @@ function cosine(a: number[], b: number[]): number {
 function parseVec(v: any): number[] | null {
   if (!v) return null
   if (Array.isArray(v)) return v as number[]
-  try {
-    return JSON.parse(v)
-  } catch {
+  try { return JSON.parse(v) } catch {
     return String(v).replace(/[\[\]]/g, '').split(',').map(Number)
   }
+}
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
 }
 
 function normalizeName(name: string): string {
@@ -335,7 +825,7 @@ function normalizeName(name: string): string {
 
 async function resolveAuthor(supabase: any, byline: string | null, outletId: string) {
   if (!byline) return { authorId: null, unattributed: true, isNew: false }
-  const clean = stripHtml(byline).replace(/^(by|By)\s+/, '').slice(0, 120)
+  const clean = sanitize(byline).text.replace(/^(by|By)\s+/, '').slice(0, 120)
   const norm = normalizeName(clean)
   if (!norm || norm.length < 3) return { authorId: null, unattributed: true, isNew: false }
   const { data: existing } = await supabase.from('authors').select('id, outlet_ids').eq('normalized_name', norm).maybeSingle()
@@ -360,6 +850,432 @@ function resolveNodeId(citedEntity: string, nodeLabels: Array<{ id: string; labe
   return null
 }
 
+// ---------- Steps 6-8: actor nodes/edges, edge signal columns, topics ----------
+
+interface ActorRef {
+  id: string
+  canonical_name: string
+  entity_type: string
+}
+
+// Step 6 (§4): one ACTOR node per resolved entity, backlinked via
+// metadata.entity_id. Idempotent.
+async function ensureActorNode(supabase: any, e: ActorRef): Promise<string | null> {
+  const slug = `actor-${normalizeEntityName(e.canonical_name)}`
+  const { data, error } = await supabase
+    .from('nodes')
+    .upsert(
+      { slug, label: e.canonical_name.slice(0, 160), type: 'actor', metadata: { entity_id: e.id, entity_type: e.entity_type } },
+      { onConflict: 'slug' },
+    )
+    .select('id')
+    .single()
+  if (error || !data) return null
+  return data.id
+}
+
+// Actor edges EVENT -> ACTOR for the article's own resolved entities.
+async function linkActorsToEventNode(supabase: any, nodeId: string, actors: ActorRef[], articleId: string) {
+  for (const e of actors) {
+    if (!['person', 'organization', 'institution'].includes(e.entity_type)) continue
+    const actorNodeId = await ensureActorNode(supabase, e)
+    if (!actorNodeId || actorNodeId === nodeId) continue
+    await supabase.from('edges').upsert(
+      {
+        source_id: nodeId,
+        target_id: actorNodeId,
+        type: 'actor',
+        label: 'involves',
+        weight: 'heavy',
+        signal_source: 'shared_entity',
+        doc_strength: 'corroborated',
+        claimed_by: 'reporting',
+        reliability: 2,
+        metadata: { entity_id: e.id, article_id: articleId },
+      },
+      { onConflict: 'source_id,target_id,type' },
+    )
+  }
+}
+
+// Step 8 (§5): tag against the FIXED topic tree. Conservative keyword rubric;
+// below floor => untagged; topics are NEVER invented. A subtopic tag
+// propagates to its ancestors at the same confidence.
+const TOPIC_PARENT: Record<string, string | null> = {
+  technology: null,
+  ai: 'technology',
+  'ai-model-development': 'ai',
+  'ai-regulation': 'ai',
+  'ai-infrastructure': 'ai',
+  semiconductors: 'technology',
+  'semiconductors-fabrication': 'semiconductors',
+  'semiconductors-export-controls': 'semiconductors',
+  'semiconductors-supply-chain': 'semiconductors',
+  'quantum-computing': 'technology',
+  'data-centers': 'technology',
+  'data-centers-siting': 'data-centers',
+  'data-centers-energy': 'data-centers',
+  'data-centers-water': 'data-centers',
+  telecommunications: 'technology',
+  governance: null,
+  'governance-legislation': 'governance',
+  'governance-regulatory-action': 'governance',
+  'governance-judicial': 'governance',
+  'governance-executive-action': 'governance',
+  'security-defense': null,
+  'energy-environment': null,
+  'labor-economy': null,
+  'public-health': null,
+  'civil-liberties': null,
+}
+
+const TOPIC_RULES: Array<{ slug: string; weight: number; re: RegExp }> = [
+  { slug: 'ai-model-development', weight: 0.45, re: /\b(large language model|llm\b|frontier model|model (release|launch|training)|gpt-?\w*)\b/i },
+  { slug: 'ai-regulation', weight: 0.45, re: /\b(ai (act|regulation|rules|bill|safety|governance)|artificial intelligence (regulation|bill|rules|safety))\b/i },
+  { slug: 'ai-infrastructure', weight: 0.45, re: /\b(ai (infrastructure|compute|chips?|accelerators?))\b/i },
+  { slug: 'ai', weight: 0.3, re: /\b(artificial intelligence|openai|anthropic|deepmind|machine learning)\b/i },
+  { slug: 'semiconductors-fabrication', weight: 0.45, re: /\b(fabs?\b|foundry|tsmc|chip (plant|manufacturing|fab))\b/i },
+  { slug: 'semiconductors-export-controls', weight: 0.45, re: /\b(export controls?|entity list|chip exports?)\b/i },
+  { slug: 'semiconductors-supply-chain', weight: 0.45, re: /\b(chip supply|semiconductor supply|supply chains?)\b/i },
+  { slug: 'semiconductors', weight: 0.3, re: /\bsemiconductors?\b/i },
+  { slug: 'quantum-computing', weight: 0.45, re: /\bquantum (comput\w+|processor|supremacy)\b/i },
+  { slug: 'data-centers-siting', weight: 0.45, re: /\bdata cent(er|re)\w*[\s\S]{0,40}(siting|permit\w*|zoning|construction)\b/i },
+  { slug: 'data-centers-energy', weight: 0.45, re: /\bdata cent(er|re)\w*[\s\S]{0,40}(energy|power|electricity)\b/i },
+  { slug: 'data-centers-water', weight: 0.45, re: /\bdata cent(er|re)\w*[\s\S]{0,40}water\b/i },
+  { slug: 'data-centers', weight: 0.3, re: /\bdata cent(er|re)\w*\b/i },
+  { slug: 'telecommunications', weight: 0.45, re: /\b(5g|6g|telecom\w*|broadband|spectrum auction)\b/i },
+  { slug: 'technology', weight: 0.25, re: /\b(algorithm\w*|software|cyberattack\w*|app\b|platform\w*)\b/i },
+  { slug: 'governance-legislation', weight: 0.45, re: /\b(bill|legislation|act passed|house passes|senate (vote|passes)|parliament|amendment)\b/i },
+  { slug: 'governance-regulatory-action', weight: 0.45, re: /\b(regulator\w*|regulation|ban\w*|rules out|ftc|sec\b|fcc|ofcom|statutory)\b/i },
+  { slug: 'governance-judicial', weight: 0.45, re: /\b(supreme court|court rules|ruling|verdict|judge|appeal|judgment)\b/i },
+  { slug: 'governance-executive-action', weight: 0.45, re: /\b(executive order|white house|downing street|president (signed|ordered)|administration)\b/i },
+  { slug: 'governance', weight: 0.25, re: /\b(government|minister|ministry|congress|senate)\b/i },
+  { slug: 'security-defense', weight: 0.45, re: /\b(military|missile\w*|troops|defen[cs]e|nato|airstrike\w*|drone strike|\bwar\b|ceasefire|hostages?|sanction\w*|militia)\b/i },
+  { slug: 'energy-environment', weight: 0.45, re: /\b(renewable\w*|solar|wind farm|nuclear|carbon|emission\w*|climate|flood\w*|wildfire\w*|hurricane|storm)\b/i },
+  { slug: 'energy-environment', weight: 0.3, re: /\b(oil|gas prices?|energy)\b/i },
+  { slug: 'labor-economy', weight: 0.45, re: /\b(inflation|tariff\w*|trade (deal|war|dispute)|recession|budget|gdp|interest rate\w*|federal reserve|jobs report|wages?|strike\w*|union\w*)\b/i },
+  { slug: 'labor-economy', weight: 0.3, re: /\b(econom\w+|markets?|stocks?|shares)\b/i },
+  { slug: 'public-health', weight: 0.45, re: /\b(hospital\w*|vaccin\w*|pandemic|disease|virus|cdc\b|who\b|public health|medical)\b/i },
+  { slug: 'civil-liberties', weight: 0.45, re: /\b(civil libert\w+|free speech|privacy|protest\w*|dissent|censorship|surveillance|press freedom)\b/i },
+]
+
+function tagTopics(text: string, floor: number): Array<{ slug: string; confidence: number }> {
+  const conf = new Map<string, number>()
+  for (const { slug, weight, re } of TOPIC_RULES) {
+    if (re.test(text)) conf.set(slug, Math.min(1, (conf.get(slug) ?? 0) + weight))
+  }
+  for (const [slug, c] of [...conf]) {
+    let p = TOPIC_PARENT[slug]
+    while (p) {
+      conf.set(p, Math.max(conf.get(p) ?? 0, c))
+      p = TOPIC_PARENT[p] ?? null
+    }
+  }
+  return [...conf].filter(([, c]) => c >= floor).map(([slug, confidence]) => ({ slug, confidence }))
+}
+
+let topicIdCache: Map<string, string> | null = null
+async function loadTopicIds(supabase: any): Promise<Map<string, string>> {
+  if (topicIdCache) return topicIdCache
+  const { data } = await supabase.from('topics').select('id, slug')
+  topicIdCache = new Map((data ?? []).map((t: any) => [t.slug, t.id]))
+  return topicIdCache
+}
+
+async function tagNodeTopics(supabase: any, nodeId: string, text: string, floor: number): Promise<number> {
+  const tags = tagTopics(text, floor)
+  if (tags.length === 0) return 0
+  const ids = await loadTopicIds(supabase)
+  const rows = tags
+    .map((t) => ({ node_id: nodeId, topic_id: ids.get(t.slug), confidence: t.confidence }))
+    .filter((r) => r.topic_id)
+  if (rows.length === 0) return 0
+  await supabase.from('node_topics').upsert(rows, { onConflict: 'node_id,topic_id' })
+  return rows.length
+}
+
+// ---------- attachment & origination (entity-driven) ----------
+
+interface AttachContext {
+  sharedEntities: string[]
+  sharedEntityIds: string[]
+  similarity: number | null
+  causal: string | null
+  hasCitation: boolean
+  citationPrimary?: boolean // citation to a primary document (court filing / agency release)
+  actors?: ActorRef[] // the article's OWN resolved entities (conf >= floor)
+  topicFloor?: number
+}
+
+async function attachToArc(supabase: any, art: any, arc: any, ctx: AttachContext) {
+  await supabase.from('articles').update({ arc_id: arc.id }).eq('id', art.id)
+
+  const slug = `art-${slugify(art.title).slice(0, 40)}-${String(art.id).slice(0, 8)}`
+  const { data: node } = await supabase
+    .from('nodes')
+    .upsert(
+      {
+        slug,
+        label: art.title.slice(0, 120),
+        type: 'event',
+        description: (art.summary ?? '').slice(0, 400),
+        confidence: 70,
+        occurred_at: art.published_at ? String(art.published_at).slice(0, 10) : null,
+        arc_id: arc.id,
+        metadata: { article_id: art.id },
+      },
+      { onConflict: 'slug' },
+    )
+    .select('id')
+    .single()
+
+  if (node) {
+    await supabase.from('sources').insert({
+      node_id: node.id,
+      outlet: art.outlet ?? null,
+      headline: art.title.slice(0, 200),
+      url: art.url ?? null,
+      published_at: art.published_at ? String(art.published_at).slice(0, 10) : null,
+    })
+    // Step 6: actor nodes + actor edges for this article's resolved entities
+    if (ctx.actors && ctx.actors.length > 0) {
+      await linkActorsToEventNode(supabase, node.id, ctx.actors, art.id)
+    }
+    // Step 8: topic tagging against the fixed tree
+    await tagNodeTopics(supabase, node.id, `${art.title}. ${art.summary ?? ''}`, ctx.topicFloor ?? 0.4)
+  }
+
+  // Consequence rules (§2.2/§2.5): the shared resolved entity is already
+  // established; an arc_event + edge additionally requires explicit causal
+  // language in the source text or an explicit citation. Date proximity is
+  // NOT a signal.
+  const signalSource = ctx.causal ? 'shared_entity+causal_language' : ctx.hasCitation ? 'shared_entity+citation' : null
+  if (signalSource && node && arc.root_node_id) {
+    // Step 7 (§4/§3.4): ranked signal reliability at edge-creation time.
+    // citation=1 only for a citation to a primary document, else 2;
+    // causal_language=3; 4/topic_actor_temporal and 5/date-proximity never stored.
+    const reliability = ctx.causal ? 3 : ctx.citationPrimary ? 1 : 2
+    const docStrength = ctx.causal ? 'corroborated' : ctx.citationPrimary ? 'documented' : 'corroborated'
+    const claimedBy = !ctx.causal && ctx.citationPrimary ? 'source_document' : 'reporting'
+    await supabase.from('arc_events').insert({
+      arc_id: arc.id,
+      title: art.title.slice(0, 200),
+      category: ARC_EVENT_CATEGORY[arc.category] ?? 'accountability',
+      confidence: !ctx.causal && ctx.citationPrimary ? 'confirmed' : 'corroborated',
+      occurred_at: art.published_at ? String(art.published_at).slice(0, 10) : null,
+      description: (art.summary ?? '').slice(0, 400),
+    })
+    await supabase.from('edges').upsert(
+      {
+        source_id: arc.root_node_id,
+        target_id: node.id,
+        type: 'causal',
+        weight: reliability <= 2 ? 'heavy' : reliability === 3 ? 'medium' : 'light',
+        label: ctx.causal ? `causal: ${ctx.causal}` : 'cited development in arc',
+        similarity: ctx.similarity,
+        signal_source: ctx.causal ? 'causal_language' : 'citation',
+        doc_strength: docStrength,
+        claimed_by: claimedBy,
+        reliability,
+        metadata: {
+          signal_source: signalSource, // legacy mirror for pre-Step-7 readers
+          shared_entities: ctx.sharedEntities,
+          evidence: ctx.causal ?? 'explicit citation in article',
+        },
+      },
+      { onConflict: 'source_id,target_id,type' },
+    )
+  }
+  await supabase.from('story_arcs').update({ last_update_at: new Date().toISOString() }).eq('id', arc.id)
+}
+
+// Embedding similarity only SHORTLISTS/ranks candidates that already share a
+// resolved entity. No shared entity => no attachment, whatever the cosine.
+async function findArcBySharedEntity(
+  supabase: any,
+  entityIds: string[],
+  embedding: number[] | null,
+): Promise<{ arc: any; sharedEntityIds: string[]; sharedNames: string[]; similarity: number | null } | null> {
+  if (entityIds.length === 0) return null
+  const { data, error } = await supabase
+    .from('arc_entities')
+    .select('arc_id, entity_id, story_arcs!inner(id, slug, title, category, summary, status, root_node_id, embedding, title_article_count), entities!inner(canonical_name)')
+    .in('entity_id', entityIds)
+    .eq('story_arcs.status', 'active')
+  if (error || !data || data.length === 0) return null
+  const byArc = new Map<string, { arc: any; sharedEntityIds: string[]; sharedNames: string[] }>()
+  for (const row of data) {
+    const cur = byArc.get(row.arc_id) ?? { arc: (row as any).story_arcs, sharedEntityIds: [], sharedNames: [] }
+    cur.sharedEntityIds.push(row.entity_id)
+    cur.sharedNames.push((row as any).entities.canonical_name)
+    byArc.set(row.arc_id, cur)
+  }
+  let best: { arc: any; sharedEntityIds: string[]; sharedNames: string[]; similarity: number | null } | null = null
+  for (const cand of byArc.values()) {
+    let sim: number | null = null
+    if (embedding) {
+      const vec = parseVec(cand.arc.embedding)
+      if (vec) sim = cosine(embedding, vec)
+    }
+    const entry = { ...cand, similarity: sim }
+    if (
+      !best ||
+      entry.sharedEntityIds.length > best.sharedEntityIds.length ||
+      (entry.sharedEntityIds.length === best.sharedEntityIds.length && (entry.similarity ?? 0) > (best.similarity ?? 0))
+    ) {
+      best = entry
+    }
+  }
+  return best
+}
+
+async function maybeRetitleArc(supabase: any, arc: any, catFloor: number): Promise<boolean> {
+  const { count } = await supabase
+    .from('articles')
+    .select('id', { count: 'exact', head: true })
+    .eq('arc_id', arc.id)
+  const n = count ?? 0
+  const last = arc.title_article_count ?? 0
+  if (n === 0 || (last > 0 && n < Math.max(last * 2, last + 5))) return false
+
+  const { data: primary } = await supabase
+    .from('arc_entities')
+    .select('entities!inner(canonical_name)')
+    .eq('arc_id', arc.id)
+    .eq('role', 'primary')
+    .limit(1)
+  const actorName = (primary?.[0] as any)?.entities?.canonical_name ?? null
+
+  const { data: arts } = await supabase
+    .from('articles')
+    .select('title, summary')
+    .eq('arc_id', arc.id)
+    .order('published_at', { ascending: true })
+    .limit(10)
+  const text = (arts ?? []).map((a: any) => `${a.title}. ${a.summary ?? ''}`).join(' ')
+  const process = findProcess(text)
+  const title = makeArcTitle(actorName, process)
+  const cls = applyFloor(classifyArc(text), catFloor)
+  const update: any = { title_article_count: n }
+  if (title) update.title = title // no process => keep existing title, never 'developments'
+  if (arc.category === 'unclassified' && cls.category !== 'unclassified') {
+    update.category = cls.category
+    update.category_confidence = cls.confidence
+    update.category_evidence = cls.evidence
+  }
+  await supabase.from('story_arcs').update(update).eq('id', arc.id)
+  if (title) arc.title = title
+  arc.title_article_count = n
+  return true
+}
+
+async function originateArc(
+  supabase: any,
+  art: any,
+  embedding: number[] | null,
+  actorName: string,
+  process: string,
+  catFloor: number,
+  clusterSize: number,
+  clusterEntities: ResolvedEntity[],
+  clusterText: string,
+) {
+  const cls = applyFloor(classifyArc(clusterText), catFloor)
+  const title = makeArcTitle(actorName, process)
+  if (!title) return null // never originate without an identifiable process
+  const slug = `arc-${slugify(title).slice(0, 40)}-${String(art.id).slice(0, 8)}`
+
+  const { data: rootNode } = await supabase
+    .from('nodes')
+    .insert({
+      slug: `evt-${slugify(art.title).slice(0, 40)}-${String(art.id).slice(0, 8)}`,
+      label: art.title.slice(0, 120),
+      type: 'event',
+      description: (art.summary ?? '').slice(0, 400),
+      confidence: 65,
+      summary: (art.summary ?? '').slice(0, 400),
+      occurred_at: art.published_at ? String(art.published_at).slice(0, 10) : null,
+    })
+    .select('id')
+    .single()
+
+  const { data: arc } = await supabase
+    .from('story_arcs')
+    .insert({
+      slug,
+      title,
+      category: cls.category,
+      category_confidence: cls.confidence,
+      category_evidence: cls.evidence,
+      seed_article_id: art.id,
+      title_article_count: clusterSize,
+      status: 'active',
+      root_node_id: rootNode?.id ?? null,
+      summary: (art.summary ?? '').slice(0, 500),
+      started_at: art.published_at ? String(art.published_at).slice(0, 10) : null,
+      embedding: embedding ? `[${embedding.join(',')}]` : null,
+      last_assignment_run: new Date().toISOString(),
+    })
+    .select('id, slug, title, category, summary, status, root_node_id, title_article_count')
+    .single()
+  if (!arc) return null
+
+  const seen = new Set<string>()
+  const rows: any[] = []
+  for (const e of clusterEntities) {
+    if (seen.has(e.id)) continue
+    seen.add(e.id)
+    rows.push({ arc_id: arc.id, entity_id: e.id, role: e.canonical_name === actorName ? 'primary' : 'participant' })
+  }
+  if (rows.length > 0) await supabase.from('arc_entities').upsert(rows, { onConflict: 'arc_id,entity_id' })
+
+  // Step 4: expected outcomes at origination.
+  await generateMilestones(supabase, arc.id, cls.category, process)
+  return arc
+}
+
+// Union-find over articles sharing resolved entities.
+function clusterBySharedEntities(items: Array<{ id: string; entityIds: string[] }>): string[][] {
+  const parent = new Map<string, string>()
+  const find = (x: string): string => {
+    let r = x
+    while (parent.get(r) !== r) r = parent.get(r)!
+    let cur = x
+    while (parent.get(cur) !== cur) {
+      const next = parent.get(cur)!
+      parent.set(cur, r)
+      cur = next
+    }
+    return r
+  }
+  for (const it of items) parent.set(it.id, it.id)
+  const byEntity = new Map<string, string[]>()
+  for (const it of items) {
+    for (const e of it.entityIds) {
+      const arr = byEntity.get(e) ?? []
+      arr.push(it.id)
+      byEntity.set(e, arr)
+    }
+  }
+  for (const ids of byEntity.values()) {
+    for (let i = 1; i < ids.length; i++) {
+      const ra = find(ids[0])
+      const rb = find(ids[i])
+      if (ra !== rb) parent.set(rb, ra)
+    }
+  }
+  const comps = new Map<string, string[]>()
+  for (const it of items) {
+    const r = find(it.id)
+    const arr = comps.get(r) ?? []
+    arr.push(it.id)
+    comps.set(r, arr)
+  }
+  return [...comps.values()]
+}
+
+// ---------------------------------------------------------------------------
+
 Deno.serve(async () => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -369,17 +1285,8 @@ Deno.serve(async () => {
   const supabase = createClient(supabaseUrl, serviceKey)
   const cfg = await loadConfig(supabase)
 
-  // Attachment threshold.
-  const ATTACH_THRESHOLD = Number(cfg.attach_threshold ?? 0.88)
-  // A1 origination gate thresholds.
-  const SIG_SIMILARITY = Number(cfg.significance_similarity ?? 0.72)
-  const ORIG_MIN_OUTLETS = Number(cfg.originate_min_outlets ?? 3)
-  const ORIG_WINDOW_HOURS = Number(cfg.originate_window_hours ?? 72)
-  const ORIG_MIN_EDGES = Number(cfg.originate_min_edges ?? 4)
-  const ORIG_REQUIRE_ACTOR = String(cfg.originate_require_actor ?? true) !== 'false'
-  // A2 classification floor.
-  const CAT_FLOOR = Number(cfg.category_confidence_floor ?? 0.6)
-
+  const CAT_FLOOR = Number(cfg.category_confidence_floor ?? 0.35)
+  const TOPIC_FLOOR = Number(cfg.topic_confidence_floor ?? 0.4)
   const DOC_WEIGHTS = cfg.doc_strength_weights ?? {}
   const EMBED_MODEL = String(cfg.embedding_model ?? 'gte-small')
   const LOOKBACK_DAYS = Number(cfg.lookback_days ?? 30)
@@ -388,9 +1295,17 @@ Deno.serve(async () => {
   const AUTHOR_REFRESH_DAYS = Number(cfg.author_refresh_days ?? 90)
   const MAX_PER_FEED = Number(cfg.max_items_per_feed ?? 4)
   const MAX_NEW_PER_RUN = Number(cfg.max_new_per_run ?? 8)
+  const ENT_MIN_CONF = Number(cfg.entity_resolve_min_confidence ?? 0.5)
+  const DIGEST_ENTITY_COUNT = Number(cfg.digest_entity_count ?? 8)
   const PRIOR_POOL_LIMIT = 60
 
   const cutoff = new Date(Date.now() - LOOKBACK_DAYS * 86400000)
+
+  const resolver = new EntityResolver(cfg)
+  await resolver.load(supabase)
+
+  const { data: outletRows } = await supabase.from('outlets').select('id, name')
+  const outletNames = new Set<string>((outletRows ?? []).map((o: any) => normalizeEntityName(o.name)))
 
   const { data: sources, error: srcErr } = await supabase
     .from('ingest_sources')
@@ -406,13 +1321,9 @@ Deno.serve(async () => {
   const report: any = {
     ranAt: new Date().toISOString(),
     thresholds: {
-      attach_threshold: ATTACH_THRESHOLD,
-      significance_similarity: SIG_SIMILARITY,
-      originate_min_outlets: ORIG_MIN_OUTLETS,
-      originate_window_hours: ORIG_WINDOW_HOURS,
-      originate_min_edges: ORIG_MIN_EDGES,
-      originate_require_actor: ORIG_REQUIRE_ACTOR,
       category_confidence_floor: CAT_FLOOR,
+      entity_resolve_min_confidence: ENT_MIN_CONF,
+      digest_entity_count: DIGEST_ENTITY_COUNT,
       embedding_model: EMBED_MODEL,
       lookback_days: LOOKBACK_DAYS,
       max_items_per_feed: MAX_PER_FEED,
@@ -421,18 +1332,30 @@ Deno.serve(async () => {
     feeds: [] as any[],
     ingested: 0,
     skippedExisting: 0,
+    digests: 0,
     attached: 0,
     arcsOriginated: 0,
-    gateRejected: 0,
     unattached: 0,
     arcsRetitled: 0,
+    entitiesResolved: 0,
+    milestonesCreated: 0,
+    milestonesUpdated: 0,
     monocultureFlags: 0,
     authorsProfiled: 0,
     citationsResolvedToNodes: 0,
     errors: [] as string[],
   }
 
-  const cycleArticles: Array<{ id: string; outletKey: string; embedding: number[]; citationCount: number }> = []
+  const cycleArticles: Array<{
+    id: string
+    outletKey: string
+    embedding: number[]
+    citationCount: number
+    citationPrimary: boolean
+    entityIds: string[]
+    entities: ResolvedEntity[]
+    art: any
+  }> = []
 
   // ---------- Phase 1: new items from feeds ----------
   for (const src of sources ?? []) {
@@ -441,7 +1364,7 @@ Deno.serve(async () => {
     const feedReport: any = { outlet: outlet?.name, feed: src.feed_url, fetched: 0, new: 0 }
     try {
       const res = await fetch(src.feed_url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MIP-Pipeline/5.0)', Accept: 'application/rss+xml, application/xml, text/xml, */*' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MIP-Pipeline/6.0)', Accept: 'application/rss+xml, application/xml, text/xml, */*' },
         signal: AbortSignal.timeout(20000),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -460,6 +1383,8 @@ Deno.serve(async () => {
           continue
         }
 
+        // Sanitized already (Step 1, at the boundary). Everything downstream
+        // consumes clean text only.
         const { authorId, unattributed } = await resolveAuthor(supabase, item.byline, outlet.id)
         const bodyText = item.summary ?? ''
         const analysisText = `${item.title}. ${bodyText}`
@@ -482,18 +1407,45 @@ Deno.serve(async () => {
             embedding: `[${embedding.join(',')}]`,
             claims,
             unattributed,
+            image_url: item.image_url,
+            image_alt: item.image_alt,
           })
-          .select('id')
+          .select('id, outlet')
           .single()
         if (artErr) throw artErr
 
-        for (const c of citations) {
-          const resolved = resolveNodeId(c.cited_entity, nodeLabels)
-          if (resolved) report.citationsResolvedToNodes++
-          await supabase.from('citations').insert({ ...c, article_id: art.id, resolved_node_id: resolved })
+        // Step 2: entity extraction + resolution (logged always).
+        const resolved = await extractAndResolveEntities(supabase, resolver, art.id, analysisText, outletNames)
+        report.entitiesResolved += resolved.length
+        const strong = resolved.filter((r) => r.confidence >= ENT_MIN_CONF)
+        const strongIds = strong.map((r) => r.id)
+
+        // Step 3a: digest exclusion — stored, flagged, excluded downstream.
+        const orgPersonCount = strong.filter((r) => ['person', 'organization', 'institution'].includes(r.entity_type)).length
+        if (isDigest(item.title, orgPersonCount, DIGEST_ENTITY_COUNT)) {
+          await supabase.from('articles').update({ is_digest: true }).eq('id', art.id)
+          report.digests++
+          feedReport.new++
+          report.ingested++
+          continue
         }
 
-        cycleArticles.push({ id: art.id, outletKey: outlet.id, embedding, citationCount: citations.length })
+        for (const c of citations) {
+          const resolvedNode = resolveNodeId(c.cited_entity, nodeLabels)
+          if (resolvedNode) report.citationsResolvedToNodes++
+          await supabase.from('citations').insert({ ...c, article_id: art.id, resolved_node_id: resolvedNode })
+        }
+
+        cycleArticles.push({
+          id: art.id,
+          outletKey: outlet.id,
+          embedding,
+          citationCount: citations.length,
+          citationPrimary: citations.some((c) => ['court_doc', 'agency_release'].includes(c.cited_type)),
+          entityIds: strongIds,
+          entities: strong,
+          art: { id: art.id, title: item.title, summary: bodyText.slice(0, 500), published_at: item.published_at, url: item.url, outlet: outlet.name },
+        })
         feedReport.new++
         report.ingested++
       }
@@ -504,150 +1456,139 @@ Deno.serve(async () => {
     report.feeds.push(feedReport)
   }
 
-  // ---------- Phase 2: arc assignment over cycle + prior unattached pool ----------
-  const { data: arcs } = await supabase
-    .from('story_arcs')
-    .select('id, slug, title, category, summary, status, root_node_id, embedding, title_article_count')
-    .eq('status', 'active')
-
-  const arcVecs: Array<{ arc: any; vec: number[] }> = []
-  for (const arc of arcs ?? []) {
-    let vec = parseVec(arc.embedding)
-    if (!vec) {
-      vec = await embed(`${arc.title}. ${arc.summary ?? ''}`, EMBED_MODEL)
-      await supabase.from('story_arcs').update({ embedding: `[${vec.join(',')}]` }).eq('id', arc.id)
-    }
-    arcVecs.push({ arc, vec })
-  }
-
+  // ---------- Phase 2: entity-driven arc assignment ----------
   const cycleIds = new Set(cycleArticles.map((c) => c.id))
   const { data: priorUnattached } = await supabase
     .from('articles')
-    .select('id, outlet, outlet_id, embedding')
+    .select('id, title, summary, url, outlet, outlet_id, published_at, embedding, is_digest')
     .is('arc_id', null)
-    .not('embedding', 'is', null)
+    .eq('is_digest', false)
     .order('fetched_at', { ascending: false })
     .limit(PRIOR_POOL_LIMIT)
 
-  const pool: Array<{ id: string; outletKey: string; embedding: number[]; citationCount: number }> = [...cycleArticles]
+  const pool = [...cycleArticles]
   for (const p of priorUnattached ?? []) {
     if (cycleIds.has(p.id)) continue
-    const vec = parseVec(p.embedding)
-    if (!vec) continue
-    pool.push({ id: p.id, outletKey: p.outlet_id ?? p.outlet ?? 'unknown', embedding: vec, citationCount: 0 })
+    const { data: ae } = await supabase.from('article_entities').select('entity_id, confidence').eq('article_id', p.id)
+    let entityIds = (ae ?? []).filter((r: any) => r.confidence >= ENT_MIN_CONF).map((r: any) => r.entity_id)
+    let entities: ResolvedEntity[] = []
+    if ((ae ?? []).length === 0) {
+      const text = `${p.title}. ${p.summary ?? ''}`
+      const resolved = await extractAndResolveEntities(supabase, resolver, p.id, text, outletNames)
+      entities = resolved.filter((r) => r.confidence >= ENT_MIN_CONF)
+      entityIds = entities.map((r) => r.id)
+    }
+    pool.push({
+      id: p.id,
+      outletKey: p.outlet_id ?? p.outlet ?? 'unknown',
+      embedding: parseVec(p.embedding) ?? [],
+      citationCount: 0,
+      citationPrimary: false,
+      entityIds,
+      entities,
+      art: p,
+    })
   }
   report.poolSize = pool.length
 
-  const poolIds = pool.map((p) => p.id)
-  const citCountByArticle = new Map<string, number>()
-  if (poolIds.length > 0) {
-    const { data: citRows } = await supabase.from('citations').select('article_id').in('article_id', poolIds)
-    for (const c of citRows ?? []) {
-      citCountByArticle.set(c.article_id, (citCountByArticle.get(c.article_id) ?? 0) + 1)
-    }
-  }
-
-  const artById = new Map<string, any>()
-  if (poolIds.length > 0) {
-    const { data: artRows } = await supabase
-      .from('articles')
-      .select('id, title, summary, published_at, url, arc_id')
-      .in('id', poolIds)
-    for (const a of artRows ?? []) artById.set(a.id, a)
-  }
-
-  const unattachedPool: Array<{ id: string; outletKey: string; embedding: number[]; citationCount: number; art: any }> = []
+  const unattachedPool: typeof pool = []
 
   for (const ca of pool) {
-    const art = artById.get(ca.id)
-    if (!art || art.arc_id) continue
-    ca.citationCount = citCountByArticle.get(ca.id) ?? ca.citationCount
-
-    let best: { arc: any; score: number } | null = null
-    for (const { arc, vec } of arcVecs) {
-      const score = cosine(ca.embedding, vec)
-      if (!best || score > best.score) best = { arc, score }
+    if (ca.entityIds.length === 0) {
+      // No resolved entity: valid terminal state — stays in the feed.
+      unattachedPool.push(ca)
+      continue
     }
-
-    if (best && best.score >= ATTACH_THRESHOLD) {
-      await attachToArc(supabase, art, best.arc)
+    const hit = await findArcBySharedEntity(supabase, ca.entityIds, ca.embedding.length ? ca.embedding : null)
+    if (hit) {
+      const text = `${ca.art.title}. ${ca.art.summary ?? ''}`
+      await attachToArc(supabase, ca.art, hit.arc, {
+        sharedEntities: hit.sharedNames,
+        sharedEntityIds: hit.sharedEntityIds,
+        similarity: hit.similarity,
+        causal: causalEvidence(text),
+        hasCitation: ca.citationCount > 0,
+        citationPrimary: ca.citationPrimary,
+        actors: ca.entities,
+        topicFloor: TOPIC_FLOOR,
+      })
       report.attached++
-      const retitled = await maybeRetitleArc(supabase, best.arc, CAT_FLOOR)
+      report.milestonesUpdated += await checkMilestones(supabase, hit.arc, text, ca.art)
+      const retitled = await maybeRetitleArc(supabase, hit.arc, CAT_FLOOR)
       if (retitled) report.arcsRetitled++
     } else {
-      unattachedPool.push({ ...ca, art })
+      unattachedPool.push(ca)
     }
   }
 
-  // ---------- A1 origination: hard significance gate ----------
-  // (a) >= ORIG_MIN_OUTLETS distinct outlets within ORIG_WINDOW_HOURS,
-  // (b) >= ORIG_MIN_EDGES extracted graph edges across the cluster,
-  // (c) at least one named institution or public official actor.
-  // Failing the gate is a VALID terminal state: articles stay unattached.
-  const used = new Set<string>()
-  for (let i = 0; i < unattachedPool.length; i++) {
-    const a = unattachedPool[i]
-    if (used.has(a.id)) continue
-    const cluster = [a]
-    const outlets = new Set([a.outletKey])
-    for (let j = i + 1; j < unattachedPool.length; j++) {
-      const b = unattachedPool[j]
-      if (used.has(b.id)) continue
-      if (cosine(a.embedding, b.embedding) >= SIG_SIMILARITY) {
-        cluster.push(b)
-        outlets.add(b.outletKey)
-        used.add(b.id)
-      }
+  // ---------- Step 2 origination: cluster unattached by shared entities ----------
+  const components = clusterBySharedEntities(
+    unattachedPool.filter((c) => c.entityIds.length > 0).map((c) => ({ id: c.id, entityIds: c.entityIds })),
+  )
+  const byId = new Map(unattachedPool.map((c) => [c.id, c]))
+  for (const comp of components) {
+    const members = comp.map((id) => byId.get(id)!)
+    if (members.length < 2) {
+      report.unattached += members.length
+      continue
     }
-    used.add(a.id)
-
-    // Gate (a): cross-outlet coverage inside the origination window.
-    const times = cluster
-      .map((m) => (m.art.published_at ? new Date(m.art.published_at).getTime() : null))
-      .filter((t): t is number => t !== null)
-    const windowOk =
-      times.length === 0 || (Math.max(...times) - Math.min(...times)) / 3600000 <= ORIG_WINDOW_HOURS
-    const outletsOk = outlets.size >= ORIG_MIN_OUTLETS && windowOk
-
-    // Gates (b) + (c): extracted edges and named actors across the cluster.
-    let edgeCount = 0
-    const actors: Actor[] = []
-    const seenActors = new Set<string>()
-    for (const m of cluster) {
-      const text = `${m.art.title}. ${m.art.summary ?? ''}`
-      const mActors = extractActors(text)
-      edgeCount += countExtractedEdges(text, citCountByArticle.get(m.id) ?? m.citationCount, mActors.length)
-      for (const act of mActors) {
-        const key = act.name.toLowerCase()
-        if (!seenActors.has(key)) {
-          seenActors.add(key)
-          actors.push(act)
-        }
-      }
+    // Origination gate: >= 1 entity resolved at/above threshold (guaranteed
+    // by pool construction) AND an identifiable process AND a named actor.
+    const clusterText = members.map((m) => `${m.art.title}. ${m.art.summary ?? ''}`).join(' ')
+    const process = findProcess(clusterText)
+    const allEntities = members.flatMap((m) => m.entities)
+    const actor =
+      allEntities.find((e) => e.entity_type === 'institution') ??
+      allEntities.find((e) => e.entity_type === 'person') ??
+      allEntities[0]
+    if (!process || !actor) {
+      // No identifiable process => NO arc (never a 'developments' placeholder).
+      report.unattached += members.length
+      continue
     }
-    const edgesOk = edgeCount >= ORIG_MIN_EDGES
-    const actorOk = !ORIG_REQUIRE_ACTOR || actors.length > 0
-
-    if (outletsOk && edgesOk && actorOk) {
-      const arc = await originateArc(supabase, a.art, a.embedding, actors, CAT_FLOOR, cluster.length)
-      arcVecs.push({ arc, vec: a.embedding })
-      report.arcsOriginated++
-      for (const member of cluster) {
-        await attachToArc(supabase, member.art, arc)
-        report.attached++
-      }
-    } else {
-      report.gateRejected++
-      report.unattached += cluster.length
+    members.sort((a, b) => String(a.art.published_at ?? '').localeCompare(String(b.art.published_at ?? '')))
+    const seed = members[0]
+    const arc = await originateArc(
+      supabase,
+      seed.art,
+      seed.embedding.length ? seed.embedding : null,
+      actor.canonical_name,
+      process,
+      CAT_FLOOR,
+      members.length,
+      allEntities,
+      clusterText,
+    )
+    if (!arc) {
+      report.unattached += members.length
+      continue
+    }
+    report.arcsOriginated++
+    report.milestonesCreated += (MILESTONE_TEMPLATES[arc.category] ?? MILESTONE_TEMPLATES.unclassified).length
+    for (const member of members) {
+      const text = `${member.art.title}. ${member.art.summary ?? ''}`
+      await attachToArc(supabase, member.art, arc, {
+        sharedEntities: allEntities.map((e) => e.canonical_name),
+        sharedEntityIds: allEntities.map((e) => e.id),
+        similarity: null,
+        causal: causalEvidence(text),
+        hasCitation: member.citationCount > 0,
+        citationPrimary: member.citationPrimary,
+        actors: member.entities,
+        topicFloor: TOPIC_FLOOR,
+      })
+      report.attached++
+      report.milestonesUpdated += await checkMilestones(supabase, arc, text, member.art)
     }
   }
+  report.unattached += unattachedPool.filter((c) => c.entityIds.length === 0).length
 
   await supabase
     .from('story_arcs')
     .update({ last_assignment_run: new Date().toISOString() })
     .eq('status', 'active')
 
-  // ---------- Phase 3: monoculture flags ----------
+  // ---------- Phase 3: monoculture flags (unchanged) ----------
   const { data: citRows2 } = await supabase
     .from('citations')
     .select('cited_entity, article_id')
@@ -670,7 +1611,7 @@ Deno.serve(async () => {
     report.monocultureFlags += flagged?.length ?? 0
   }
 
-  // ---------- Phase 4: author profiling ----------
+  // ---------- Phase 4: author profiling (unchanged) ----------
   const refreshCutoff = new Date(Date.now() - AUTHOR_REFRESH_DAYS * 86400000).toISOString()
   const { data: queue } = await supabase
     .from('author_profile_queue')
@@ -728,130 +1669,3 @@ Deno.serve(async () => {
 
   return Response.json({ ok: true, ...report })
 })
-
-async function attachToArc(supabase: any, art: any, arc: any) {
-  await supabase.from('articles').update({ arc_id: arc.id }).eq('id', art.id)
-
-  const slug = `art-${slugify(art.title).slice(0, 40)}-${art.id.slice(0, 8)}`
-  const { data: node } = await supabase
-    .from('nodes')
-    .upsert(
-      {
-        slug,
-        label: art.title.slice(0, 120),
-        type: 'event',
-        description: (art.summary ?? '').slice(0, 400),
-        confidence: 70,
-        occurred_at: art.published_at ? String(art.published_at).slice(0, 10) : null,
-      },
-      { onConflict: 'slug' },
-    )
-    .select('id')
-    .single()
-
-  await supabase.from('arc_events').insert({
-    arc_id: arc.id,
-    title: art.title.slice(0, 200),
-    category: ARC_EVENT_CATEGORY[arc.category] ?? 'accountability',
-    confidence: 'corroborated',
-    occurred_at: art.published_at ? String(art.published_at).slice(0, 10) : null,
-    description: (art.summary ?? '').slice(0, 400),
-  })
-
-  if (node && arc.root_node_id) {
-    await supabase.from('edges').upsert(
-      {
-        source_id: arc.root_node_id,
-        target_id: node.id,
-        type: 'causal',
-        weight: 'light',
-        label: 'development in arc',
-      },
-      { onConflict: 'source_id,target_id,type' },
-    )
-  }
-  await supabase.from('story_arcs').update({ last_update_at: new Date().toISOString() }).eq('id', arc.id)
-}
-
-// A3: retitle when the arc's node cluster shifts MATERIALLY — not per article.
-// Material = attached-article count has doubled (or grown by >= 5) since the
-// title was last generated.
-async function maybeRetitleArc(supabase: any, arc: any, catFloor: number): Promise<boolean> {
-  const { count } = await supabase
-    .from('articles')
-    .select('id', { count: 'exact', head: true })
-    .eq('arc_id', arc.id)
-  const n = count ?? 0
-  const last = arc.title_article_count ?? 0
-  if (n === 0 || (last > 0 && n < Math.max(last * 2, last + 5))) return false
-
-  const { data: arts } = await supabase
-    .from('articles')
-    .select('title, summary')
-    .eq('arc_id', arc.id)
-    .order('published_at', { ascending: true })
-    .limit(10)
-  const text = (arts ?? []).map((a: any) => `${a.title}. ${a.summary ?? ''}`).join(' ')
-  const actors = extractActors(text)
-  const title = makeArcTitle(text, actors)
-  const cls = classifyArc(text, catFloor)
-  const update: any = { title, title_article_count: n }
-  if (arc.category === 'unclassified' && cls.category !== 'unclassified') {
-    update.category = cls.category
-    update.category_confidence = cls.confidence
-    update.category_evidence = cls.evidence
-  }
-  await supabase.from('story_arcs').update(update).eq('id', arc.id)
-  arc.title = title
-  arc.title_article_count = n
-  return true
-}
-
-async function originateArc(
-  supabase: any,
-  art: any,
-  embedding: number[],
-  actors: Actor[],
-  catFloor: number,
-  clusterSize: number,
-) {
-  const text = `${art.title}. ${art.summary ?? ''}`
-  const cls = classifyArc(text, catFloor)
-  const title = makeArcTitle(text, actors)
-  const slug = `arc-${slugify(title).slice(0, 40)}-${art.id.slice(0, 8)}`
-
-  const { data: rootNode } = await supabase
-    .from('nodes')
-    .insert({
-      slug: `evt-${slugify(art.title).slice(0, 40)}-${art.id.slice(0, 8)}`,
-      label: art.title.slice(0, 120),
-      type: 'event',
-      description: (art.summary ?? '').slice(0, 400),
-      confidence: 65,
-      summary: (art.summary ?? '').slice(0, 400),
-      occurred_at: art.published_at ? String(art.published_at).slice(0, 10) : null,
-    })
-    .select('id')
-    .single()
-
-  const { data: arc } = await supabase
-    .from('story_arcs')
-    .insert({
-      slug,
-      title,
-      category: cls.category,
-      category_confidence: cls.confidence,
-      category_evidence: cls.evidence,
-      seed_article_id: art.id,
-      title_article_count: clusterSize,
-      status: 'active',
-      root_node_id: rootNode?.id ?? null,
-      summary: (art.summary ?? '').slice(0, 500),
-      started_at: art.published_at ? String(art.published_at).slice(0, 10) : null,
-      embedding: `[${embedding.join(',')}]`,
-      last_assignment_run: new Date().toISOString(),
-    })
-    .select('id, slug, title, category, summary, status, root_node_id, title_article_count')
-    .single()
-  return arc
-}
