@@ -1,4 +1,11 @@
-import { NODE_TYPES, EDGE_TYPES, EDGE_WEIGHTS, cssToken, typeColor } from './theme'
+import {
+  NODE_TYPES,
+  EDGE_TYPES,
+  EDGE_WEIGHTS,
+  DEFAULT_NODE_SHAPE,
+  cssToken,
+  typeColor,
+} from './theme'
 
 // Encoding: node FILL color = story arc (distinct muted hue per arc_id),
 // node BORDER color + octagon shape = node type. Edges keep type/weight
@@ -33,6 +40,12 @@ function nodeColor(ele) {
   return meta ? typeColor(meta) : FALLBACK_NODE_COLOR
 }
 
+// Step 6 (§4): silhouette keyed off node type — events stay octagons,
+// actors round-rectangles, topics barrels, policies diamonds.
+function nodeShape(ele) {
+  return NODE_TYPES[ele.data('type')]?.shape ?? DEFAULT_NODE_SHAPE
+}
+
 function edgeColor(ele) {
   const meta = EDGE_TYPES[ele.data('type')]
   return meta ? typeColor(meta) : FALLBACK_EDGE_COLOR
@@ -42,11 +55,23 @@ function edgeWidth(ele) {
   return EDGE_WEIGHTS[ele.data('weight')] ?? EDGE_WEIGHTS.medium
 }
 
+// §2.7: cap node labels at 40 chars with an ellipsis — full headlines
+// never fit on the canvas. The untruncated label stays on the node data
+// and is shown in full in the Article Panel.
+const LABEL_MAX_CHARS = 40
+
+function nodeLabel(ele) {
+  const label = String(ele.data('label') ?? '')
+  return label.length > LABEL_MAX_CHARS
+    ? `${label.slice(0, LABEL_MAX_CHARS).trimEnd()}…`
+    : label
+}
+
 export const graphStylesheet = [
   {
     selector: 'node',
     style: {
-      shape: 'octagon',
+      shape: nodeShape,
       width: nodeSize,
       height: nodeSize,
       'background-color': arcFillColor,
@@ -76,7 +101,7 @@ export const graphStylesheet = [
   {
     selector: 'node.lbl',
     style: {
-      label: 'data(label)',
+      label: nodeLabel,
     },
   },
   {
@@ -117,6 +142,38 @@ export const graphStylesheet = [
     style: {
       opacity: 1,
       'z-index': 10,
+    },
+  },
+  // Step 7 (§3.2/§3.3): MIP_inferred edges are hypotheses — dashed, no
+  // arrowhead (documented edges keep the triangle), and labeled
+  // "hypothesis" when edge labels are visible. GraphView flags them with
+  // the `inferred` data field; they default to hidden via .edge-hidden.
+  {
+    selector: 'edge[?inferred]',
+    style: {
+      'line-style': 'dashed',
+      'target-arrow-shape': 'none',
+      opacity: 0.6,
+    },
+  },
+  {
+    selector: 'edge[?inferred].lbl',
+    style: {
+      label: 'hypothesis',
+    },
+  },
+  // Step 7 (§6): reliability / hypothesis filters hide edges without a
+  // re-layout; nodes left isolated by the filter stay but dim.
+  {
+    selector: '.edge-hidden',
+    style: {
+      display: 'none',
+    },
+  },
+  {
+    selector: 'node.isolated-dim',
+    style: {
+      opacity: 0.25,
     },
   },
   // Hover focus states (§4.2): connected edges full opacity, the rest fades.
