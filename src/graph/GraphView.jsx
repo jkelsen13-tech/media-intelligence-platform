@@ -127,7 +127,17 @@ function boxesOverlap(a, b, pad = 4) {
   )
 }
 
-export default function GraphView({ nodes, edges, onSelect, panelOpen }) {
+export default function GraphView({
+  nodes,
+  edges,
+  onSelect,
+  panelOpen,
+  // Step 7: reliability threshold (1–4, 1 = show all) + hypothesis toggle.
+  minReliability = 1,
+  showInferred = false,
+  // Step 7: edge tap → evidence popover.
+  onEdgeSelect,
+}) {
   const containerRef = useRef(null)
   const gridRef = useRef(null)
   const cyRef = useRef(null)
@@ -138,7 +148,11 @@ export default function GraphView({ nodes, edges, onSelect, panelOpen }) {
       style: graphStylesheet,
       elements: {
         nodes: nodes.map((n) => ({ data: { ...n, id: n.id ?? n.slug } })),
-        edges: edges.map((e) => ({ data: e })),
+        // `inferred` flags MIP_inferred hypothesis edges for the stylesheet
+        // (dashed, no arrow, "hypothesis" label).
+        edges: edges.map((e) => ({
+          data: { ...e, inferred: e.claimed_by === 'MIP_inferred' },
+        })),
       },
       layout: fcoseOptions({ firstRun: true }),
       minZoom: 0.2,
@@ -259,7 +273,9 @@ export default function GraphView({ nodes, edges, onSelect, panelOpen }) {
           dy /= len
         }
         const proximity = 1 - dist / DECLUTTER_RADIUS_PX // 0..1, closer = more
-        const push = (50 + 110 * proximity) / zoom // model px
+        // §2.7: stronger repulsion so labels don't pile up at high zoom —
+        // roughly 2.4x the previous push, still distance-scaled.
+        const push = (120 + 260 * proximity) / zoom // model px
         const target = { x: rest.x + dx * push, y: rest.y + dy * push }
         keep.add(n.id())
         displaced.add(n.id())
@@ -286,9 +302,32 @@ export default function GraphView({ nodes, edges, onSelect, panelOpen }) {
     cy.on('layoutstop', scheduleDeclutter)
 
     if (onSelect) {
-      cy.on('tap', 'node, edge', (evt) => onSelect(evt.target.data()))
+      // Node taps select the node; edge taps are routed to the evidence
+      // popover (Step 7) instead of the article panel.
+      cy.on('tap', 'node', (evt) => {
+        if (onEdgeSelect) onEdgeSelect(null)
+        onSelect(evt.target.data())
+      })
+      cy.on('tap', 'edge', (evt) => {
+        if (onEdgeSelect) {
+          const e = evt.target
+          const mid = e.midpoint()
+          const pan = cy.pan()
+          const zoom = cy.zoom()
+          onEdgeSelect({
+            edge: e.data(),
+            position: {
+              x: mid.x * zoom + pan.x,
+              y: mid.y * zoom + pan.y,
+            },
+          })
+        }
+      })
       cy.on('tap', (evt) => {
-        if (evt.target === cy) onSelect(null)
+        if (evt.target === cy) {
+          if (onEdgeSelect) onEdgeSelect(null)
+          onSelect(null)
+        }
       })
     }
 
@@ -330,6 +369,32 @@ export default function GraphView({ nodes, edges, onSelect, panelOpen }) {
       cy.destroy()
     }
   }, [nodes, edges, onSelect])
+
+  // Step 7 (§6): reliability + hypothesis filtering. Toggling classes on
+  // the existing instance avoids a full re-layout; edges with no
+  // reliability value always pass. Nodes left fully isolated by the
+  // filter stay on the canvas but dim (keeps context visible).
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy || cy.destroyed()) return
+    cy.edges().forEach((e) => {
+      const rel = Number(e.data('reliability'))
+      const below = Number.isFinite(rel) && rel < minReliability
+      const inferredOff = e.data('inferred') && !showInferred
+      e.toggleClass('edge-hidden', below || inferredOff)
+    })
+    cy.nodes().forEach((n) => {
+      const total = n.degree(false)
+      if (total === 0) {
+        n.removeClass('isolated-dim')
+        return
+      }
+      const visible = n
+        .connectedEdges()
+        .filter((e) => !e.hasClass('edge-hidden')).length
+      n.toggleClass('isolated-dim', visible === 0)
+    })
+  }, [minReliability, showInferred, nodes, edges])
 
   // Panel open/close: after the container settles at its new width, refit
   // the graph into the remaining viewport so nothing sits under the panel.
