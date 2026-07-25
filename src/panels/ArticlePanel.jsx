@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadSources, loadNodeArticles, loadNodeCategory } from '../lib/supabase'
+import { loadSources, loadNodeArticles, loadNodeCategory, loadSkyVerificationForNode } from '../lib/supabase'
 import { NODE_TYPES, EDGE_TYPES, CATEGORY_TYPES } from '../graph/theme'
+import { applySkyBoost } from '../lib/sky'
+import SkyBadge from './SkyBadge'
 
 // Article panel (spec §4.4): title + category tag, confidence score on a
 // red→green gradient, 3–5 sentence synthesis, source list with outbound
@@ -44,6 +46,17 @@ const SHEET_DEFAULT = 0.6
 const SHEET_FULL = 1
 const SHEET_DISMISS = 0.42
 
+// Step 9 (§8): type-aware ordering for the connected-node list — focusing
+// an actor surfaces its events first, an event surfaces actors/institutions,
+// a topic/policy surfaces its highest-degree members. Unknown types keep
+// their natural order after the prioritized ones.
+const TYPE_PRIORITY = {
+  actor: ['event', 'actor'],
+  event: ['actor', 'institution', 'policy'],
+  topic: ['event', 'actor', 'policy'],
+  policy: ['event', 'actor'],
+}
+
 export default function ArticlePanel({
   node,
   nodes,
@@ -51,6 +64,9 @@ export default function ArticlePanel({
   pinned,
   onTogglePin,
   onNavigate,
+  onFocusNode,
+  onOpenConsequence,
+  onShowEdgeEvidence,
   onOpenArticle,
   onClose,
   isMobile,
@@ -59,6 +75,8 @@ export default function ArticlePanel({
   const [sourcesError, setSourcesError] = useState(null)
   const [backing, setBacking] = useState(null)
   const [category, setCategory] = useState(null)
+  // Sky verification across this node's backing articles (null = none).
+  const [sky, setSky] = useState(null)
 
   // Bottom-sheet geometry (mobile only). sheetFrac is the committed snap
   // point; dragFrac tracks an in-progress drag and overrides it.
@@ -105,6 +123,21 @@ export default function ArticlePanel({
     }
   }, [node.id, isUuid])
 
+  // Sky verification backing this node (latest across its articles).
+  useEffect(() => {
+    let cancelled = false
+    setSky(null)
+    if (!isUuid) return
+    loadSkyVerificationForNode(node.id)
+      .then((v) => {
+        if (!cancelled) setSky(v)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [node.id, isUuid])
+
   // Category tag: nodes have no category column; it comes from the arc.
   useEffect(() => {
     let cancelled = false
@@ -122,13 +155,14 @@ export default function ArticlePanel({
 
   const connections = useMemo(() => {
     const nodeById = new Map(nodes.map((n) => [n.id ?? n.slug, n]))
-    return edges
+    const list = edges
       .filter((e) => e.source === nodeKey || e.target === nodeKey)
       .map((e) => {
         const otherKey = e.source === nodeKey ? e.target : e.source
         const other = nodeById.get(otherKey)
         return {
           edgeId: e.id,
+          edge: e,
           otherKey,
           label: other?.label ?? otherKey,
           otherType: other?.type,
@@ -139,7 +173,18 @@ export default function ArticlePanel({
           direction: e.source === nodeKey ? 'out' : 'in',
         }
       })
-  }, [nodeKey, nodes, edges])
+    // Step 9: type-aware ordering — prioritized types for this node's type
+    // come first; ties break toward stronger connections.
+    const priority = TYPE_PRIORITY[node.type] ?? []
+    return list.sort((a, b) => {
+      const pa = priority.indexOf(a.otherType)
+      const pb = priority.indexOf(b.otherType)
+      const ra = pa === -1 ? priority.length : pa
+      const rb = pb === -1 ? priority.length : pb
+      if (ra !== rb) return ra - rb
+      return (Number(b.similarity) || 0) - (Number(a.similarity) || 0)
+    })
+  }, [nodeKey, nodes, edges, node.type])
 
   // --- Mobile bottom-sheet drag (pointer events on the handle) ----------
   const onHandlePointerDown = (e) => {
@@ -203,6 +248,26 @@ export default function ArticlePanel({
         <div className="ap-title-row">
           <h2>{node.label}</h2>
           <div className="ap-actions">
+            {node.type === 'policy' && onOpenConsequence && (
+              <button
+                className="ap-icon-btn"
+                title="Open policy consequence view (§7.4)"
+                aria-label="Open policy consequence view"
+                onClick={() => onOpenConsequence(node)}
+              >
+                ⇄
+              </button>
+            )}
+            {onFocusNode && (
+              <button
+                className="ap-icon-btn"
+                title="Focus graph on this node (depth-2 neighborhood)"
+                aria-label="Focus graph on this node"
+                onClick={() => onFocusNode(node)}
+              >
+                ⌖
+              </button>
+            )}
             <button
               className={`ap-icon-btn${pinned ? ' active' : ''}`}
               title={pinned ? 'Unpin panel' : 'Pin panel — keep open while exploring the graph'}
@@ -226,7 +291,10 @@ export default function ArticlePanel({
           {typeMeta && (
             <span
               className="ap-tag ap-tag-type"
-              style={{ borderColor: `var(${typeMeta.cssVar})`, color: `var(${typeMeta.cssVar})` }}
+              style={{
+                borderColor: typeMeta.cssVar ? `var(${typeMeta.cssVar})` : typeMeta.color,
+                color: typeMeta.cssVar ? `var(${typeMeta.cssVar})` : typeMeta.color,
+              }}
             >
               {typeMeta.label}
             </span>
@@ -234,26 +302,48 @@ export default function ArticlePanel({
         </div>
       </header>
 
-      {confidence != null && (
+      {confidence != null &&
+        (() => {
+          // Sky task 6: the sky boost is visible, never silent — the score
+          // shows the adjusted value with a sky-verified marker and the
+          // pre-boost score in the title.
+          const boost = applySkyBoost(confidence, sky)
+          const shown = boost.value
+          return (
+            <section className="ap-section">
+              <div className="ap-confidence-row">
+                <span className="ap-label">Confidence</span>
+                <span className="ap-confidence-value num" style={{ color: confidenceColor(shown) }}>
+                  {shown}%
+                  {boost.boosted && (
+                    <span
+                      className="sky-boost-marker"
+                      title={`Sky-verified: ${confidence}% + ${boost.delta} (sensor quality: ${sky.sensor_quality})`}
+                    >
+                      ◈ sky-verified
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="ap-confidence-bar">
+                {/* Red→green gradient spans the FULL track; the fill clips it to
+                    the score by sizing the gradient relative to the fill width. */}
+                <div
+                  className="ap-confidence-fill"
+                  style={{
+                    width: `${shown}%`,
+                    background: 'linear-gradient(90deg, hsl(0, 70%, 45%), hsl(45, 80%, 45%), hsl(120, 60%, 42%))',
+                    backgroundSize: `${shown > 0 ? 10000 / shown : 100}% 100%`,
+                  }}
+                />
+              </div>
+            </section>
+          )
+        })()}
+
+      {sky && (
         <section className="ap-section">
-          <div className="ap-confidence-row">
-            <span className="ap-label">Confidence</span>
-            <span className="ap-confidence-value num" style={{ color: confidenceColor(confidence) }}>
-              {confidence}%
-            </span>
-          </div>
-          <div className="ap-confidence-bar">
-            {/* Red→green gradient spans the FULL track; the fill clips it to
-                the score by sizing the gradient relative to the fill width. */}
-            <div
-              className="ap-confidence-fill"
-              style={{
-                width: `${confidence}%`,
-                background: 'linear-gradient(90deg, hsl(0, 70%, 45%), hsl(45, 80%, 45%), hsl(120, 60%, 42%))',
-                backgroundSize: `${confidence > 0 ? 10000 / confidence : 100}% 100%`,
-              }}
-            />
-          </div>
+          <SkyBadge verification={sky} />
         </section>
       )}
 
@@ -337,14 +427,14 @@ export default function ArticlePanel({
           {connections.map((c) => {
             const edgeMeta = EDGE_TYPES[c.edgeType]
             return (
-              <li key={c.edgeId}>
+              <li key={c.edgeId} className="ap-connection-row">
                 <button className="ap-connection" onClick={() => onNavigate(c.otherKey)}>
                   <span
                     className="ap-conn-dot"
                     style={{
                       background: NODE_TYPES[c.otherType]?.cssVar
                         ? `var(${NODE_TYPES[c.otherType].cssVar})`
-                        : 'var(--text-muted)',
+                        : (NODE_TYPES[c.otherType]?.color ?? 'var(--text-muted)'),
                     }}
                   />
                   <span className="ap-conn-label">{c.label}</span>
@@ -355,6 +445,16 @@ export default function ArticlePanel({
                     {edgeMeta?.label ?? c.edgeType} · {strengthLabel(c)}
                   </span>
                 </button>
+                {onShowEdgeEvidence && (
+                  <button
+                    className="ap-conn-evidence"
+                    title="Edge evidence"
+                    aria-label={`Evidence for connection to ${c.label}`}
+                    onClick={() => onShowEdgeEvidence(c.edge)}
+                  >
+                    ⓘ
+                  </button>
+                )}
               </li>
             )
           })}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadArticles, loadOutlets, loadArticleDetail, loadArticleGraphLinks } from '../lib/supabase'
+import { loadArticles, loadOutlets, loadArticleDetail, loadArticleGraphLinks, loadSkyVerification } from '../lib/supabase'
+import SkyBadge from '../panels/SkyBadge'
 
 // News Feed: the live ingested article stream across all outlets — search,
 // outlet filter, and arc-assignment status. Integrated with the knowledge
@@ -56,6 +57,8 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
   const [detail, setDetail] = useState(null)
   const [graphLinks, setGraphLinks] = useState([])
   const [detailError, setDetailError] = useState(null)
+  // Sky verification for the expanded article (null = none / table absent).
+  const [sky, setSky] = useState(null)
   // Mobile: filters collapse into a bottom sheet behind a single button.
   const [filtersOpen, setFiltersOpen] = useState(false)
   const debounceRef = useRef(null)
@@ -87,11 +90,15 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
     setDetail(null)
     setGraphLinks([])
     setDetailError(null)
+    setSky(null)
     loadArticleDetail(id)
       .then(setDetail)
       .catch((err) => setDetailError(err.message))
     loadArticleGraphLinks(id)
       .then(setGraphLinks)
+      .catch(() => {})
+    loadSkyVerification(id)
+      .then(setSky)
       .catch(() => {})
   }
 
@@ -115,6 +122,7 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
     if (expanded === id) {
       setExpanded(null)
       setDetail(null)
+      setSky(null)
       return
     }
     expandArticle(id)
@@ -298,6 +306,7 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
                 )}
                 {a.unattributed && <span className="news-badge muted">unattributed</span>}
                 {a.monoculture && <span className="news-badge mono">monoculture</span>}
+                {expanded === a.id && sky && <span className="news-badge sky">◈ sky-verified</span>}
               </div>
             </button>
 
@@ -324,6 +333,13 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
                           ))}
                         </div>
                       </div>
+                    )}
+                    {/* Sky task 5: renders only when a verification exists. */}
+                    <SkyBadge verification={sky} />
+                    {!sky && detail.image_url && (
+                      <p className="sky-companion-hint">
+                        Sky verification available in the MIP companion app
+                      </p>
                     )}
                     <div className="news-detail-grid">
                       <div>
@@ -380,6 +396,7 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
           {detail && (
             <>
               <h3 className="news-focus-title">{detail.title}</h3>
+              <SkyBadge verification={sky} />
               {graphLinks.length > 0 && (
                 <div className="news-graph-links">
                   <span className="ap-label">Knowledge graph connections</span>
