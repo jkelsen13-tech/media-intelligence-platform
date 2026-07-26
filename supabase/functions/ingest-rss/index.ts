@@ -233,7 +233,9 @@ const ROLE_TITLES_RE = /^(?:President|Prime Minister|Vice President|Deputy Prime
 
 // Capitalized multi-word proper-noun phrases, allowing lowercase connectors
 // so "Ministry of Defence" / "Bank of England" resolve as ONE entity.
-const PROPER_RE = /\b([A-Z][\w'’.\-]*(?:(?:\s+(?:of|the|de|del|van|von|der|al|bin|and|&|for)\s+|\s+)[A-Z][\w'’.\-]*)*)/g
+// Token excludes trailing dots so sentence boundaries can't bleed into a
+// surface ("England. The"); multi-letter abbreviations (U.S.) still match.
+const PROPER_RE = /\b((?:(?:[A-Z]\.){2,}|[A-Z][\w'’\-]*)(?:(?:\s+(?:of|the|de|del|van|von|der|al|bin|and|&|for)\s+|\s+)(?:(?:[A-Z]\.){2,}|[A-Z][\w'’\-]*))*)/g
 
 interface EntityCandidate {
   surface: string
@@ -254,6 +256,10 @@ function extractEntityCandidates(text: string, outletNames: Set<string>): Entity
       surface = surface.slice(r[0].length).trim()
     }
     if (surface.length < 2) continue
+    // Label sanity filter: reject surfaces that still contain a sentence
+    // break or read like a headline fragment (>6 words) — these are
+    // extraction artifacts, not entities, and must never reach the tables.
+    if (surface.includes('. ') || surface.split(/\s+/).length > 6) continue
     const words = surface.split(/\s+/)
     const norm = normalizeEntityName(surface)
     if (!norm) continue
@@ -691,7 +697,11 @@ function findProcess(text: string): string | null {
 function makeArcTitle(actorName: string | null, process: string | null): string | null {
   if (!process) return null
   if (!actorName) return `Unattributed cluster — ${process}`
-  return `${actorName} — ${process}`.slice(0, 140)
+  // Strip possessive leaks ("Charlie Kirk's" -> "Charlie Kirk") so the title
+  // subject is the entity name, not a surface form.
+  const subject = actorName.replace(/['’]s$/u, '').trim()
+  if (!subject) return `Unattributed cluster — ${process}`
+  return `${subject} — ${process}`.slice(0, 140)
 }
 
 // ---------- Step 4: milestones ----------
@@ -714,7 +724,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { key: 'gp_ceasefire', title: 'Ceasefire or de-escalation agreed', confirm: /\b(ceasefire|truce|de-escalat\w+|peace (deal|agreement)|armistice|withdraw\w*)\b/i, fail: /\b(talks? (collapse\w*|fail\w*)|ceasefire (broken|collapses?|ends?))\b/i },
     { key: 'gp_sanctions', title: 'Sanctions or retaliation imposed', confirm: /\b(sanctions? (imposed|announced|extended)|retaliat\w+|expel\w+|travel ban)\b/i },
     { key: 'gp_routes', title: 'Disrupted routes or activity normalize', confirm: /\b(resum\w+|reopen\w*|normali\w*|returns? to (the )?(red sea|route|port))\b/i },
-    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w+|strike\w*|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
+    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w+|strike\w+|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
   ],
   economic_policy: [
     { key: 'ep_enacted', title: 'Policy measure enacted or implemented', confirm: /\b(takes effect|comes into force|enacted|implement\w+|signed into law|approved)\b/i },
@@ -861,6 +871,10 @@ interface ActorRef {
 // Step 6 (§4): one ACTOR node per resolved entity, backlinked via
 // metadata.entity_id. Idempotent.
 async function ensureActorNode(supabase: any, e: ActorRef): Promise<string | null> {
+  // Type guard: never write non-string or malformed labels (a stray object
+  // here once rendered literally as "[object Object]" in the graph).
+  if (typeof e?.canonical_name !== 'string' || !e.canonical_name.trim()) return null
+  if (e.canonical_name.includes('. ') || e.canonical_name.trim().split(/\s+/).length > 6) return null
   const slug = `actor-${normalizeEntityName(e.canonical_name)}`
   const { data, error } = await supabase
     .from('nodes')
@@ -1166,6 +1180,17 @@ async function maybeRetitleArc(supabase: any, arc: any, catFloor: number): Promi
   await supabase.from('story_arcs').update(update).eq('id', arc.id)
   if (title) arc.title = title
   arc.title_article_count = n
+  // Keep pending milestone notes in sync with the retitled/regenerated arc —
+  // origination may have used a different process phrase (#5 template leak).
+  if (title) {
+    const noteCategory = update.category ?? arc.category
+    await supabase
+      .from('arc_milestones')
+      .update({ notes: `Expected outcome for ${noteCategory} arc (${process}).` })
+      .eq('arc_id', arc.id)
+      .eq('status', 'pending')
+      .like('notes', 'Expected outcome%')
+  }
   return true
 }
 
