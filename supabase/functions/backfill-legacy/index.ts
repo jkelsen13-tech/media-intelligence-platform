@@ -221,7 +221,7 @@ const ROLE_TITLES_RE = /^(?:President|Prime Minister|Vice President|Deputy Prime
 
 // Token excludes trailing dots so sentence boundaries can't bleed into a
 // surface ("England. The"); multi-letter abbreviations (U.S.) still match.
-const PROPER_RE = /\b((?:(?:[A-Z]\.){2,}|[A-Z][\w'’\-]*)(?:(?:\s+(?:of|the|de|del|van|von|der|al|bin|and|&)\s+|\s+)(?:(?:[A-Z]\.){2,}|[A-Z][\w'’\-]*))*)/g
+const PROPER_RE = /\b((?:(?:[A-Z]\.){2,}|[A-Z][\w'’\-]*)(?:(?:\s+(?:of|the|de|del|van|von|der|al|bin|and|&|for)\s+|\s+)(?:(?:[A-Z]\.){2,}|[A-Z][\w'’\-]*))*)/g
 
 interface EntityCandidate {
   surface: string
