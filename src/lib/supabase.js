@@ -322,11 +322,14 @@ export async function loadArcDetail(arcKey) {
 // Causal timeline: event nodes with dates plus causal edges between them.
 // `labels` covers ALL node types so edges that point at non-event nodes
 // (institutions, anomalies, documents) resolve to a label, not a raw uuid.
+// Phase 0 Part 2 Tier 3: the timeline loads BOTH 'causal' edges (stated in
+// reporting) and 'sequence' edges (temporal adjacency — NOT causation); the
+// edge `type` is passed through so TimelineView can render them differently.
 export async function loadTimeline() {
   if (!supabase) {
     return {
       events: demoNodes.filter((n) => n.type === 'event'),
-      causalEdges: demoEdges.filter((e) => e.type === 'causal'),
+      causalEdges: demoEdges.filter((e) => ['causal', 'sequence'].includes(e.type)),
       labels: demoNodes.map((n) => ({ id: n.id ?? n.slug, slug: n.slug, label: n.label })),
     }
   }
@@ -336,7 +339,7 @@ export async function loadTimeline() {
       .select('id, slug, label, description, confidence, summary, occurred_at')
       .eq('type', 'event')
       .order('occurred_at', { ascending: true, nullsFirst: false }),
-    supabase.from('edges').select('id, source_id, target_id, weight, label').eq('type', 'causal'),
+    supabase.from('edges').select('id, source_id, target_id, type, weight, label').in('type', ['causal', 'sequence']),
     supabase.from('nodes').select('id, slug, label'),
   ])
   if (nodesRes.error) throw nodesRes.error
@@ -348,6 +351,7 @@ export async function loadTimeline() {
       id: e.id,
       source: e.source_id,
       target: e.target_id,
+      type: e.type,
       weight: e.weight,
       label: e.label,
     })),
