@@ -167,6 +167,50 @@ export async function loadNodeCategory(node) {
   return null
 }
 
+// Actor-panel derivation (targeted patch): actor/institution nodes carry no
+// category column and often have no rows in `sources` (sources attach to the
+// event nodes). When the panel's direct lookups come up empty, derive the
+// display category and source list from the node's connected EVENT nodes.
+export async function loadActorDerivation(eventNodeIds) {
+  const out = { category: null, sources: [] }
+  if (!supabase) return out
+  const ids = [...new Set((eventNodeIds ?? []).filter(Boolean))]
+  if (ids.length === 0) return out
+  try {
+    const { data: evNodes, error: evErr } = await supabase
+      .from('nodes')
+      .select('id, arc_id')
+      .in('id', ids)
+    if (evErr) return out
+    const arcIds = [...new Set((evNodes ?? []).map((n) => n.arc_id).filter(Boolean))]
+    if (arcIds.length > 0) {
+      const { data: arcs } = await supabase
+        .from('story_arcs')
+        .select('category')
+        .in('id', arcIds)
+      // Most common category wins; a real category always beats unclassified.
+      const counts = new Map()
+      for (const a of arcs ?? []) counts.set(a.category, (counts.get(a.category) ?? 0) + 1)
+      out.category =
+        [...counts.entries()].sort((x, y) => {
+          const ux = x[0] === 'unclassified' ? 0 : 1
+          const uy = y[0] === 'unclassified' ? 0 : 1
+          return uy - ux || y[1] - x[1]
+        })[0]?.[0] ?? null
+    }
+    const { data: srcs } = await supabase
+      .from('sources')
+      .select('id, outlet, headline, url, published_at')
+      .in('node_id', ids)
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .limit(15)
+    out.sources = srcs ?? []
+  } catch {
+    // derivation is best-effort — panel degrades to its original empty state
+  }
+  return out
+}
+
 // Sources backing a single node (article panel source list).
 // nodeKey is the node uuid (supabase) or slug (demo data).
 export async function loadSources(nodeKey) {
