@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadSources, loadNodeArticles, loadNodeCategory, loadSkyVerificationForNode } from '../lib/supabase'
+import { loadSources, loadNodeArticles, loadNodeCategory, loadSkyVerificationForNode, loadActorDerivation } from '../lib/supabase'
 import { NODE_TYPES, EDGE_TYPES, CATEGORY_TYPES } from '../graph/theme'
 import { applySkyBoost } from '../lib/sky'
 import SkyBadge from './SkyBadge'
@@ -75,6 +75,8 @@ export default function ArticlePanel({
   const [sourcesError, setSourcesError] = useState(null)
   const [backing, setBacking] = useState(null)
   const [category, setCategory] = useState(null)
+  // Derived fallback for actor-type nodes with no direct category/sources.
+  const [derived, setDerived] = useState(null)
   // Sky verification across this node's backing articles (null = none).
   const [sky, setSky] = useState(null)
 
@@ -153,6 +155,38 @@ export default function ArticlePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodeKey])
 
+  // Derivation fallback (targeted patch): for non-event nodes with no direct
+  // arc category and/or no sources of their own, derive both from connected
+  // event nodes at read time.
+  const connectedEventIds = useMemo(() => {
+    if (node.type === 'event') return []
+    const ids = []
+    for (const e of edges) {
+      const other = e.source === nodeKey ? e.target : e.source === nodeKey || e.target === nodeKey ? e.source : null
+      if ((e.source === nodeKey || e.target === nodeKey) && other) {
+        const otherNode = nodes.find((n) => (n.id ?? n.slug) === other)
+        if (otherNode?.type === 'event' && otherNode.id) ids.push(otherNode.id)
+      }
+    }
+    return ids
+  }, [node.type, nodeKey, nodes, edges])
+
+  useEffect(() => {
+    let cancelled = false
+    setDerived(null)
+    const needsCategory = category == null
+    const needsSources = sources != null && sources.length === 0
+    if (node.type === 'event' || connectedEventIds.length === 0 || (!needsCategory && !needsSources)) return
+    loadActorDerivation(connectedEventIds)
+      .then((d) => {
+        if (!cancelled) setDerived(d)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [node.type, category, sources, connectedEventIds])
+
   const connections = useMemo(() => {
     const nodeById = new Map(nodes.map((n) => [n.id ?? n.slug, n]))
     const list = edges
@@ -214,7 +248,10 @@ export default function ArticlePanel({
   }
 
   const typeMeta = NODE_TYPES[node.type]
-  const catMeta = CATEGORY_TYPES[category] ?? CATEGORY_TYPES.unclassified
+  const effectiveCategory = category ?? derived?.category ?? null
+  const catMeta = CATEGORY_TYPES[effectiveCategory] ?? CATEGORY_TYPES.unclassified
+  const displaySources = sources && sources.length > 0 ? sources : (derived?.sources ?? [])
+  const sourcesDerived = !(sources && sources.length > 0) && (derived?.sources?.length ?? 0) > 0
   const summary = trimSentences(node.summary ?? node.description)
   const activeFrac = dragFrac ?? sheetFrac
   const confidence = node.confidence
@@ -397,12 +434,16 @@ export default function ArticlePanel({
         <span className="ap-label">Sources</span>
         {sourcesError && <p className="ap-sources-error">Failed to load sources: {sourcesError}</p>}
         {!sources && !sourcesError && <p className="ap-muted">Loading sources…</p>}
-        {sources && sources.length === 0 && (
+        {sources && displaySources.length === 0 && (
           <p className="ap-muted">No sources documented yet.</p>
         )}
-        {sources && sources.length > 0 && (
+        {sources && displaySources.length > 0 && (
+          <>
+            {sourcesDerived && (
+              <p className="ap-muted">via connected events</p>
+            )}
           <ul className="ap-sources">
-            {sources.map((s) => (
+            {displaySources.map((s) => (
               <li key={s.id} className="ap-source">
                 <span className="ap-source-outlet">{s.outlet}</span>
                 {s.url ? (
@@ -416,6 +457,7 @@ export default function ArticlePanel({
               </li>
             ))}
           </ul>
+          </>
         )}
       </section>
 
