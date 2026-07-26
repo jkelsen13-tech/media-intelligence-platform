@@ -56,7 +56,7 @@ WHERE id IN (
   '5051f885-d649-4010-a7ad-07b1997c5f3a','fb06d5a5-72e8-4c1b-a834-86e97bb1f9f4'
 );
 
--- (B2) junk causal causal edges dropped: wrong-arc hub-entity residue (AI-trade arc
+-- (B2) junk causal edges dropped: wrong-arc hub-entity residue (AI-trade arc
 -- -> Red Sea oil article; shared entities only Trump/Saudi) and duplicate
 -- coverage of the root event (same statement, second outlet).
 DELETE FROM edges WHERE id IN (
