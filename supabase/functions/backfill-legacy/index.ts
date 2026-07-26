@@ -486,7 +486,7 @@ async function extractEntitiesModel(text: string): Promise<ModelEntityCandidate[
   }
 }
 
-// Single NER seam. Model spans WIN on overlap: a heuristic candidate is
+// Single NER seam. Model spans win on overlap: a heuristic candidate is
 // dropped when its normalized name is a token-subset/superset of any model
 // candidate's normalized name. Canonicalization/resolution downstream is
 // shared regardless of path.
@@ -607,11 +607,9 @@ const CATEGORY_RUBRIC: Array<{ category: string; weight: number; re: RegExp }> =
   { category: 'geopolitical_consequence', weight: 0.45, re: /\b(war|ceasefire|missile\w*|troops|invasion|drone strike|nato|treaty|houthis?|red sea|escalation|airstrike\w*|hostages?|gaza|ukraine)\b/i },
   { category: 'geopolitical_consequence', weight: 0.35, re: /\b(sanctions?|shipping threat|tanker\w*|u-turn\w*|evacuation|displacement|cross-border|diplomat\w*|embassy|militia|insurgent\w*)\b/i },
   { category: 'geopolitical_consequence', weight: 0.15, re: /\b(allies|summit|foreign minister|defence|defense|security council|border)\b/i },
-  // Economic policy: policy levers acting on the economy.
   { category: 'economic_policy', weight: 0.45, re: /\b(tariff\w*|inflation|interest rate\w*|federal reserve|trade (deal|war|dispute|crosshairs)|recession|budget|gdp|central bank)\b/i },
   { category: 'economic_policy', weight: 0.3, re: /\b(supply chain|jobs report|dairy sector|auto industry|rent control\w*|cost of living|wages?|deficit|spending|economy|economic)\b/i },
   { category: 'economic_policy', weight: 0.15, re: /\b(markets?|stocks?|shares|oil prices?|energy prices?|prices?)\b/i },
-  // Legislative / regulatory: the lawmaking and rulemaking process.
   { category: 'legislative_regulatory', weight: 0.45, re: /\b(bill|senate|house passes|regulation|supreme court|executive order|congress|parliament|vote\w*|ruling|legislation|lawmakers)\b/i },
   { category: 'legislative_regulatory', weight: 0.3, re: /\b(rules out|backs off|pledge|ban\w*|controls|amendment|regulator\w*|white paper|statutory|clause|committee stage)\b/i },
   { category: 'legislative_regulatory', weight: 0.15, re: /\b(law|legal|court|judge|appeal|hearing)\b/i },
@@ -677,7 +675,7 @@ const PROCESS_PATTERNS: Array<{ process: string; re: RegExp }> = [
   { process: 'misconduct case', re: /\b(misconduct|blackmail|harassment|abuse|scandal)\b/i },
   { process: 'resignation', re: /\b(resign\w+|steps down|quit\w*)\b/i },
   { process: 'appointment', re: /\b(appoint\w*|named as|takes office)\b/i },
-  { process: 'policy reversal', re: /\b(backs off|revers\w*|u-turn|abandon\w+|scrap\w*)\b/i },
+  { process: 'policy reversal', re: /\b(backs off|revers\w*|u-turn|abandon\w*|scrap\w*)\b/i },
   { process: 'legislative action', re: /\b(bill|vote\w*|executive order|amendment|legislation|act passed)\b/i },
   { process: 'regulatory decision', re: /\b(regulat\w+|rules out|ban\w*|approv\w+|licen[cs]\w+)\b/i },
   { process: 'legal ruling', re: /\b(ruling|verdict|court rules|judgment|appeal)\b/i },
@@ -688,7 +686,7 @@ const PROCESS_PATTERNS: Array<{ process: string; re: RegExp }> = [
   { process: 'rollout', re: /\b(rollout|roll-out|launch\w*|deploy\w+)\b/i },
   { process: 'data breach', re: /\b(data breach|hack\w*|cyberattack\w*)\b/i },
   { process: 'recall', re: /\brecall\w*\b/i },
-  { process: 'funding decision', re: /\b(funding|allocat\w+|grant\w+|bailout)\b/i },
+  { process: 'funding decision', re: /\b(funding|allocat\w+|grant\w*|bailout)\b/i },
   { process: 'enforcement action', re: /\b(enforcement|fine\w*|penalt\w+|crackdown|raid\w*)\b/i },
 ]
 
@@ -735,13 +733,13 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   geopolitical_consequence: [
     { key: 'gp_ceasefire', title: 'Ceasefire or de-escalation agreed', confirm: /\b(ceasefire|truce|de-escalat\w+|peace (deal|agreement)|armistice|withdraw\w*)\b/i, fail: /\b(talks? (collapse\w*|fail\w*)|ceasefire (broken|collapses?|ends?))\b/i },
     { key: 'gp_sanctions', title: 'Sanctions or retaliation imposed', confirm: /\b(sanctions? (imposed|announced|extended)|retaliat\w+|expel\w+|travel ban)\b/i },
-    { key: 'gp_routes', title: 'Disrupted routes or activity normalize', confirm: /\b(resum\w+|reopen\w*|normali\w+|returns? to (the )?(red sea|route|port))\b/i },
-    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w+|strike\w*|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
+    { key: 'gp_routes', title: 'Disrupted routes or activity normalize', confirm: /\b(resum\w+|reopen\w+|normali\w*|returns? to (the )?(red sea|route|port))\b/i },
+    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w+|strike\w+|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
   ],
   economic_policy: [
     { key: 'ep_enacted', title: 'Policy measure enacted or implemented', confirm: /\b(takes effect|comes into force|enacted|implement\w+|signed into law|approved)\b/i },
     { key: 'ep_market', title: 'Market or sector adjustment', confirm: /\b(markets? (react\w*|fall|rise|slide)|shares? (fell|fall|rose|rise)|prices? (rise|fall|rose|fell)|adjust\w+)\b/i },
-    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w*|withdraw\w+|scrapped|backs off|abandon\w+|u-turn)\b/i },
+    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w+|withdraw\w+|scrapped|backs off|abandon\w+|u-turn)\b/i },
     { key: 'ep_funding', title: 'Funding or budget allocated', confirm: /\b(funding|allocat\w+|budget|appropriat\w+|bailout)\b/i },
   ],
   legislative_regulatory: [
@@ -760,7 +758,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
 async function generateMilestones(supabase: any, arcId: string, category: string, process: string) {
   const templates = MILESTONE_TEMPLATES[category] ?? MILESTONE_TEMPLATES.unclassified
   const rows = templates.slice(0, 6).map((t) => ({
-    arc_id: arc.id,
+    arc_id: arcId,
     title: t.title,
     milestone_key: t.key,
     status: 'pending',
