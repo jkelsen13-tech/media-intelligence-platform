@@ -510,7 +510,7 @@ class EntityResolver {
 //   1. HF token-classification: [[{ entity_group|entity, word, start, end,
 //      score }...]] (also accepted unwrapped: [...])
 //   2. Generic span list: { "entities": [{ "text"|"surface", "type"?,
-//      "start"?, "end"?, "score"? }] }
+//      "start"?, "end"?, "score"? }...] }
 // Model entity types are mapped onto our entity_type vocabulary
 // (person/organization/institution/other) at merge time; PER->person,
 // ORG->organization, LOC/MISC->other.
@@ -806,13 +806,13 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   geopolitical_consequence: [
     { key: 'gp_ceasefire', title: 'Ceasefire or de-escalation agreed', confirm: /\b(ceasefire|truce|de-escalat\w+|peace (deal|agreement)|armistice|withdraw\w*)\b/i, fail: /\b(talks? (collapse\w*|fail\w*)|ceasefire (broken|collapses?|ends?))\b/i },
     { key: 'gp_sanctions', title: 'Sanctions or retaliation imposed', confirm: /\b(sanctions? (imposed|announced|extended)|retaliat\w+|expel\w+|travel ban)\b/i },
-    { key: 'gp_routes', title: 'Disrupted routes or activity normalize', confirm: /\b(resum\w+|reopen\w*|normali[sz]e|returns? to (the )?(red sea|route|port))\b/i },
-    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w*|strike\w*|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
+    { key: 'gp_routes', title: 'Disrupted routes or activity normalize', confirm: /\b(resum\w+|reopen\w*|normali\w*|returns? to (the )?(red sea|route|port))\b/i },
+    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w+|strike\w*|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
   ],
   economic_policy: [
     { key: 'ep_enacted', title: 'Policy measure enacted or implemented', confirm: /\b(takes effect|comes into force|enacted|implement\w+|signed into law|approved)\b/i },
     { key: 'ep_market', title: 'Market or sector adjustment', confirm: /\b(markets? (react\w*|fall|rise|slide)|shares? (fell|fall|rose|rise)|prices? (rise|fall|rose|fell)|adjust\w+)\b/i },
-    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w*|withdraw\w*|scrapped|backs off|abandon\w*|u-turn)\b/i },
+    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w+|withdraw\w+|scrapped|backs off|abandon\w+|u-turn)\b/i },
     { key: 'ep_funding', title: 'Funding or budget allocated', confirm: /\b(funding|allocat\w+|budget|appropriat\w+|bailout)\b/i },
   ],
   legislative_regulatory: [
@@ -822,9 +822,9 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { key: 'lr_deadline', title: 'Implementation deadline met', confirm: /\b(takes effect|comes into force|deadline|implement\w+|in force)\b/i, fail: /\b(delayed|postponed|missed deadline|pushed back)\b/i },
   ],
   unclassified: [
-    { key: 'gen_response', title: 'Official response issued', confirm: /\b(respond\w*|statement|comment\w*|reaction)\b/i },
-    { key: 'gen_development', title: 'Further developments reported', confirm: /\b(develop\w*|update\w*|continu\w+|latest)\b/i },
-    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w*|criticis\w*|criticiz\w*|praise\w*|backlash|condemn\w+)\b/i },
+    { key: 'gen_response', title: 'Official response issued', confirm: /\b(respond\w+|statement|comment\w+|reaction)\b/i },
+    { key: 'gen_development', title: 'Further developments reported', confirm: /\b(develop\w+|update\w+|continu\w+|latest)\b/i },
+    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w+|criticis\w+|criticiz\w+|praise\w+|backlash|condemn\w+)\b/i },
   ],
 }
 
@@ -1488,7 +1488,7 @@ function clusterBySharedEntities(items: Array<{ id: string; entityIds: string[] 
   for (const it of items) {
     for (const e of it.entityIds) {
       const arr = byEntity.get(e) ?? []
-      arr.push(e)
+      arr.push(it.id)
       byEntity.set(e, arr)
     }
   }
