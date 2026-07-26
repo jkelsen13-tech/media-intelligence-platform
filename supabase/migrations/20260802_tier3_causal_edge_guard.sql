@@ -2,9 +2,16 @@
 -- Applied to production 2026-07-27.
 --
 -- (A) CHECK constraint applied as Supabase migrations
---     "tier3_causal_edge_evidence_guard" then hardened as
---     "tier3_causal_edge_evidence_guard_hardened" (adversarial-gate
---     remediation round 1; hardened form below is the live one).
+--     "tier3_causal_edge_evidence_guard" -> "_hardened" -> "_r2" -> "_r3"
+--     -> "_r4". The r4 form below is the live one. History:
+--       r0->r1: adversarial gate evaded anchored bare-keyword regex
+--               ('amidst', whitespace/punctuation padding).
+--       r1->r2: gate landed temporal PHRASES ('after the vote') and a
+--               NULL-signal_source bypass.
+--       r2->r3: self-caught — PostgreSQL ARE treats '\b' as backspace,
+--               not a word boundary; r2 never fired. Replaced with (\s|$).
+--       r3->r4: self-caught — 'afterwards?' requires the 'afterward' stem,
+--               so bare 'after' escaped. Fixed to 'after(wards?)?'.
 -- (B) Data remediation applied out-of-band via direct SQL the same day
 --     (recorded here for the audit trail; all statements idempotent).
 --
@@ -12,7 +19,7 @@
 -- 5 same-article self-loops, 1 wrong-arc hub-entity residue, 1 duplicate
 -- coverage of the root event, and 4 resting on a bare temporal keyword.
 -- Originals preserved in edges_backup_20260726_tier3 (96 rows) and the
--- 16 rows touched below in edges_tier3_remediation_backup_20260727.
+-- 17 rows touched below in edges_tier3_remediation_backup_20260727.
 
 -- (B0) safety backup of every row touched (no-op if it already exists)
 CREATE TABLE IF NOT EXISTS edges_tier3_remediation_backup_20260727 AS
@@ -49,7 +56,7 @@ WHERE id IN (
   '5051f885-d649-4010-a7ad-07b1997c5f3a','fb06d5a5-72e8-4c1b-a834-86e97bb1f9f4'
 );
 
--- (B2) junk causal edges dropped: wrong-arc hub-entity residue (AI-trade arc
+-- (B2) junk causal causal edges dropped: wrong-arc hub-entity residue (AI-trade arc
 -- -> Red Sea oil article; shared entities only Trump/Saudi) and duplicate
 -- coverage of the root event (same statement, second outlet).
 DELETE FROM edges WHERE id IN (
@@ -65,12 +72,10 @@ WHERE e.source_id = ns.id AND e.target_id = nt.id
   AND right(ns.slug,8) = right(nt.slug,8)
   AND ns.slug LIKE 'evt-%' AND nt.slug LIKE 'art-%';
 
--- (B4) gate remediation (adversarial gate round 1, 2026-07-27): the 2 causal
--- edges kept in round 0 rest on WEAK citations (named_official, 0.6). The
--- deployed Step-3 standard requires a PRIMARY document (court_doc /
--- agency_release) for citation-based causal; weak citation => sequence.
--- Reclassified both; production now has 0 causal edges until an article with
--- explicit causal language or a primary document comes through the pipeline.
+-- (B4) gate remediation round 1: the 2 causal edges kept in round 0 rest on
+-- WEAK citations (named_official, 0.6). The deployed Step-3 standard
+-- requires a PRIMARY document (court_doc / agency_release) for
+-- citation-based causal; weak citation => sequence. Reclassified both.
 UPDATE edges
 SET type = 'sequence',
     label = 'sequence: cited development in arc',
@@ -87,27 +92,39 @@ SET type = 'sequence',
     )
 WHERE type = 'causal';
 
--- (A) the guard: a causal edge must rest on more than a bare temporal
--- keyword. Mirrors TEMPORAL_RE in ingest-rss / backfill-legacy.
--- HARDENED (migration tier3_causal_edge_evidence_guard_hardened) after the
--- adversarial gate evaded the original anchored regex with 'amidst' and
--- whitespace/punctuation padding: label/evidence are normalized before
--- matching (strip 'causal:' prefix, trim non-alphanumerics, lowercase,
--- \s+ between words) and the keyword list adds amidst / in the aftermath of /
--- later / subsequently.
-ALTER TABLE edges DROP CONSTRAINT edges_causal_evidence_guard;
+-- (B5) gate remediation round 2: edge 1865cc04 (AI-trade arc -> US tariffs
+-- article, label 'sequence: due to') dropped. The 'due to' was a regex false
+-- positive on "levy was due to expire", not a causal statement, and the
+-- arc link rested on hub entities (Trump/China/AI) + fragment entities —
+-- same wrong-arc junk class as B2. Backed up (row 17 of the backup table).
+INSERT INTO edges_tier3_remediation_backup_20260727
+SELECT * FROM edges WHERE id='1865cc04-2135-417e-88e1-04e04b9414bd';
+DELETE FROM edges WHERE id='1865cc04-2135-417e-88e1-04e04b9414bd';
+
+-- (A) the guard (LIVE r4 form): a causal edge must rest on more than a
+-- temporal opener. coalesce(signal_source,'') must be causal_language or
+-- citation; label/evidence are normalized (strip 'causal:' prefix, trim
+-- non-alphanumerics, lowercase, \s+ between words) then rejected when they
+-- BEGIN with a temporal opener (prefix match, (\s|$) terminator — PG ARE:
+-- '\b' is backspace, not a word boundary). None of the legitimate CAUSAL_RE
+-- evidence phrases begin with a temporal opener, so no false positives.
+-- Known residual limitation (accepted): a hand-crafted temporal phrase not
+-- beginning with a listed opener could still pass; no code path can produce
+-- one — the deployed functions write only exact TEMPORAL_RE/CAUSAL_RE
+-- keywords or 'explicit citation in article' into evidence.
+ALTER TABLE edges DROP CONSTRAINT IF EXISTS edges_causal_evidence_guard;
 ALTER TABLE edges
   ADD CONSTRAINT edges_causal_evidence_guard CHECK (
     type <> 'causal'
     OR (
-      signal_source IN ('causal_language', 'citation')
+      coalesce(signal_source, '') IN ('causal_language', 'citation')
       AND NOT (
         lower(regexp_replace(regexp_replace(coalesce(metadata->>'evidence', ''), '^[^a-zA-Z0-9]+', ''), '[^a-zA-Z0-9]+$', ''))
-        ~ '^(after|following|amid|amidst|in\s+the\s+wake\s+of|on\s+the\s+back\s+of|days?\s+after|hours?\s+after|in\s+the\s+aftermath\s+of|later|subsequently)$'
+        ~ '^(after(wards?)?|following|amidst?|in\s+the\s+wake\s+of|on\s+the\s+back\s+of|in\s+the\s+aftermath\s+of|later|subsequently|days?\s+after|hours?\s+after)(\s|$)'
       )
       AND NOT (
         lower(regexp_replace(regexp_replace(regexp_replace(coalesce(label, ''), '^\s*causal:\s*', '', 'i'), '^[^a-zA-Z0-9]+', ''), '[^a-zA-Z0-9]+$', ''))
-        ~ '^(after|following|amid|amidst|in\s+the\s+wake\s+of|on\s+the\s+back\s+of|days?\s+after|hours?\s+after|in\s+the\s+aftermath\s+of|later|subsequently)$'
+        ~ '^(after(wards?)?|following|amidst?|in\s+the\s+wake\s+of|on\s+the\s+back\s+of|in\s+the\s+aftermath\s+of|later|subsequently|days?\s+after|hours?\s+after)(\s|$)'
       )
     )
   );
