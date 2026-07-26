@@ -643,12 +643,41 @@ function isDigest(title: string, entityCount: number, digestEntityCount: number)
 }
 
 // ---------- Step 3b: consequence signals (causal language OR citation) ----------
+//
+// Phase 0 Part 2 Tier 3: a causal edge requires an explicit CAUSAL statement
+// (or a citation) — never a temporal connective alone. Temporal keywords
+// (after/following/amid/in the wake of/on the back of/days-after/hours-after)
+// mark SEQUENCE, not causation; 'citing' is attribution and 'linked to' is
+// merely associative — both removed from the causal trigger set. Gate: no
+// causal edge rests on a keyword alone.
 
-const CAUSAL_RE = /\b(as a result of|following|in response to|in the wake of|on the back of|after|amid|because of|due to|owing to|sparked by|triggered by|prompted by|citing|linked to|in retaliation for|in protest (of|at|against)|days? after|hours? after)\b/i
+// Temporal-only connectives -> non-causal 'sequence' edges.
+const TEMPORAL_RE = /\b(after|following|amid|in the wake of|on the back of|days? after|hours? after)\b/i
 
-function causalEvidence(text: string): string | null {
-  const m = text.match(CAUSAL_RE)
+// Explicit causal statements only.
+const CAUSAL_RE = /\b(as a result of|in response to|because of|due to|owing to|sparked by|triggered by|prompted by|in retaliation for|in protest (of|at|against)|caused by|led to|resulting from)\b/i
+
+function temporalEvidence(text: string): string | null {
+  const m = text.match(TEMPORAL_RE)
   return m ? m[0] : null
+}
+
+// A causal phrase counts as evidence only when a shared resolved entity (or a
+// reference to the arc's root event) appears in the same sentence /
+// ±150-char window — otherwise the phrase describes the article's OWN
+// narrative, not a relation to the root event.
+function causalEvidence(text: string, sharedEntities: string[] = [], rootTitle: string | null = null): string | null {
+  const m = text.match(CAUSAL_RE)
+  if (!m || m.index === undefined) return null
+  const lo = Math.max(0, m.index - 150)
+  const hi = Math.min(text.length, m.index + m[0].length + 150)
+  const window = text.slice(lo, hi).toLowerCase()
+  const refs = [...sharedEntities, ...(rootTitle ? [rootTitle] : [])]
+  for (const ref of refs) {
+    const norm = String(ref).toLowerCase().replace(/\s+/g, ' ').trim()
+    if (norm.length >= 3 && window.includes(norm)) return m[0]
+  }
+  return null
 }
 
 // ---------- classifier ----------
@@ -744,7 +773,7 @@ const PROCESS_PATTERNS: Array<{ process: string; re: RegExp }> = [
   { process: 'misconduct case', re: /\b(misconduct|blackmail|harassment|abuse|scandal)\b/i },
   { process: 'resignation', re: /\b(resign\w+|steps down|quit\w*)\b/i },
   { process: 'appointment', re: /\b(appoint\w*|named as|takes office)\b/i },
-  { process: 'policy reversal', re: /\b(backs off|revers\w*|u-turn|abandon\w*|scrap\w*)\b/i },
+  { process: 'policy reversal', re: /\b(backs off|revers\w*|u-turn|abandon\w+|scrap\w*)\b/i },
   { process: 'legislative action', re: /\b(bill|vote\w*|executive order|amendment|legislation|act passed)\b/i },
   { process: 'regulatory decision', re: /\b(regulat\w+|rules out|ban\w*|approv\w+|licen[cs]\w+)\b/i },
   { process: 'legal ruling', re: /\b(ruling|verdict|court rules|judgment|appeal)\b/i },
@@ -812,7 +841,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   economic_policy: [
     { key: 'ep_enacted', title: 'Policy measure enacted or implemented', confirm: /\b(takes effect|comes into force|enacted|implement\w+|signed into law|approved)\b/i },
     { key: 'ep_market', title: 'Market or sector adjustment', confirm: /\b(markets? (react\w*|fall|rise|slide)|shares? (fell|fall|rose|rise)|prices? (rise|fall|rose|fell)|adjust\w+)\b/i },
-    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w+|withdraw\w+|scrapped|backs off|abandon\w+|u-turn)\b/i },
+    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w*|withdraw\w*|scrapped|backs off|abandon\w+|u-turn)\b/i },
     { key: 'ep_funding', title: 'Funding or budget allocated', confirm: /\b(funding|allocat\w+|budget|appropriat\w+|bailout)\b/i },
   ],
   legislative_regulatory: [
@@ -1098,6 +1127,7 @@ interface AttachContext {
   sharedEntityIds: string[]
   similarity: number | null
   causal: string | null
+  temporal: string | null
   hasCitation: boolean
   citationPrimary?: boolean // citation to a primary document (court filing / agency release)
   actors?: ActorRef[] // the article's OWN resolved entities (conf >= floor)
@@ -1176,18 +1206,34 @@ async function attachToArc(supabase: any, art: any, arc: any, ctx: AttachContext
     await tagNodeTopics(supabase, node.id, `${art.title}. ${art.summary ?? ''}`, ctx.topicFloor ?? 0.4)
   }
 
-  // Consequence rules (§2.2/§2.5): the shared resolved entity is already
-  // established; an arc_event + edge additionally requires explicit causal
-  // language in the source text or an explicit citation. Date proximity is
-  // NOT a signal.
-  const signalSource = ctx.causal ? 'shared_entity+causal_language' : ctx.hasCitation ? 'shared_entity+citation' : null
-  if (signalSource && node && arc.root_node_id) {
+  // Consequence rules (§2.2/§2.5) — Phase 0 Part 2 Tier 3 three-way branch:
+  //   (1) explicit causal language with shared-entity proximity => 'causal';
+  //   (2) temporal connective only (after/following/amid/...) => 'sequence'
+  //       (temporal adjacency, NOT causation);
+  //   (3) citation => 'causal' only for a primary document (court filing /
+  //       agency release); a weak citation (named official / study) =>
+  //       'sequence'.
+  // The shared resolved entity is already established; date proximity is NOT
+  // a signal. Gate: no causal edge rests on a keyword alone.
+  const edgeKind: 'causal' | 'sequence' | null = ctx.causal
+    ? 'causal'
+    : ctx.temporal
+      ? 'sequence'
+      : ctx.hasCitation
+        ? ctx.citationPrimary
+          ? 'causal'
+          : 'sequence'
+        : null
+  if (edgeKind && node && arc.root_node_id) {
     // Step 7 (§4/§3.4): ranked signal reliability at edge-creation time.
-    // citation=1 only for a citation to a primary document, else 2;
-    // causal_language=3; 4/topic_actor_temporal and 5/date-proximity never stored.
-    const reliability = ctx.causal ? 3 : ctx.citationPrimary ? 1 : 2
-    const docStrength = ctx.causal ? 'corroborated' : ctx.citationPrimary ? 'documented' : 'corroborated'
-    const claimedBy = !ctx.causal && ctx.citationPrimary ? 'source_document' : 'reporting'
+    // causal_language=3; primary-document citation=1; temporal or
+    // weak-citation sequence=4; 5/date-proximity never stored.
+    const reliability = edgeKind === 'causal' ? (ctx.causal ? 3 : 1) : 4
+    const docStrength = edgeKind === 'causal' ? (ctx.causal ? 'corroborated' : 'documented') : 'circumstantial'
+    const claimedBy = edgeKind === 'causal' && !ctx.causal ? 'source_document' : 'reporting'
+    const signalSource = edgeKind === 'causal'
+      ? ctx.causal ? 'shared_entity+causal_language' : 'shared_entity+citation'
+      : 'shared_entity+sequence'
     await supabase.from('arc_events').insert({
       arc_id: arc.id,
       title: art.title.slice(0, 200),
@@ -1200,18 +1246,21 @@ async function attachToArc(supabase: any, art: any, arc: any, ctx: AttachContext
       {
         source_id: arc.root_node_id,
         target_id: node.id,
-        type: 'causal',
-        weight: reliability <= 2 ? 'heavy' : reliability === 3 ? 'medium' : 'light',
-        label: ctx.causal ? `causal: ${ctx.causal}` : 'cited development in arc',
+        type: edgeKind,
+        weight: edgeKind === 'sequence' ? 'light' : reliability <= 2 ? 'heavy' : 'medium',
+        label: edgeKind === 'causal'
+          ? ctx.causal ? `causal: ${ctx.causal}` : 'cited development in arc'
+          : ctx.temporal ? `sequence: ${ctx.temporal}` : 'sequence: cited development in arc',
         similarity: ctx.similarity,
-        signal_source: ctx.causal ? 'causal_language' : 'citation',
+        signal_source: edgeKind === 'causal' ? (ctx.causal ? 'causal_language' : 'citation') : 'shared_entity',
         doc_strength: docStrength,
         claimed_by: claimedBy,
         reliability,
+        counterfactual_test: edgeKind === 'sequence' ? 'sequence_only' : null,
         metadata: {
           signal_source: signalSource, // legacy mirror for pre-Step-7 readers
           shared_entities: ctx.sharedEntities,
-          evidence: ctx.causal ?? 'explicit citation in article',
+          evidence: ctx.causal ?? ctx.temporal ?? 'explicit citation in article',
         },
       },
       { onConflict: 'source_id,target_id,type' },
@@ -1750,7 +1799,8 @@ Deno.serve(async () => {
         sharedEntities: hit.sharedNames,
         sharedEntityIds: hit.sharedEntityIds,
         similarity: hit.similarity,
-        causal: causalEvidence(text),
+        causal: causalEvidence(text, hit.sharedNames, hit.arc.title),
+        temporal: temporalEvidence(text),
         hasCitation: ca.citationCount > 0,
         citationPrimary: ca.citationPrimary,
         actors: ca.entities,
@@ -1816,7 +1866,8 @@ Deno.serve(async () => {
         sharedEntities: allEntities.map((e) => e.canonical_name),
         sharedEntityIds: allEntities.map((e) => e.id),
         similarity: null,
-        causal: causalEvidence(text),
+        causal: causalEvidence(text, allEntities.map((e) => e.canonical_name), arc.title),
+        temporal: temporalEvidence(text),
         hasCitation: member.citationCount > 0,
         citationPrimary: member.citationPrimary,
         actors: member.entities,
@@ -1879,7 +1930,7 @@ Deno.serve(async () => {
       .order('published_at', { ascending: false })
       .limit(AUTHOR_MAX_PRIOR)
     const count = arts?.length ?? 0
-    await supabase.from('authors').update({ article_count: count }).eq('id', author.id)
+    await supabase.from('authors').update({ article_count: count }).eq('author_id', author.id)
     if (count < AUTHOR_MIN) continue
 
     let substantive = 0, framing = 0
@@ -1890,7 +1941,7 @@ Deno.serve(async () => {
         else framing++
       }
       for (const cit of (a as any).citations ?? []) {
-        typeDist[cit.cited_type] = (typeDist[cit.cited_type] ?? 0) + 1
+        typeDist[c.cited_type] = (typeDist[c.cited_type] ?? 0) + 1
       }
     }
     const profile = {
@@ -1908,7 +1959,7 @@ Deno.serve(async () => {
     await supabase
       .from('authors')
       .update({ framing_profile: profile, confidence, last_computed: new Date().toISOString() })
-      .eq('id', author.id)
+      .eq('author_id', author.id)
     await supabase.from('author_profile_queue').update({ processed_at: new Date().toISOString() }).eq('author_id', author.id)
     report.authorsProfiled++
   }
