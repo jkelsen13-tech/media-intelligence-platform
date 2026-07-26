@@ -43,9 +43,27 @@ const NAMED_ENTITIES: Record<string, string> = {
   iexcl: '¡', iquest: '¿', shy: '',
 }
 
+// Prefixes (>= 2 chars) of known entity names. A trailing '&' + one of these
+// at end-of-text is a truncated entity fragment ("...Asia.&lt"), not prose;
+// single-letter tails ("M&A", "R&D") and non-entity words ("Goldman & Co")
+// are left alone.
+const TRUNCATED_ENTITY_PREFIXES = new Set([
+  'lt', 'gt', 'am', 'amp', 'qu', 'quo', 'quot', 'ap', 'apo', 'apos',
+  'nb', 'nbs', 'nbsp', 'hel', 'hell', 'helli', 'hellip',
+  'mda', 'mdas', 'mdash', 'nda', 'ndas', 'ndash',
+  'lsq', 'lsqu', 'lsquo', 'rsq', 'rsqu', 'rsquo',
+  'ldq', 'ldqu', 'ldquo', 'rdq', 'rdqu', 'rdquo',
+  'mid', 'midd', 'middo', 'middot', 'bul', 'bull',
+  'cop', 'copy', 'reg', 'tra', 'trad', 'trade', 'deg',
+])
+
 function decodeEntities(s: string): string {
-  for (let pass = 0; pass < 2; pass++) {
-    s = s.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{0,9});/g, (m, g) => {
+  // Phase 0 Part 2 Tier 2: decode to a FIXPOINT (max 3 passes) so
+  // double-encoded input resolves fully (&amp;apos; -> &apos; -> '), and
+  // tolerate whitespace-malformed entities (& apos; -> ').
+  for (let pass = 0; pass < 3; pass++) {
+    const before = s
+    s = s.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{0,9}|\s+[a-zA-Z]{2,9});/g, (m, g) => {
       if (g[0] === '#') {
         const n = g[1] === 'x' || g[1] === 'X' ? parseInt(g.slice(2), 16) : parseInt(g.slice(1), 10)
         if (Number.isFinite(n) && n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff)) {
@@ -53,8 +71,9 @@ function decodeEntities(s: string): string {
         }
         return m
       }
-      return NAMED_ENTITIES[g] ?? m
+      return NAMED_ENTITIES[g.trim()] ?? m
     })
+    if (s === before) break
   }
   return s
 }
@@ -65,6 +84,14 @@ interface Sanitized {
   imageAlt: string | null
 }
 
+// Sanitize ONCE at the boundary: strip CDATA wrappers, pull image provenance
+// into separate fields, DECODE entities first (so entity-encoded tags like
+// &lt;a href="..."&gt; become literal markup and get stripped too), strip
+// complete tags, strip broken/truncated tag fragments (</span&, unterminated
+// <a href="..., bare trailing <), drop residual unknown entities
+// (whitespace-tolerant), decode bare entity words left by legacy
+// half-stripped input (apos;/quot;), remove truncated entity tails at
+// end-of-text, then collapse whitespace.
 function sanitize(raw: string | null | undefined): Sanitized {
   if (!raw) return { text: '', imageUrl: null, imageAlt: null }
   let s = String(raw).replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '')
@@ -78,9 +105,39 @@ function sanitize(raw: string | null | undefined): Sanitized {
     imageAlt = alt ? alt[1] : null
   }
   s = s.replace(/<img\b[^>]*>?/gi, ' ')
-  s = s.replace(/<[^>]+>/g, ' ')
+  // Decode BEFORE tag-stripping: encoded tags (&lt;b&gt;, &lt;/span&amp;gt;)
+  // become literal markup here and are removed by the next passes.
   s = decodeEntities(s)
-  s = s.replace(/&[a-zA-Z#0-9]{1,10};/g, ' ') // residual unknown entities
+  s = s.replace(/<[^>]+>/g, ' ') // complete tags (incl. decoded ones)
+  s = s.replace(/<\/?[a-zA-Z][a-zA-Z0-9]*&[a-zA-Z]{0,9}(?![a-zA-Z0-9]*;)/g, ' ') // broken fragments: </span&, </a&gt (any position)
+  s = s.replace(/<\/?[a-zA-Z!][^>]{0,400}$/, ' ') // unterminated tag at end (<a href="htt)
+  s = s.replace(/<\/?$/, ' ') // bare trailing < or </
+  s = s.replace(/&\s*[a-zA-Z#0-9]{1,10};/g, ' ') // residual unknown entities (whitespace-tolerant)
+  // Tier 2 round 2: repair half-stripped entities (mirrors the r2
+  // mip_clean_display_text() in the database).
+  // (1) Bare known-entity words whose '&' was stripped upstream by legacy
+  //     cleaners ("Trump apos;s", 'quot;60 Minutes quot;') decode to their
+  //     character; an optional leading '&' and whitespace before ';' are
+  //     tolerated. For quot;, a preceding space is consumed only for a
+  //     CLOSING quote (followed by whitespace/end) so 'her quot;60' keeps
+  //     its opening-quote spacing.
+  s = s.replace(/&?\s+apos\s*;/g, "'")
+  s = s.replace(/&?\bapos\s*;/g, "'")
+  s = s.replace(/&?\s+quot\s*;(?=\s|$)/g, '"')
+  s = s.replace(/&?\bquot\s*;/g, '"')
+  s = s.replace(/&?\s*\bnbsp\s*;/g, ' ')
+  s = s.replace(/&?\bamp\s*;/g, '&')
+  s = s.replace(/&?\blt\s*;/g, '<')
+  s = s.replace(/&?\bgt\s*;/g, '>')
+  // (2) Truncated entity tails at end-of-text ("...war&", "...Asia.&lt")
+  //     are removed; trailing punctuation is kept (and not duplicated when
+  //     it already precedes the fragment: "Asia.&lt." -> "Asia.").
+  s = s.replace(/&(#x?[0-9a-fA-F]{0,7}|[a-zA-Z]{2,9})([.,;:!?)\]]*)\s*$/, (m, g, punct, off, str) => {
+    if (g[0] !== '#' && !TRUNCATED_ENTITY_PREFIXES.has(g.toLowerCase())) return m
+    const prev = str[off - 1]
+    return prev && punct.startsWith(prev) ? punct.slice(1) : punct
+  })
+  s = s.replace(/&(\s*[.,;:!?)\]]*)$/, '$1') // bare trailing '&' ("war&." -> "war.")
   s = s.replace(/\s+/g, ' ').trim()
   return { text: s, imageUrl, imageAlt }
 }
