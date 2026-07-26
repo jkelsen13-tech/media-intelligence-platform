@@ -1,31 +1,17 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// Backfill the legacy 'articles' table into the full v2 schema.
-// Idempotent (upserts + existence checks). Dry-run supported via ?dry=1.
-//
-// Phase 0 Part 2: 21 fixes from the 2026-07-26 manual review:
-//  1  attach threshold + fallback rules now read from pipeline_config
-//  2  embedding centroid update wrapped in try/catch
-//  3  hub entities removed from origination input (same as ingest-rss #16)
-//  4  entity mention_count incremented per article, not per article_entities row
-//  5  'The <entity>' prefix variant added as alias on fuzzy resolution
-//  6  no more junk 'other' entities from trailing stopwords
-//  7  (deferred — needs real fix)
-//  8  (deferred — needs real fix)
-//  9  entities only written when arc is created; rolled back on failure
-// 10  (already implemented via title recompute — left as-is)
-// 11  (already implemented via category_evidence — left as-is)
-// 12  Phase 1 article_entities backfill capped at 1000/run; unprocessed
-//     articles logged and reprocessed on next run
-// 13  entities with zero article/arc links older than 30d are deleted
-// 14  article_entities confidence/extraction_method backfilled from heuristics
-// 15  last_assignment_run updated only on arcs that received articles
-// 16  hub entity list logged for transparency
-// 17  (test-only concern)
-// 18  (test-only concern)
-// 19  (test-only concern)
-// 20  rollback helper also deletes pre-existing arc_entities it created
-// 21  backfill_status checkpointing per phase (cursor in pipeline_config)
+// ---------------------------------------------------------------------------
+// ⚠️  WARNING (Phase 0 arc-membership fix): the ?reset=1 path WIPES the entire
+// arc layer (story_arcs, arc_entities, arc_events, arc_milestones, nodes,
+// edges, sources, citations, article_entities, entities) and resets every
+// article's arc assignment. A full reprocess built the ORIGINAL poisoned arc
+// layer. Do NOT run reset without (a) a fresh backup of articles.arc_id,
+// story_arcs and arc_entities, and (b) a reviewed migration plan. The attach /
+// originate paths below now carry the same hardening as ingest-rss
+// (hub-entity exclusion, min shared-entity / primary gate, similarity floor,
+// most-matches process picking, anti-snowball arc_entities, centroid
+// embeddings) so a re-run cannot re-snowball — but reset is still destructive.
+// ---------------------------------------------------------------------------
 
 async function loadConfig(supabase: any) {
   const { data, error } = await supabase.from('pipeline_config').select('key, value')
@@ -34,6 +20,7 @@ async function loadConfig(supabase: any) {
   for (const row of data) cfg[row.key] = row.value
   return cfg
 }
+
 
 const NAMED_ENTITIES: Record<string, string> = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
@@ -114,7 +101,58 @@ function sanitize(raw: string | null | undefined): Sanitized {
   return { text: s, imageUrl, imageAlt }
 }
 
-// ---------- port of ingest-rss logic (kept in sync) ----------
+function tag(block: string, name: string): string | null {
+  const openTag = '<' + name
+  const i = block.indexOf(openTag)
+  if (i < 0) return null
+  const boundary = block[i + openTag.length]
+  if (boundary !== '>' && boundary !== ' ' && boundary !== '\t' && boundary !== '\n' && boundary !== '/') return null
+  const gt = block.indexOf('>', i)
+  const closeTag = '</' + name + '>'
+  const j = block.indexOf(closeTag, gt)
+  if (gt < 0 || j < 0) return null
+  return block.slice(gt + 1, j)
+}
+
+
+const CITATION_PATTERNS: Array<{ type: string; re: RegExp }> = [
+  { type: 'court_doc', re: /(court documents?|court filing|court records?|indictment|affidavit|criminal complaint|lawsuit)([^.]{0,80})/i },
+  { type: 'agency_release', re: /(press release|official statement|statement from the [A-Z][^.]{0,60}|agency (said|confirmed|reported)[^.]{0,60})/i },
+  { type: 'named_official', re: /([A-Z][a-zA-Z'’-]+ [A-Z][a-zA-Z'’-]+ (?:said|told|announced|confirmed|stated)[^.]{0,60})/ },
+  { type: 'anonymous_official', re: /((?:officials?|sources?)(?: familiar with| close to| briefed on)?[^.]{0,40}said|unnamed official[^.]{0,60}|anonymous official[^.]{0,60})/i },
+  { type: 'study', re: /((?:study|report|poll|research|analysis)[^.]{0,40}(?:found|shows|published|concluded)[^.]{0,60})/i },
+  { type: 'prior_reporting', re: /(previously reported[^.]{0,60}|according to (?:the )?(?:New York Times|BBC|CNN|Fox News|Al Jazeera|Reuters|AP)[^.]{0,60})/i },
+]
+
+function extractCitations(text: string, weights: Record<string, number>) {
+  const found: Array<{ cited_entity: string; cited_type: string; documentation_strength: number }> = []
+  const seen = new Set<string>()
+  for (const { type, re } of CITATION_PATTERNS) {
+    const m = text.match(re)
+    if (m && !seen.has(type)) {
+      seen.add(type)
+      found.push({
+        cited_entity: (m[1] ?? m[0]).trim().slice(0, 160),
+        cited_type: type,
+        documentation_strength: weights[type] ?? 0.2,
+      })
+    }
+  }
+  return found
+}
+
+const FRAMING_MARKERS = /\b(critics say|supporters say|some say|many believe|could|may|might|appears|seems|allegedly|reportedly|so-called|claims? to)\b/i
+
+function extractClaims(text: string) {
+  const sentences = text.split(/(?<=[.!?])\s+/).filter((s) => s.length > 40 && s.length < 400)
+  const claims: Array<{ text: string; kind: 'substantive' | 'framing' }> = []
+  for (const s of sentences.slice(0, 12)) {
+    claims.push({ text: s.trim(), kind: FRAMING_MARKERS.test(s) ? 'framing' : 'substantive' })
+    if (claims.length >= 6) break
+  }
+  return claims
+}
+
 
 const MONTHS_DAYS = new Set([
   'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
@@ -140,12 +178,8 @@ const STOP_SINGLE = new Set([
 
 const ROLE_TITLES_RE = /^(?:President|Prime Minister|Vice President|Deputy Prime Minister|Minister|Foreign Minister|Defence Minister|Senator|Governor|Mayor|Secretary(?: of State)?|Chancellor(?: of the Exchequer)?|Attorney General|MP|Mr|Ms|Mrs|Miss|Dr|Sir|Dame|Judge|Justice|Chief|General|Admiral|Captain|Colonel|Spokesperson|Officer|Professor|Father|Rabbi|Pope|King|Queen|Prince|Princess)\s+/i
 
-// Outlet names/aliases that must never become story entities even when absent
-// from the outlets table (e.g. 'Daily Mail' typed as PERSON).
-const OUTLET_NAME_ALIASES = new Set([
-  'daily mail', 'mail online', 'mailonline', 'the daily mail', 'dailymail',
-])
-
+// Token excludes trailing dots so sentence boundaries can't bleed into a
+// surface ("England. The"); multi-letter abbreviations (U.S.) still match.
 const PROPER_RE = /\b((?:(?:[A-Z]\.){2,}|[A-Z][\w'’\-]*)(?:(?:\s+(?:of|the|de|del|van|von|der|al|bin|and|&|for)\s+|\s+)(?:(?:[A-Z]\.){2,}|[A-Z][\w'’\-]*))*)/g
 
 interface EntityCandidate {
@@ -167,6 +201,9 @@ function extractEntityCandidates(text: string, outletNames: Set<string>): Entity
       surface = surface.slice(r[0].length).trim()
     }
     if (surface.length < 2) continue
+    // Label sanity filter: reject surfaces that still contain a sentence
+    // break or read like a headline fragment (>6 words) — these are
+    // extraction artifacts, not entities, and must never reach the tables.
     if (surface.includes('. ') || surface.split(/\s+/).length > 6) continue
     const words = surface.split(/\s+/)
     const norm = normalizeEntityName(surface)
@@ -175,12 +212,12 @@ function extractEntityCandidates(text: string, outletNames: Set<string>): Entity
       const isAcronym = /^[A-Z0-9&]{2,6}$/.test(surface)
       const occurrences = (text.match(new RegExp(`\\b${surface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g')) ?? []).length
       if (STOP_SINGLE.has(norm)) continue
-      if (!isAcronym && occurrences < 2) continue
+      if (!isAcronym && occurrences < 2) continue // sentence-start noise
     } else {
-      if (STOP_SINGLE.has(norm.split(' ')[0])) continue
+      if (STOP_SINGLE.has(norm.split(' ')[0])) continue // "The Papers", "In ..."
       if (words.every((w) => STOP_SINGLE.has(w.toLowerCase()))) continue
     }
-    if (outletNames.has(norm)) continue
+    if (outletNames.has(norm)) continue // outlet names are not story entities
     const cur = candidates.get(norm)
     if (cur) {
       cur.mentions++
@@ -196,7 +233,7 @@ function extractEntityCandidates(text: string, outletNames: Set<string>): Entity
 function normalizeEntityName(s: string): string {
   return s
     .toLowerCase()
-    .replace(/[''’]s\b/g, '')
+    .replace(/[''’]s\b/g, '') // strip possessives
     .replace(/\bs’$/g, '')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -220,15 +257,12 @@ interface ResolvedEntity {
   isNew: boolean
 }
 
-// Fix 5: 'The <entity>' prefix variant added as alias on fuzzy resolution.
-// Fix 13: resolver tracks created entity ids so rollback can delete them.
 class EntityResolver {
   byNorm = new Map<string, any>()
   aliasIdx = new Map<string, any>()
   exactConf: number
   fuzzyConf: number
   newConf: number
-  createdIds: string[] = []
 
   constructor(cfg: any) {
     this.exactConf = Number(cfg.entity_exact_confidence ?? 0.95)
@@ -274,26 +308,8 @@ class EntityResolver {
           if (sub) hits.push(e)
         }
         if (hits.length === 1) {
-          // Phase 0 fix (entity hygiene): token-subset fuzzy resolution
-          // produced cross-type junk (e.g. outlets/places resolving onto
-          // person entities). Accept a fuzzy hit only when the candidate's
-          // type AGREES with the stored entity type and the fuzzy confidence
-          // meets the resolve floor.
-          const candType = guessEntityType(cand.surface)
-          if (hits[0].entity_type === candType && this.fuzzyConf >= 0.5) {
-            ent = hits[0]
-            conf = this.fuzzyConf
-            // Fix 5: 'The <entity>' prefix variant added as alias.
-            const theVariant = `The ${cand.surface}`.slice(0, 160)
-            const theNorm = normalizeEntityName(theVariant)
-            const aliases = new Set(ent.aliases ?? [])
-            if (!aliases.has(theVariant) && theNorm && theNorm !== normalizeEntityName(ent.canonical_name)) {
-              aliases.add(theVariant)
-              await supabase.from('entities').update({ aliases: [...aliases] }).eq('id', ent.id)
-              ent.aliases = [...aliases]
-              this.aliasIdx.set(theNorm, ent)
-            }
-          }
+          ent = hits[0]
+          conf = this.fuzzyConf
         }
       }
     }
@@ -304,7 +320,7 @@ class EntityResolver {
           {
             canonical_name: cand.surface.slice(0, 160),
             normalized_name: norm,
-            entity_type: guessEntityType(cand.surface),
+            entity_type: (cand as ModelEntityCandidate).entityType ?? guessEntityType(cand.surface),
             mention_count: 0,
             last_seen: new Date().toISOString(),
           },
@@ -315,7 +331,6 @@ class EntityResolver {
       if (error || !data) return null
       ent = data
       this.index(ent)
-      this.createdIds.push(ent.id)
       if (cand.surface !== ent.canonical_name) {
         const aliases = new Set(ent.aliases ?? [])
         aliases.add(cand.surface.slice(0, 160))
@@ -331,9 +346,171 @@ class EntityResolver {
       ent.aliases = aliases
       this.aliasIdx.set(norm, ent)
     }
+    await supabase
+      .from('entities')
+      .update({ last_seen: new Date().toISOString(), mention_count: (ent.mention_count ?? 0) + cand.mentions })
+      .eq('id', ent.id)
+    ent.mention_count = (ent.mention_count ?? 0) + cand.mentions
     return { id: ent.id, canonical_name: ent.canonical_name, entity_type: ent.entity_type, confidence: conf, role: cand.role, isNew: false }
   }
 }
+
+
+type ExtractionMethod = 'heuristic' | 'model' | 'model+heuristic'
+
+interface ModelEntityCandidate extends EntityCandidate {
+  entityType?: string
+}
+
+function mapModelEntityType(t: string): string | undefined {
+  const u = t.toUpperCase()
+  if (u.startsWith('PER')) return 'person'
+  if (u.startsWith('ORG')) return 'organization'
+  if (u === 'INSTITUTION') return 'institution'
+  if (u.startsWith('LOC') || u.startsWith('GPE') || u.startsWith('MISC')) return 'other'
+  return undefined
+}
+
+// ---------------------------------------------------------------------------
+// NER MODEL SEAM (addendum §2.1) — wiring a model later is CONFIG-ONLY.
+//
+// Secrets (either pair works):
+//   NER_API_URL + NER_API_KEY            -> POST NER_API_URL
+//   HF_API_TOKEN (alone)                 -> POST https://api-inference.huggingface.co/models/dslim/bert-base-NER
+//
+// REQUEST:
+//   POST <url>
+//   Headers: Authorization: Bearer <key>, Content-Type: application/json
+//   Body:    { "inputs": "<article text, truncated to 8000 chars>" }
+//
+// RESPONSE (both HF token-classification and simple custom shapes accepted):
+//   HF style:    [[{ "entity_group": "PER", "word": "Keir Starmer", "score": 0.99, "start": 0, "end": 12 }, ...]]
+//               (a flat single-level array is also accepted; BPE "##" prefixes are stripped)
+//   Custom style: { "entities": [{ "text": "Keir Starmer", "type": "PER" }, ...] }
+//   Recognized per mention: text|surface|word, type|entity_group|entity.
+//   Type mapping: PER*->person, ORG*->organization, INSTITUTION->institution,
+//   LOC/GPE/MISC->other.
+//
+// MERGE: model spans WIN on overlap — a heuristic candidate is dropped when
+// its normalized name is a token-subset/superset of a model candidate's.
+// Canonicalization, resolution, attachment and confidence logging downstream
+// are SHARED regardless of path. Absent secrets or any failure => null =>
+// silently heuristic-only. Path is logged via article_entities.extraction_method
+// ('heuristic' | 'model' | 'model+heuristic').
+// ---------------------------------------------------------------------------
+// Calls the configured NER model. Returns null when unconfigured OR on any
+// failure — callers always fall back to heuristics.
+async function extractEntitiesModel(text: string): Promise<ModelEntityCandidate[] | null> {
+  const url = Deno.env.get('NER_API_URL') ??
+    (Deno.env.get('HF_API_TOKEN')
+      ? 'https://api-inference.huggingface.co/models/dslim/bert-base-NER'
+      : undefined)
+  const key = Deno.env.get('NER_API_KEY') ?? Deno.env.get('HF_API_TOKEN')
+  if (!url || !key) return null // secrets absent: heuristic-only (today's default)
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputs: text.slice(0, 8000) }),
+    })
+    if (!res.ok) {
+      console.warn(`ner-model: HTTP ${res.status}; falling back to heuristics`)
+      return null
+    }
+    const body = await res.json()
+    const raw: any[] = Array.isArray(body)
+      ? (Array.isArray(body[0]) ? body[0] : body)
+      : (body?.entities ?? [])
+    const byNorm = new Map<string, ModelEntityCandidate>()
+    for (const e of raw) {
+      const surface = String(e.text ?? e.surface ?? e.word ?? '').replace(/^##/, '').trim()
+      if (surface.length < 2) continue
+      const norm = normalizeEntityName(surface)
+      if (!norm || STOP_SINGLE.has(norm)) continue
+      const cur = byNorm.get(norm)
+      if (cur) cur.mentions++
+      else {
+        byNorm.set(norm, {
+          surface,
+          role: null,
+          mentions: 1,
+          entityType: mapModelEntityType(String(e.type ?? e.entity_group ?? e.entity ?? '')),
+        })
+      }
+    }
+    return [...byNorm.values()]
+  } catch (err) {
+    console.warn(`ner-model: call failed (${String(err)}); falling back to heuristics`)
+    return null
+  }
+}
+
+// Single NER seam. Model spans win on overlap: a heuristic candidate is
+// dropped when its normalized name is a token-subset/superset of any model
+// candidate's normalized name. Canonicalization/resolution downstream is
+// shared regardless of path.
+async function extractEntities(
+  text: string,
+  outletNames: Set<string>,
+): Promise<{ candidates: EntityCandidate[]; method: ExtractionMethod }> {
+  const heuristic = extractEntityCandidates(text, outletNames)
+  const model = await extractEntitiesModel(text)
+  if (!model) return { candidates: heuristic, method: 'heuristic' }
+  const modelNorms = model.map((c) => new Set(normalizeEntityName(c.surface).split(' ')))
+  const keptHeuristic = heuristic.filter((h) => {
+    const ht = new Set(normalizeEntityName(h.surface).split(' '))
+    return !modelNorms.some(
+      (mt) => [...ht].every((t) => mt.has(t)) || [...mt].every((t) => ht.has(t)),
+    )
+  })
+  const candidates: EntityCandidate[] = [...model, ...keptHeuristic]
+  return { candidates, method: keptHeuristic.length > 0 ? 'model+heuristic' : 'model' }
+}
+
+async function extractAndResolveEntities(
+  supabase: any,
+  resolver: EntityResolver,
+  articleId: string,
+  text: string,
+  outletNames: Set<string>,
+): Promise<ResolvedEntity[]> {
+  const { candidates, method } = await extractEntities(text, outletNames)
+  console.log(`ner-path: article=${articleId} method=${method} candidates=${candidates.length}`)
+  const resolved: ResolvedEntity[] = []
+  const seenIds = new Set<string>()
+  for (const cand of candidates.slice(0, 25)) {
+    try {
+      const r = await resolver.resolve(supabase, cand)
+      if (!r || seenIds.has(r.id)) continue
+      seenIds.add(r.id)
+      resolved.push(r)
+      await supabase.from('article_entities').upsert(
+        {
+          article_id: articleId,
+          entity_id: r.id,
+          confidence: r.confidence,
+          extraction_method: method,
+          role: r.role,
+        },
+        { onConflict: 'article_id,entity_id' },
+      )
+    } catch {
+      // entity resolution is best-effort per candidate
+    }
+  }
+  return resolved
+}
+
+// ---------- Step 3a: digest exclusion ----------
+
+const DIGEST_TITLE_RE = /\b(headlines? for|the papers|what we know|daily briefing|morning (digest|briefing|roundup)|evening (digest|briefing|roundup)|news digest|(news|sport)s? roundup|round-up|the week in|week in review|catch[- ]up|live updates?|news bulletin|at a glance|recap|in pictures)\b/i
+
+function isDigest(title: string, entityCount: number, digestEntityCount: number): boolean {
+  if (DIGEST_TITLE_RE.test(title)) return true
+  return entityCount >= digestEntityCount
+}
+
+// ---------- Step 3b: consequence signals (causal language OR citation) ----------
 
 const CAUSAL_RE = /\b(as a result of|following|in response to|in the wake of|on the back of|after|amid|because of|due to|owing to|sparked by|triggered by|prompted by|citing|linked to|in retaliation for|in protest (of|at|against)|days? after|hours? after)\b/i
 
@@ -342,10 +519,21 @@ function causalEvidence(text: string): string | null {
   return m ? m[0] : null
 }
 
+// ---------- classifier ----------
+// Spec §2.5.3 defines exactly four named categories; 'unclassified' only when
+// genuinely ambiguous. Keyword/weight rubric operationalises those category
+// definitions; confidence is logged for every arc and the floor is calibrated
+// from the measured distribution (stored in pipeline_config).
+
 const CATEGORY_RUBRIC: Array<{ category: string; weight: number; re: RegExp }> = [
+  // Institutional accountability: scrutiny of whether an institution or
+  // officeholder discharged their duties — investigations, failures,
+  // misconduct, oversight, legal exposure of officials.
   { category: 'institutional_accountability', weight: 0.45, re: /\b(investigation|investigating|probe|inquiry|inquest|misconduct|cover-up|oversight|indictment|indicted|arrest\w*|charged|jailed|blackmail|sacked|suspended|resignation|resigned)\b/i },
   { category: 'institutional_accountability', weight: 0.3, re: /\b(lack of authority|accountability|failure\w*|failings|negligence|whistleblow\w*|lawsuit|scandal|corruption|disciplinary|grooming|abuse)\b/i },
   { category: 'institutional_accountability', weight: 0.15, re: /\b(apolog\w+|compensation|report found|review found|criticis\w+)\b/i },
+  // Geopolitical consequence: state / armed-actor actions and their
+  // cross-border effects (shipping disruption, displacement, escalation).
   { category: 'geopolitical_consequence', weight: 0.45, re: /\b(war|ceasefire|missile\w*|troops|invasion|drone strike|nato|treaty|houthis?|red sea|escalation|airstrike\w*|hostages?|gaza|ukraine)\b/i },
   { category: 'geopolitical_consequence', weight: 0.35, re: /\b(sanctions?|shipping threat|tanker\w*|u-turn\w*|evacuation|displacement|cross-border|diplomat\w*|embassy|militia|insurgent\w*)\b/i },
   { category: 'geopolitical_consequence', weight: 0.15, re: /\b(allies|summit|foreign minister|defence|defense|security council|border)\b/i },
@@ -394,15 +582,14 @@ const ARC_EVENT_CATEGORY: Record<string, string> = {
   unclassified: 'accountability',
 }
 
+
 const PROCESS_PATTERNS: Array<{ process: string; re: RegExp }> = [
   { process: 'cross-border explosives interdiction', re: /\b(bomb|explosive\w*|ied)\b[\s\S]{0,80}\b(intercept\w*|seiz\w*)\b|\b(intercept\w*|seiz\w*)\b[\s\S]{0,80}\b(bomb|explosive\w*|ied)\b/i },
   { process: 'shipping interdiction', re: /\b(tanker\w*|shipping|vessel\w*)[\s\S]{0,80}(threat|u-turn|rerout\w*)|\b(shipping threat)\b/i },
   { process: 'ceasefire talks', re: /\b(ceasefire|truce|peace talks|peace deal)\b/i },
-  // Phase 0 fix: economic/legal processes must win over 'military escalation'
-  // (bare 'strike/attack/war' used to hijack trade-war and court stories), so
-  // they are ordered BEFORE it, and military escalation now requires genuine
-  // armed-conflict vocabulary — bare 'strike\w*|attack\w*' removed, 'war'
-  // word-bounded.
+  // Phase 0 fix: economic/legal processes ordered BEFORE military escalation;
+  // military escalation requires genuine armed-conflict vocabulary (bare
+  // 'strike\w*|attack\w*' removed, 'war' word-bounded).
   { process: 'trade dispute', re: /\b(tariff\w*|trade (war|deal|dispute|crosshairs))\b/i },
   { process: 'sanctions regime', re: /\bsanction\w*\b/i },
   { process: 'hostage negotiations', re: /\bhostage\w*\b/i },
@@ -434,9 +621,7 @@ const PROCESS_PATTERNS: Array<{ process: string; re: RegExp }> = [
 ]
 
 // Phase 0 fix: pick the process with the MOST member-text matches instead of
-// the first matching entry — first-match let an early broad pattern
-// ('military escalation') claim arcs whose dominant signal was something else.
-// Ties keep the earlier (more specific) pattern. No matches => null => no arc.
+// first-match; ties keep the earlier (more specific) pattern. null => no arc.
 function findProcess(text: string): string | null {
   let best: string | null = null
   let bestCount = 0
@@ -453,10 +638,13 @@ function findProcess(text: string): string | null {
 function makeArcTitle(actorName: string | null, process: string | null): string | null {
   if (!process) return null
   if (!actorName) return `Unattributed cluster — ${process}`
+  // Strip possessive leaks ("Charlie Kirk's" -> "Charlie Kirk") so the title
+  // subject is the entity name, not a surface form.
   const subject = actorName.replace(/['’]s$/u, '').trim()
   if (!subject) return `Unattributed cluster — ${process}`
   return `${subject} — ${process}`.slice(0, 140)
 }
+
 
 interface MilestoneTemplate {
   key: string
@@ -475,8 +663,8 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   geopolitical_consequence: [
     { key: 'gp_ceasefire', title: 'Ceasefire or de-escalation agreed', confirm: /\b(ceasefire|truce|de-escalat\w+|peace (deal|agreement)|armistice|withdraw\w*)\b/i, fail: /\b(talks? (collapse\w*|fail\w*)|ceasefire (broken|collapses?|ends?))\b/i },
     { key: 'gp_sanctions', title: 'Sanctions or retaliation imposed', confirm: /\b(sanctions? (imposed|announced|extended)|retaliat\w+|expel\w+|travel ban)\b/i },
-    { key: 'gp_routes', title: 'Disrupted routes or activity normalize', confirm: /\b(resum\w+|reopen\w*|normali\w*|returns? to (the )?(red sea|route|port))\b/i },
-    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w+|strike\w*|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
+    { key: 'gp_routes', title: 'Disrupted routes or activity normalize', confirm: /\b(resum\w+|reopen\w+|normali\w*|returns? to (the )?(red sea|route|port))\b/i },
+    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w+|strike\w+|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
   ],
   economic_policy: [
     { key: 'ep_enacted', title: 'Policy measure enacted or implemented', confirm: /\b(takes effect|comes into force|enacted|implement\w+|signed into law|approved)\b/i },
@@ -497,8 +685,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   ],
 }
 
-async function generateMilestones(supabase: any, arcId: string, category: string, process: string, dry: boolean) {
-  if (dry) return
+async function generateMilestones(supabase: any, arcId: string, category: string, process: string) {
   const templates = MILESTONE_TEMPLATES[category] ?? MILESTONE_TEMPLATES.unclassified
   const rows = templates.slice(0, 6).map((t) => ({
     arc_id: arcId,
@@ -510,22 +697,35 @@ async function generateMilestones(supabase: any, arcId: string, category: string
   await supabase.from('arc_milestones').insert(rows)
 }
 
-let aiSession: any = null
-function getSession(model: string) {
-  if (!aiSession) {
-    // @ts-ignore
-    aiSession = new Supabase.ai.Session(model)
+async function checkMilestones(supabase: any, arc: any, articleText: string, art: any): Promise<number> {
+  const { data: pending } = await supabase
+    .from('arc_milestones')
+    .select('id, title, milestone_key, status')
+    .eq('arc_id', arc.id)
+    .eq('status', 'pending')
+  let updated = 0
+  for (const ms of pending ?? []) {
+    const tpl = (MILESTONE_TEMPLATES[arc.category] ?? MILESTONE_TEMPLATES.unclassified).find(
+      (t) => t.key === ms.milestone_key,
+    )
+    if (!tpl) continue
+    let status: string | null = null
+    if (tpl.fail && tpl.fail.test(articleText)) status = 'failed'
+    else if (tpl.confirm.test(articleText)) status = 'confirmed'
+    if (!status) continue
+    await supabase
+      .from('arc_milestones')
+      .update({
+        status,
+        notes: `Evidence: "${art.title}" (${art.url ?? 'no url'})`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', ms.id)
+    updated++
   }
-  return aiSession
+  return updated
 }
 
-async function embed(text: string, model: string): Promise<number[]> {
-  const session = getSession(model)
-  const out = await session.run(text.slice(0, 8000), { mean_pool: true, normalize: true })
-  const vec = Array.isArray(out) ? out : out?.embedding ?? out?.embeddings?.[0]
-  if (!vec) throw new Error('embedding failed')
-  return Array.from(vec as Iterable<number>)
-}
 
 function cosine(a: number[], b: number[]): number {
   let dot = 0, na = 0, nb = 0
@@ -549,87 +749,172 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
 }
 
-// Document frequency of every entity over article_entities, used to exclude
-// hub entities (e.g. 'Iran', 'Trump', 'AI') from arc matching.
-async function loadHubEntityIds(supabase: any, maxDf: number): Promise<Set<string>> {
-  const df = new Map<string, Set<string>>()
-  let from = 0
-  for (;;) {
-    const { data, error } = await supabase
-      .from('article_entities')
-      .select('article_id, entity_id')
-      .range(from, from + 999)
-    if (error) throw error
-    if (!data || data.length === 0) break
-    for (const r of data) {
-      const set = df.get(r.entity_id) ?? new Set<string>()
-      set.add(r.article_id)
-      df.set(r.entity_id, set)
-    }
-    if (data.length < 1000) break
-    from += 1000
-  }
-  const hubs = new Set<string>()
-  for (const [entityId, arts] of df) {
-    if (arts.size > maxDf) hubs.add(entityId)
-  }
-  return hubs
+
+// ---------- Steps 6-8: actor nodes/edges, edge signal columns, topics ----------
+
+interface ActorRef {
+  id: string
+  canonical_name: string
+  entity_type: string
 }
 
-// Embedding similarity only SHORTLISTS/ranks candidates that already share a
-// resolved entity. Phase 0 hardening mirrors ingest-rss: >= 2 shared entities
-// or the arc's primary entity; single-entity matches must clear the
-// similarity floor.
-async function findArcBySharedEntity(
-  supabase: any,
-  entityIds: string[],
-  embedding: number[] | null,
-  attachMinSimilarity = 0.78,
-): Promise<{ arc: any; sharedEntityIds: string[]; sharedNames: string[]; similarity: number | null } | null> {
-  if (entityIds.length === 0) return null
+// Step 6 (§4): one ACTOR node per resolved entity, backlinked via
+// metadata.entity_id. Idempotent.
+async function ensureActorNode(supabase: any, e: ActorRef): Promise<string | null> {
+  // Type guard: never write non-string or malformed labels (a stray object
+  // here once rendered literally as "[object Object]" in the graph).
+  if (typeof e?.canonical_name !== 'string' || !e.canonical_name.trim()) return null
+  if (e.canonical_name.includes('. ') || e.canonical_name.trim().split(/\s+/).length > 6) return null
+  const slug = `actor-${normalizeEntityName(e.canonical_name)}`
   const { data, error } = await supabase
-    .from('arc_entities')
-    .select('arc_id, entity_id, role, story_arcs!inner(id, slug, title, category, summary, status, root_node_id, embedding, title_article_count), entities!inner(canonical_name)')
-    .in('entity_id', entityIds)
-    .eq('story_arcs.status', 'active')
-  if (error || !data || data.length === 0) return null
-  const byArc = new Map<string, { arc: any; sharedEntityIds: string[]; sharedNames: string[]; sharedPrimary: boolean }>()
-  for (const row of data) {
-    const cur = byArc.get(row.arc_id) ?? { arc: (row as any).story_arcs, sharedEntityIds: [], sharedNames: [], sharedPrimary: false }
-    cur.sharedEntityIds.push(row.entity_id)
-    cur.sharedNames.push((row as any).entities.canonical_name)
-    if ((row as any).role === 'primary') cur.sharedPrimary = true
-    byArc.set(row.arc_id, cur)
-  }
-  let best: { arc: any; sharedEntityIds: string[]; sharedNames: string[]; similarity: number | null } | null = null
-  for (const cand of byArc.values()) {
-    const sharedCount = cand.sharedEntityIds.length
-    if (sharedCount < 2 && !cand.sharedPrimary) continue
-    let sim: number | null = null
-    if (embedding) {
-      const vec = parseVec(cand.arc.embedding)
-      if (vec) sim = cosine(embedding, vec)
-    }
-    if (sharedCount < 2 && (sim === null || sim < attachMinSimilarity)) continue
-    const entry = { ...cand, similarity: sim }
-    if (
-      !best ||
-      entry.sharedEntityIds.length > best.sharedEntityIds.length ||
-      (entry.sharedEntityIds.length === best.sharedEntityIds.length && (entry.similarity ?? 0) > (best.similarity ?? 0))
-    ) {
-      best = entry
-    }
-  }
-  return best
+    .from('nodes')
+    .upsert(
+      { slug, label: e.canonical_name.slice(0, 160), type: 'actor', metadata: { entity_id: e.id, entity_type: e.entity_type } },
+      { onConflict: 'slug' },
+    )
+    .select('id')
+    .single()
+  if (error || !data) return null
+  return data.id
 }
 
-async function attachToArc(supabase: any, art: any, arc: any, ctx: any, dry: boolean) {
-  if (dry) return
+// Actor edges EVENT -> ACTOR for the article's own resolved entities.
+async function linkActorsToEventNode(supabase: any, nodeId: string, actors: ActorRef[], articleId: string) {
+  for (const e of actors) {
+    if (!['person', 'organization', 'institution'].includes(e.entity_type)) continue
+    const actorNodeId = await ensureActorNode(supabase, e)
+    if (!actorNodeId || actorNodeId === nodeId) continue
+    await supabase.from('edges').upsert(
+      {
+        source_id: nodeId,
+        target_id: actorNodeId,
+        type: 'actor',
+        label: 'involves',
+        weight: 'heavy',
+        signal_source: 'shared_entity',
+        doc_strength: 'corroborated',
+        claimed_by: 'reporting',
+        reliability: 2,
+        metadata: { entity_id: e.id, article_id: articleId },
+      },
+      { onConflict: 'source_id,target_id,type' },
+    )
+  }
+}
+
+// Step 8 (§5): tag against the FIXED topic tree. Conservative keyword rubric;
+// below floor => untagged; topics are NEVER invented. A subtopic tag
+// propagates to its ancestors at the same confidence.
+const TOPIC_PARENT: Record<string, string | null> = {
+  technology: null,
+  ai: 'technology',
+  'ai-model-development': 'ai',
+  'ai-regulation': 'ai',
+  'ai-infrastructure': 'ai',
+  semiconductors: 'technology',
+  'semiconductors-fabrication': 'semiconductors',
+  'semiconductors-export-controls': 'semiconductors',
+  'semiconductors-supply-chain': 'semiconductors',
+  'quantum-computing': 'technology',
+  'data-centers': 'technology',
+  'data-centers-siting': 'data-centers',
+  'data-centers-energy': 'data-centers',
+  'data-centers-water': 'data-centers',
+  telecommunications: 'technology',
+  governance: null,
+  'governance-legislation': 'governance',
+  'governance-regulatory-action': 'governance',
+  'governance-judicial': 'governance',
+  'governance-executive-action': 'governance',
+  'security-defense': null,
+  'energy-environment': null,
+  'labor-economy': null,
+  'public-health': null,
+  'civil-liberties': null,
+}
+
+const TOPIC_RULES: Array<{ slug: string; weight: number; re: RegExp }> = [
+  { slug: 'ai-model-development', weight: 0.45, re: /\b(large language model|llm\b|frontier model|model (release|launch|training)|gpt-?\w*)\b/i },
+  { slug: 'ai-regulation', weight: 0.45, re: /\b(ai (act|regulation|rules|bill|safety|governance)|artificial intelligence (regulation|bill|rules|safety))\b/i },
+  { slug: 'ai-infrastructure', weight: 0.45, re: /\b(ai (infrastructure|compute|chips?|accelerators?))\b/i },
+  { slug: 'ai', weight: 0.3, re: /\b(artificial intelligence|openai|anthropic|deepmind|machine learning)\b/i },
+  { slug: 'semiconductors-fabrication', weight: 0.45, re: /\b(fabs?\b|foundry|tsmc|chip (plant|manufacturing|fab))\b/i },
+  { slug: 'semiconductors-export-controls', weight: 0.45, re: /\b(export controls?|entity list|chip exports?)\b/i },
+  { slug: 'semiconductors-supply-chain', weight: 0.45, re: /\b(chip supply|semiconductor supply|supply chains?)\b/i },
+  { slug: 'semiconductors', weight: 0.3, re: /\bsemiconductors?\b/i },
+  { slug: 'quantum-computing', weight: 0.45, re: /\bquantum (comput\w+|processor|supremacy)\b/i },
+  { slug: 'data-centers-siting', weight: 0.45, re: /\bdata cent(er|re)\w*[\s\S]{0,40}(siting|permit\w*|zoning|construction)\b/i },
+  { slug: 'data-centers-energy', weight: 0.45, re: /\bdata cent(er|re)\w*[\s\S]{0,40}(energy|power|electricity)\b/i },
+  { slug: 'data-centers-water', weight: 0.45, re: /\bdata cent(er|re)\w*[\s\S]{0,40}water\b/i },
+  { slug: 'data-centers', weight: 0.3, re: /\bdata cent(er|re)\w*\b/i },
+  { slug: 'telecommunications', weight: 0.45, re: /\b(5g|6g|telecom\w*|broadband|spectrum auction)\b/i },
+  { slug: 'technology', weight: 0.25, re: /\b(algorithm\w*|software|cyberattack\w*|app\b|platform\w*)\b/i },
+  { slug: 'governance-legislation', weight: 0.45, re: /\b(bill|legislation|act passed|house passes|senate (vote|passes)|parliament|amendment)\b/i },
+  { slug: 'governance-regulatory-action', weight: 0.45, re: /\b(regulator\w*|regulation|ban\w*|rules out|ftc|sec\b|fcc|ofcom|statutory)\b/i },
+  { slug: 'governance-judicial', weight: 0.45, re: /\b(supreme court|court rules|ruling|verdict|judge|appeal|judgment)\b/i },
+  { slug: 'governance-executive-action', weight: 0.45, re: /\b(executive order|white house|downing street|president (signed|ordered)|administration)\b/i },
+  { slug: 'governance', weight: 0.25, re: /\b(government|minister|ministry|congress|senate)\b/i },
+  { slug: 'security-defense', weight: 0.45, re: /\b(military|missile\w*|troops|defen[cs]e|nato|airstrike\w*|drone strike|\bwar\b|ceasefire|hostages?|sanction\w*|militia)\b/i },
+  { slug: 'energy-environment', weight: 0.45, re: /\b(renewable\w*|solar|wind farm|nuclear|carbon|emission\w*|climate|flood\w*|wildfire\w*|hurricane|storm)\b/i },
+  { slug: 'energy-environment', weight: 0.3, re: /\b(oil|gas prices?|energy)\b/i },
+  { slug: 'labor-economy', weight: 0.45, re: /\b(inflation|tariff\w*|trade (deal|war|dispute)|recession|budget|gdp|interest rate\w*|federal reserve|jobs report|wages?|strike\w*|union\w*)\b/i },
+  { slug: 'labor-economy', weight: 0.3, re: /\b(econom\w+|markets?|stocks?|shares)\b/i },
+  { slug: 'public-health', weight: 0.45, re: /\b(hospital\w*|vaccin\w*|pandemic|disease|virus|cdc\b|who\b|public health|medical)\b/i },
+  { slug: 'civil-liberties', weight: 0.45, re: /\b(civil libert\w+|free speech|privacy|protest\w*|dissent|censorship|surveillance|press freedom)\b/i },
+]
+
+function tagTopics(text: string, floor: number): Array<{ slug: string; confidence: number }> {
+  const conf = new Map<string, number>()
+  for (const { slug, weight, re } of TOPIC_RULES) {
+    if (re.test(text)) conf.set(slug, Math.min(1, (conf.get(slug) ?? 0) + weight))
+  }
+  for (const [slug, c] of [...conf]) {
+    let p = TOPIC_PARENT[slug]
+    while (p) {
+      conf.set(p, Math.max(conf.get(p) ?? 0, c))
+      p = TOPIC_PARENT[p] ?? null
+    }
+  }
+  return [...conf].filter(([, c]) => c >= floor).map(([slug, confidence]) => ({ slug, confidence }))
+}
+
+let topicIdCache: Map<string, string> | null = null
+async function loadTopicIds(supabase: any): Promise<Map<string, string>> {
+  if (topicIdCache) return topicIdCache
+  const { data } = await supabase.from('topics').select('id, slug')
+  topicIdCache = new Map((data ?? []).map((t: any) => [t.slug, t.id]))
+  return topicIdCache
+}
+
+async function tagNodeTopics(supabase: any, nodeId: string, text: string, floor: number): Promise<number> {
+  const tags = tagTopics(text, floor)
+  if (tags.length === 0) return 0
+  const ids = await loadTopicIds(supabase)
+  const rows = tags
+    .map((t) => ({ node_id: nodeId, topic_id: ids.get(t.slug), confidence: t.confidence }))
+    .filter((r) => r.topic_id)
+  if (rows.length === 0) return 0
+  await supabase.from('node_topics').upsert(rows, { onConflict: 'node_id,topic_id' })
+  return rows.length
+}
+
+interface AttachContext {
+  sharedEntities: string[]
+  sharedEntityIds: string[]
+  similarity: number | null
+  causal: string | null
+  hasCitation: boolean
+  citationPrimary?: boolean
+  actors?: ActorRef[]
+  topicFloor?: number
+  embedding?: number[] | null // article embedding, used to refresh the arc centroid
+}
+
+async function attachToArc(supabase: any, art: any, arc: any, ctx: AttachContext) {
   await supabase.from('articles').update({ arc_id: arc.id }).eq('id', art.id)
 
-  // Phase 0 fix: keep the arc embedding a RUNNING CENTROID over member
-  // embeddings (previously frozen at the seed article's vector).
-  // Fix 2: centroid update wrapped in try/catch — it must never fail attach.
+  // Phase 0 fix: maintain a RUNNING CENTROID over member embeddings instead
+  // of leaving the arc embedding frozen at its seed (mirrors ingest-rss).
   if (ctx.embedding && ctx.embedding.length > 0) {
     try {
       const { data: fresh } = await supabase
@@ -642,7 +927,7 @@ async function attachToArc(supabase: any, art: any, arc: any, ctx: any, dry: boo
         .select('id', { count: 'exact', head: true })
         .eq('arc_id', arc.id)
         .not('embedding', 'is', null)
-      const m = count ?? 1
+      const m = count ?? 1 // members with embeddings, INCLUDING the one just attached
       const old = parseVec(fresh?.embedding)
       const n = ctx.embedding.length
       const next: number[] = new Array(n)
@@ -687,11 +972,17 @@ async function attachToArc(supabase: any, art: any, arc: any, ctx: any, dry: boo
       url: art.url ?? null,
       published_at: art.published_at ? String(art.published_at).slice(0, 10) : null,
     })
+    // Step 6: actor nodes + actor edges for this article's resolved entities
+    if (ctx.actors && ctx.actors.length > 0) {
+      await linkActorsToEventNode(supabase, node.id, ctx.actors, art.id)
+    }
+    // Step 8: topic tagging against the fixed tree
+    await tagNodeTopics(supabase, node.id, `${art.title}. ${art.summary ?? ''}`, ctx.topicFloor ?? 0.4)
   }
 
   const signalSource = ctx.causal ? 'shared_entity+causal_language' : ctx.hasCitation ? 'shared_entity+citation' : null
   if (signalSource && node && arc.root_node_id) {
-    // Phase 0 Step 7: ranked signal reliability at edge-creation time.
+    // Step 7 (§4/§3.4): ranked signal reliability at edge-creation time.
     const reliability = ctx.causal ? 3 : ctx.citationPrimary ? 1 : 2
     const docStrength = ctx.causal ? 'corroborated' : ctx.citationPrimary ? 'documented' : 'corroborated'
     const claimedBy = !ctx.causal && ctx.citationPrimary ? 'source_document' : 'reporting'
@@ -716,7 +1007,7 @@ async function attachToArc(supabase: any, art: any, arc: any, ctx: any, dry: boo
         claimed_by: claimedBy,
         reliability,
         metadata: {
-          signal_source: signalSource, // legacy mirror for pre-Step-7 readers
+          signal_source: signalSource, // legacy mirror
           shared_entities: ctx.sharedEntities,
           evidence: ctx.causal ?? 'explicit citation in article',
         },
@@ -727,94 +1018,80 @@ async function attachToArc(supabase: any, art: any, arc: any, ctx: any, dry: boo
   await supabase.from('story_arcs').update({ last_update_at: new Date().toISOString() }).eq('id', arc.id)
 }
 
-async function maybeRetitleArc(supabase: any, arc: any, catFloor: number, dry: boolean): Promise<boolean> {
-  const { count } = await supabase
-    .from('articles')
-    .select('id', { count: 'exact', head: true })
-    .eq('arc_id', arc.id)
-  const n = count ?? 0
-  const last = arc.title_article_count ?? 0
-  if (n === 0 || (last > 0 && n < Math.max(last * 2, last + 5))) return false
-
-  const { data: primary } = await supabase
-    .from('arc_entities')
-    .select('entities!inner(canonical_name)')
-    .eq('arc_id', arc.id)
-    .eq('role', 'primary')
-    .limit(1)
-  const actorName = (primary?.[0] as any)?.entities?.canonical_name ?? null
-
-  const { data: arts } = await supabase
-    .from('articles')
-    .select('id, title, summary')
-    .eq('arc_id', arc.id)
-    .order('published_at', { ascending: true })
-    .limit(10)
-
-  // Phase 0 fix: retitle/reclassify ONLY from members that pass the attach
-  // keep-rule (share the arc's primary entity or >= 2 arc entities).
-  const { data: arcEnts } = await supabase
-    .from('arc_entities')
-    .select('entity_id, role')
-    .eq('arc_id', arc.id)
-  const primaryId = (arcEnts ?? []).find((r: any) => r.role === 'primary')?.entity_id ?? null
-  const arcEntIds = new Set((arcEnts ?? []).map((r: any) => r.entity_id))
-  let memberIds = (arts ?? []).map((a: any) => a.id)
-  if (arcEntIds.size > 0 && memberIds.length > 0) {
-    const { data: aeRows } = await supabase
+// Phase 0 fix: hub entities (document frequency > cluster_entity_max_df over
+// article_entities) are excluded from attach matching, mirroring the
+// originate-step filter that already existed here.
+async function loadHubEntityIds(supabase: any, maxDf: number): Promise<Set<string>> {
+  const df = new Map<string, Set<string>>()
+  let from = 0
+  for (;;) {
+    const { data, error } = await supabase
       .from('article_entities')
       .select('article_id, entity_id')
-      .in('article_id', memberIds)
-    const sharedBy = new Map<string, { shared: number; primary: boolean }>()
-    for (const r of aeRows ?? []) {
-      if (!arcEntIds.has(r.entity_id)) continue
-      const cur = sharedBy.get(r.article_id) ?? { shared: 0, primary: false }
-      cur.shared++
-      if (r.entity_id === primaryId) cur.primary = true
-      sharedBy.set(r.article_id, cur)
+      .range(from, from + 999)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    for (const r of data) {
+      const set = df.get(r.entity_id) ?? new Set<string>()
+      set.add(r.article_id)
+      df.set(r.entity_id, set)
     }
-    const keepIds = memberIds.filter((id: string) => {
-      const s = sharedBy.get(id)
-      return s && (s.primary || s.shared >= 2)
-    })
-    if (keepIds.length > 0) memberIds = keepIds
+    if (data.length < 1000) break
+    from += 1000
   }
-  const keepSet = new Set(memberIds)
-  const text = (arts ?? []).filter((a: any) => keepSet.has(a.id)).map((a: any) => `${a.title}. ${a.summary ?? ''}`).join(' ')
-  const process = findProcess(text)
-  const title = makeArcTitle(actorName, process)
-  const cls = applyFloor(classifyArc(text), catFloor)
-  if (dry) return true
-  const update: any = { title_article_count: n }
-  if (title) update.title = title
-  // Phase 0 fix: ALWAYS recompute the category (previously frozen once a
-  // non-unclassified label existed, which kept wrong labels forever).
-  if (cls.category === 'unclassified') {
-    update.category = 'unclassified'
-    update.category_confidence = null
-    update.category_evidence = cls.evidence
-  } else {
-    update.category = cls.category
-    update.category_confidence = cls.confidence
-    update.category_evidence = cls.evidence
+  const hubs = new Set<string>()
+  for (const [entityId, arts] of df) {
+    if (arts.size > maxDf) hubs.add(entityId)
   }
-  await supabase.from('story_arcs').update(update).eq('id', arc.id)
-  if (title) arc.title = title
-  arc.title_article_count = n
-  if (title) {
-    const noteCategory = update.category ?? arc.category
-    await supabase
-      .from('arc_milestones')
-      .update({ notes: `Expected outcome for ${noteCategory} arc (${process}).` })
-      .eq('arc_id', arc.id)
-      .eq('status', 'pending')
-      .like('notes', 'Expected outcome%')
-  }
-  return true
+  return hubs
 }
 
-// Fix 9/20: entities are only written to arc_entities after the arc insert
-// succeeds; rollback deletes pre-existing arc_entities this run created.
+// Phase 0 hardening (mirrors ingest-rss): accept a candidate arc only when
+// the article shares >= 2 arc entities OR the arc's role='primary' entity;
+// a single shared entity additionally requires similarity >= attachMinSimilarity.
+async function findArcBySharedEntity(
+  supabase: any,
+  entityIds: string[],
+  embedding: number[] | null,
+  attachMinSimilarity = 0.78,
+): Promise<{ arc: any; sharedEntityIds: string[]; sharedNames: string[]; similarity: number | null } | null> {
+  if (entityIds.length === 0) return null
+  const { data, error } = await supabase
+    .from('arc_entities')
+    .select('arc_id, entity_id, role, story_arcs!inner(id, slug, title, category, summary, status, root_node_id, embedding, title_article_count), entities!inner(canonical_name)')
+    .in('entity_id', entityIds)
+    .eq('story_arcs.status', 'active')
+  if (error || !data || data.length === 0) return null
+  const byArc = new Map<string, { arc: any; sharedEntityIds: string[]; sharedNames: string[]; sharedPrimary: boolean }>()
+  for (const row of data) {
+    const cur = byArc.get(row.arc_id) ?? { arc: (row as any).story_arcs, sharedEntityIds: [], sharedNames: [], sharedPrimary: false }
+    cur.sharedEntityIds.push(row.entity_id)
+    cur.sharedNames.push((row as any).entities.canonical_name)
+    if ((row as any).role === 'primary') cur.sharedPrimary = true
+    byArc.set(row.arc_id, cur)
+  }
+  let best: { arc: any; sharedEntityIds: string[]; sharedNames: string[]; similarity: number | null } | null = null
+  for (const cand of byArc.values()) {
+    const sharedCount = cand.sharedEntityIds.length
+    if (sharedCount < 2 && !cand.sharedPrimary) continue
+    let sim: number | null = null
+    if (embedding) {
+      const vec = parseVec(cand.arc.embedding)
+      if (vec) sim = cosine(embedding, vec)
+    }
+    if (sharedCount < 2 && (sim === null || sim < attachMinSimilarity)) continue
+    const entry = { ...cand, similarity: sim }
+    if (
+      !best ||
+      entry.sharedEntityIds.length > best.sharedEntityIds.length ||
+      (entry.sharedEntityIds.length === best.sharedEntityIds.length && (entry.similarity ?? 0) > (best.similarity ?? 0))
+    ) {
+      best = entry
+    }
+  }
+  return best
+}
+
 async function originateArc(
   supabase: any,
   art: any,
@@ -825,15 +1102,14 @@ async function originateArc(
   clusterSize: number,
   clusterEntities: ResolvedEntity[],
   clusterText: string,
-  dry: boolean,
+  entityMemberFreq?: Map<string, number>,
 ) {
   const cls = applyFloor(classifyArc(clusterText), catFloor)
   const title = makeArcTitle(actorName, process)
-  if (!title) return null
-  if (dry) return { id: 'dry', category: cls.category, title }
+  if (!title) return null // never originate without an identifiable process
   const slug = `arc-${slugify(title).slice(0, 40)}-${String(art.id).slice(0, 8)}`
 
-  const { data: rootNode } = await supabase
+  const { data: rootNode, error: nodeErr } = await supabase
     .from('nodes')
     .insert({
       slug: `evt-${slugify(art.title).slice(0, 40)}-${String(art.id).slice(0, 8)}`,
@@ -846,6 +1122,7 @@ async function originateArc(
     })
     .select('id')
     .single()
+  if (nodeErr) console.error('originateArc: node insert failed:', nodeErr.message)
 
   const { data: arc, error: arcErr } = await supabase
     .from('story_arcs')
@@ -866,39 +1143,30 @@ async function originateArc(
     })
     .select('id, slug, title, category, summary, status, root_node_id, title_article_count')
     .single()
-  if (arcErr || !arc) {
-    if (rootNode?.id) await supabase.from('nodes').delete().eq('id', rootNode.id)
+  if (!arc) {
+    console.error('originateArc: story_arcs insert failed:', arcErr?.message ?? 'no data', '| title:', title)
     return null
   }
 
   // Phase 0 fix (anti-snowball): persist ONLY entities that appear in >= 2
-  // cluster members (fall back to the actor entity alone).
-  const memberCount = new Map<string, number>()
-  for (const e of clusterEntities) memberCount.set(e.id, (memberCount.get(e.id) ?? 0) + 1)
+  // cluster members (previously ALL member entities, which let one bridging
+  // article poison the arc forever). Fall back to the actor entity alone so
+  // the arc keeps a primary.
   const seen = new Set<string>()
   const rows: any[] = []
   for (const e of clusterEntities) {
     if (seen.has(e.id)) continue
     seen.add(e.id)
-    if ((memberCount.get(e.id) ?? 0) < 2) continue
+    if (entityMemberFreq && (entityMemberFreq.get(e.id) ?? 0) < 2) continue
     rows.push({ arc_id: arc.id, entity_id: e.id, role: e.canonical_name === actorName ? 'primary' : 'participant' })
   }
   if (rows.length === 0) {
     const actorEntity = clusterEntities.find((e) => e.canonical_name === actorName)
     if (actorEntity) rows.push({ arc_id: arc.id, entity_id: actorEntity.id, role: 'primary' })
   }
-  if (rows.length > 0) {
-    const { error: aeErr } = await supabase.from('arc_entities').upsert(rows, { onConflict: 'arc_id,entity_id' })
-    if (aeErr) {
-      // Fix 20: rollback — remove the arc and any arc_entities written.
-      await supabase.from('arc_entities').delete().eq('arc_id', arc.id)
-      await supabase.from('story_arcs').delete().eq('id', arc.id)
-      if (rootNode?.id) await supabase.from('nodes').delete().eq('id', rootNode.id)
-      return null
-    }
-  }
+  if (rows.length > 0) await supabase.from('arc_entities').upsert(rows, { onConflict: 'arc_id,entity_id' })
 
-  await generateMilestones(supabase, arc.id, cls.category, process, dry)
+  await generateMilestones(supabase, arc.id, cls.category, process)
   return arc
 }
 
@@ -941,271 +1209,503 @@ function clusterBySharedEntities(items: Array<{ id: string; entityIds: string[] 
   return [...comps.values()]
 }
 
-// Fix 21: checkpoint helpers — per-phase cursors live in pipeline_config so a
-// timed-out run resumes where it stopped instead of restarting.
-async function getCheckpoint(supabase: any, key: string): Promise<any> {
-  const { data } = await supabase.from('pipeline_config').select('value').eq('key', key).maybeSingle()
-  return data?.value ?? null
+
+
+const BUDGET_MS = 100_000
+const EXTRACT_BATCH = 25
+const ORIGINATE_COMPS = 12
+const ATTACH_BATCH = 50
+
+interface BackfillState {
+  phase: 'extract' | 'originate' | 'attach' | 'done'
 }
 
-async function setCheckpoint(supabase: any, key: string, value: any) {
-  await supabase.from('pipeline_config').upsert({ key, value }, { onConflict: 'key' })
+async function loadState(supabase: any): Promise<BackfillState | null> {
+  const { data } = await supabase.from('pipeline_config').select('value').eq('key', 'backfill_state').maybeSingle()
+  if (!data) return null
+  const v = data.value
+  return typeof v === 'string' ? JSON.parse(v) : (v as BackfillState)
 }
 
-Deno.serve(async (req) => {
+async function saveState(supabase: any, state: BackfillState) {
+  await supabase
+    .from('pipeline_config')
+    .upsert({ key: 'backfill_state', value: JSON.stringify(state), description: 'backfill-legacy v4 reprocess cursor (managed)' }, { onConflict: 'key' })
+}
+
+async function deleteAll(supabase: any, table: string, col = 'id') {
+  const { error } = await supabase.from(table).delete().not(col, 'is', null)
+  if (error) throw new Error(`wipe ${table}: ${error.message}`)
+}
+
+async function wipeArcLayer(supabase: any) {
+  await deleteAll(supabase, 'sources')
+  await deleteAll(supabase, 'edges')
+  await deleteAll(supabase, 'arc_events')
+  await deleteAll(supabase, 'arc_milestones')
+  await deleteAll(supabase, 'arc_entities', 'arc_id')
+  await deleteAll(supabase, 'citations')
+  await deleteAll(supabase, 'article_entities', 'article_id')
+  await deleteAll(supabase, 'entities')
+  const { error } = await supabase
+    .from('articles')
+    .update({ arc_id: null, is_digest: false, entities_extracted_at: null, arc_assign_attempted_at: null, monoculture: false })
+    .not('id', 'is', null)
+  if (error) throw new Error(`reset articles: ${error.message}`)
+  await deleteAll(supabase, 'story_arcs')
+  await deleteAll(supabase, 'nodes')
+}
+
+async function extractBatch(
+  supabase: any,
+  resolver: EntityResolver,
+  outletNames: Set<string>,
+  cfg: any,
+  report: any,
+): Promise<boolean> {
+  const { data: batch, error } = await supabase
+    .from('articles')
+    .select('id, title, summary, body_text, image_url, image_alt')
+    .is('entities_extracted_at', null)
+    .order('fetched_at', { ascending: true })
+    .limit(EXTRACT_BATCH)
+  if (error) throw error
+  if (!batch || batch.length === 0) return false
+
+  const ENT_MIN_CONF = Number(cfg.entity_resolve_min_confidence ?? 0.5)
+  const DIGEST_ENTITY_COUNT = Number(cfg.digest_entity_count ?? 8)
+  const DOC_WEIGHTS = cfg.doc_strength_weights ?? {}
+
+  for (const art of batch) {
+    try {
+      const t = sanitize(art.title)
+      const s = sanitize(art.summary)
+      const b = sanitize(art.body_text)
+      const updates: any = { entities_extracted_at: new Date().toISOString() }
+      if (t.text !== (art.title ?? '')) updates.title = t.text
+      if (s.text !== (art.summary ?? '')) updates.summary = s.text || null
+      if (b.text !== (art.body_text ?? '')) updates.body_text = b.text || null
+      if (!art.image_url && s.imageUrl) updates.image_url = s.imageUrl
+      if (!art.image_alt && s.imageAlt) updates.image_alt = s.imageAlt
+
+      const analysisText = `${t.text}. ${b.text || s.text}`
+      const claims = extractClaims(analysisText)
+      updates.claims = claims
+
+      const resolved = await extractAndResolveEntities(supabase, resolver, art.id, analysisText, outletNames)
+      report.entitiesResolved += resolved.length
+      const strong = resolved.filter((r) => r.confidence >= ENT_MIN_CONF)
+      const orgPersonCount = strong.filter((r) => ['person', 'organization', 'institution'].includes(r.entity_type)).length
+      updates.is_digest = isDigest(t.text, orgPersonCount, DIGEST_ENTITY_COUNT)
+      if (updates.is_digest) report.digests++
+
+      await supabase.from('citations').delete().eq('article_id', art.id)
+      for (const c of extractCitations(analysisText, DOC_WEIGHTS)) {
+        await supabase.from('citations').insert({ ...c, article_id: art.id })
+        report.citations++
+      }
+
+      const { error: upErr } = await supabase.from('articles').update(updates).eq('id', art.id)
+      if (upErr) throw upErr
+      report.extracted++
+    } catch (err) {
+      report.errors.push(`extract ${String(art.id).slice(0, 8)}: ${String(err)}`)
+      await supabase.from('articles').update({ entities_extracted_at: new Date().toISOString() }).eq('id', art.id)
+    }
+  }
+  return true
+}
+
+async function loadArticleEntities(supabase: any, articleIds: string[], minConf: number): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>()
+  for (let i = 0; i < articleIds.length; i += 150) {
+    const chunk = articleIds.slice(i, i + 150)
+    const { data, error } = await supabase
+      .from('article_entities')
+      .select('article_id, entity_id, confidence')
+      .in('article_id', chunk)
+      .gte('confidence', minConf)
+    if (error) throw error
+    for (const row of data ?? []) {
+      const arr = map.get(row.article_id) ?? []
+      arr.push(row.entity_id)
+      map.set(row.article_id, arr)
+    }
+  }
+  return map
+}
+
+async function loadEntityIndex(supabase: any): Promise<Map<string, any>> {
+  const idx = new Map<string, any>()
+  let from = 0
+  for (;;) {
+    const { data, error } = await supabase.from('entities').select('id, canonical_name, entity_type').range(from, from + 999)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    for (const e of data) idx.set(e.id, e)
+    if (data.length < 1000) break
+    from += 1000
+  }
+  return idx
+}
+
+async function originateStep(supabase: any, cfg: any, report: any, deadline: number): Promise<void> {
+  const ENT_MIN_CONF = Number(cfg.entity_resolve_min_confidence ?? 0.5)
+  const CAT_FLOOR = Number(cfg.category_confidence_floor ?? 0.35)
+  const MAX_DF = Number(cfg.cluster_entity_max_df ?? 5)
+  const TOPIC_FLOOR = Number(cfg.topic_confidence_floor ?? 0.4)
+
+  const { data: poolArts, error } = await supabase
+    .from('articles')
+    .select('id, title, summary, url, outlet, outlet_id, published_at, embedding')
+    .is('arc_id', null)
+    .is('arc_assign_attempted_at', null)
+    .eq('is_digest', false)
+    .not('entities_extracted_at', 'is', null)
+  if (error) throw error
+  if (!poolArts || poolArts.length === 0) {
+    report.originatePoolEmpty = true
+    return
+  }
+
+  const entByArticle = await loadArticleEntities(supabase, poolArts.map((a: any) => a.id), ENT_MIN_CONF)
+  const df = new Map<string, number>()
+  for (const ids of entByArticle.values()) {
+    for (const e of new Set(ids)) df.set(e, (df.get(e) ?? 0) + 1)
+  }
+  const withEnt = poolArts
+    .map((a: any) => ({ id: a.id, entityIds: (entByArticle.get(a.id) ?? []).filter((e) => (df.get(e) ?? 0) <= MAX_DF) }))
+    .filter((a: any) => a.entityIds.length > 0)
+  const components = clusterBySharedEntities(withEnt)
+  const multi = components.filter((c) => c.length >= 2).sort((a, b) => b.length - a.length)
+  if (multi.length === 0) {
+    report.originateExhausted = true
+    return
+  }
+
+  const entIdx = await loadEntityIndex(supabase)
+  const byId = new Map<string, any>(poolArts.map((a: any) => [a.id, a]))
+
+  for (const comp of multi.slice(0, ORIGINATE_COMPS)) {
+    if (Date.now() > deadline - 20_000) break
+    const members = comp.map((id) => byId.get(id)!).filter(Boolean)
+    const clusterText = members.map((m: any) => `${m.title}. ${m.summary ?? ''}`).join(' ')
+    const process = findProcess(clusterText)
+    const allEntities: ResolvedEntity[] = []
+    const seenE = new Set<string>()
+    const freq = new Map<string, number>()
+    for (const m of members) {
+      for (const eid of new Set(entByArticle.get(m.id) ?? [])) freq.set(eid, (freq.get(eid) ?? 0) + 1)
+    }
+    for (const m of members) {
+      for (const eid of entByArticle.get(m.id) ?? []) {
+        if (seenE.has(eid)) continue
+        seenE.add(eid)
+        const e = entIdx.get(eid)
+        if (e) allEntities.push({ id: e.id, canonical_name: e.canonical_name, entity_type: e.entity_type, confidence: 1, role: null, isNew: false })
+      }
+    }
+    allEntities.sort((a, b) => (freq.get(b.id) ?? 0) - (freq.get(a.id) ?? 0))
+    const actor =
+      allEntities.find((e) => e.entity_type === 'institution') ??
+      allEntities.find((e) => e.entity_type === 'person') ??
+      allEntities[0]
+    if (!process || !actor) {
+      await supabase.from('articles').update({ arc_assign_attempted_at: new Date().toISOString() }).in('id', comp)
+      report.clustersRejectedNoProcess++
+      continue
+    }
+    members.sort((a: any, b: any) => String(a.published_at ?? '').localeCompare(String(b.published_at ?? '')))
+    const seed = members[0]
+    const seedVec = parseVec(seed.embedding)
+    const arc = await originateArc(
+      supabase,
+      seed,
+      seedVec,
+      actor.canonical_name,
+      process,
+      CAT_FLOOR,
+      members.length,
+      allEntities,
+      clusterText,
+      freq,
+    )
+    if (!arc) {
+      await supabase.from('articles').update({ arc_assign_attempted_at: new Date().toISOString() }).in('id', comp)
+      report.clustersRejectedNoProcess++
+      continue
+    }
+    report.arcsOriginated++
+    report.milestonesCreated += (MILESTONE_TEMPLATES[arc.category] ?? MILESTONE_TEMPLATES.unclassified).length
+    for (const member of members) {
+      const text = `${member.title}. ${member.summary ?? ''}`
+      const { data: citRows } = await supabase.from('citations').select('cited_type').eq('article_id', member.id)
+      await attachToArc(supabase, member, arc, {
+        sharedEntities: allEntities.map((e) => e.canonical_name),
+        sharedEntityIds: allEntities.map((e) => e.id),
+        similarity: null,
+        causal: causalEvidence(text),
+        hasCitation: (citRows?.length ?? 0) > 0,
+        citationPrimary: (citRows ?? []).some((c: any) => ['court_doc', 'agency_release'].includes(c.cited_type)),
+        actors: ((entByArticle.get(member.id) ?? []) as string[])
+          .map((eid) => entIdx.get(eid))
+          .filter(Boolean),
+        topicFloor: TOPIC_FLOOR,
+        embedding: parseVec(member.embedding),
+      })
+      report.attached++
+      report.milestonesUpdated += await checkMilestones(supabase, arc, text, member)
+    }
+  }
+}
+
+async function attachStep(supabase: any, cfg: any, report: any): Promise<boolean> {
+  const ENT_MIN_CONF = Number(cfg.entity_resolve_min_confidence ?? 0.5)
+  const TOPIC_FLOOR = Number(cfg.topic_confidence_floor ?? 0.4)
+  // Phase 0 fix: single shared entity requires this similarity floor
+  // (attach_threshold / attach_shortlist_similarity are dead config; this is
+  // the live one, mirrored from ingest-rss), and hub entities (df >
+  // cluster_entity_max_df) can never drive attachment.
+  const ATTACH_MIN_SIM = Number(cfg.attach_min_similarity ?? 0.78)
+  const hubEntityIds = await loadHubEntityIds(supabase, Number(cfg.cluster_entity_max_df ?? 5))
+
+  const { data: batch, error } = await supabase
+    .from('articles')
+    .select('id, title, summary, url, outlet, outlet_id, published_at, embedding')
+    .is('arc_id', null)
+    .is('arc_assign_attempted_at', null)
+    .eq('is_digest', false)
+    .not('entities_extracted_at', 'is', null)
+    .order('published_at', { ascending: true })
+    .limit(ATTACH_BATCH)
+  if (error) throw error
+  if (!batch || batch.length === 0) return false
+
+  const entByArticle = await loadArticleEntities(supabase, batch.map((a: any) => a.id), ENT_MIN_CONF)
+  const entIdx = await loadEntityIndex(supabase)
+  for (const art of batch) {
+    try {
+      const entityIds = (entByArticle.get(art.id) ?? []).filter((eid: string) => !hubEntityIds.has(eid))
+      const text = `${art.title}. ${art.summary ?? ''}`
+      const hit = entityIds.length > 0
+        ? await findArcBySharedEntity(supabase, entityIds, parseVec(art.embedding), ATTACH_MIN_SIM)
+        : null
+      if (hit) {
+        const { data: citRows } = await supabase.from('citations').select('cited_type').eq('article_id', art.id)
+        await attachToArc(supabase, art, hit.arc, {
+          sharedEntities: hit.sharedNames,
+          sharedEntityIds: hit.sharedEntityIds,
+          similarity: hit.similarity,
+          causal: causalEvidence(text),
+          hasCitation: (citRows?.length ?? 0) > 0,
+          citationPrimary: (citRows ?? []).some((c: any) => ['court_doc', 'agency_release'].includes(c.cited_type)),
+          actors: entityIds.map((eid) => entIdx.get(eid)).filter(Boolean),
+          topicFloor: TOPIC_FLOOR,
+          embedding: parseVec(art.embedding),
+        })
+        report.attached++
+        report.milestonesUpdated += await checkMilestones(supabase, hit.arc, text, art)
+      } else {
+        report.unattached++
+      }
+      await supabase.from('articles').update({ arc_assign_attempted_at: new Date().toISOString() }).eq('id', art.id)
+    } catch (err) {
+      report.errors.push(`attach ${String(art.id).slice(0, 8)}: ${String(err)}`)
+      await supabase.from('articles').update({ arc_assign_attempted_at: new Date().toISOString() }).eq('id', art.id)
+    }
+  }
+  return true
+}
+
+// ---------- additive passes (no reset) ----------
+
+// Step 6 additive pass: actor nodes for every resolved entity + actor edges
+// for the CURRENT graph. Idempotent. Event<->article linkage via the id
+// prefix embedded in event-node slugs ('art-...-<id8>').
+async function actorsPass(supabase: any, report: any, deadline: number) {
+  const { data: ents, error } = await supabase
+    .from('entities')
+    .select('id, canonical_name, entity_type')
+    .in('entity_type', ['person', 'organization', 'institution'])
+  if (error) throw error
+  const actorNodeByEntity = new Map<string, string>()
+  for (const e of ents ?? []) {
+    const nodeId = await ensureActorNode(supabase, e)
+    if (nodeId) actorNodeByEntity.set(e.id, nodeId)
+    if (Date.now() > deadline) break
+  }
+  report.actorNodes = actorNodeByEntity.size
+
+  const { data: evNodes } = await supabase.from('nodes').select('id, slug').eq('type', 'event')
+  const nodeById8 = new Map<string, string>()
+  for (const n of evNodes ?? []) {
+    const m = String(n.slug).match(/-([0-9a-f]{8})$/)
+    if (m) nodeById8.set(m[1], n.id)
+  }
+
+  report.actorEdges = 0
+  let from = 0
+  for (;;) {
+    const { data, error: aeErr } = await supabase
+      .from('article_entities')
+      .select('article_id, entity_id')
+      .gte('confidence', 0.5)
+      .range(from, from + 999)
+    if (aeErr) throw aeErr
+    if (!data || data.length === 0) break
+    for (const r of data) {
+      const n = nodeById8.get(String(r.article_id).slice(0, 8))
+      const an = actorNodeByEntity.get(r.entity_id)
+      if (!n || !an || n === an) continue
+      await supabase.from('edges').upsert(
+        {
+          source_id: n,
+          target_id: an,
+          type: 'actor',
+          label: 'involves',
+          weight: 'heavy',
+          signal_source: 'shared_entity',
+          doc_strength: 'corroborated',
+          claimed_by: 'reporting',
+          reliability: 2,
+          metadata: { entity_id: r.entity_id, article_id: r.article_id },
+        },
+        { onConflict: 'source_id,target_id,type' },
+      )
+      report.actorEdges++
+    }
+    if (data.length < 1000) break
+    from += 1000
+    if (Date.now() > deadline) {
+      report.actorPassIncomplete = true
+      break
+    }
+  }
+}
+
+// Step 8 additive pass: tag existing event nodes from their article text.
+async function topicsPass(supabase: any, cfg: any, report: any, deadline: number) {
+  const floor = Number(cfg.topic_confidence_floor ?? 0.4)
+  const { data: evNodes } = await supabase.from('nodes').select('id, slug').eq('type', 'event')
+  const nodeById8 = new Map<string, string>()
+  for (const n of evNodes ?? []) {
+    const m = String(n.slug).match(/-([0-9a-f]{8})$/)
+    if (m) nodeById8.set(m[1], n.id)
+  }
+  report.eventNodes = evNodes?.length ?? 0
+  report.nodesTagged = 0
+  report.topicRows = 0
+  let from = 0
+  for (;;) {
+    const { data, error } = await supabase.from('articles').select('id, title, summary').range(from, from + 499)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    for (const a of data) {
+      const nodeId = nodeById8.get(String(a.id).slice(0, 8))
+      if (!nodeId) continue
+      const n = await tagNodeTopics(supabase, nodeId, `${a.title}. ${a.summary ?? ''}`, floor)
+      if (n > 0) {
+        report.nodesTagged++
+        report.topicRows += n
+      }
+    }
+    if (data.length < 500) break
+    from += 500
+    if (Date.now() > deadline) {
+      report.topicsPassIncomplete = true
+      break
+    }
+  }
+}
+
+Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
   if (!supabaseUrl || !serviceKey) {
     return Response.json({ error: 'Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY' }, { status: 500 })
   }
-  const url = new URL(req.url)
-  const dry = url.searchParams.get('dry') === '1'
-  const resume = url.searchParams.get('resume') !== '0' // default: resume from checkpoint
   const supabase = createClient(supabaseUrl, serviceKey)
   const cfg = await loadConfig(supabase)
+  const reqUrl = new URL(req.url)
 
-  const CAT_FLOOR = Number(cfg.category_confidence_floor ?? 0.35)
-  const EMBED_MODEL = String(cfg.embedding_model ?? 'gte-small')
-  const ATTACH_MIN_SIM = Number(cfg.attach_min_similarity ?? 0.78) // Fix 1: from config
-  const CLUSTER_MAX_DF = Number(cfg.cluster_entity_max_df ?? 5)   // Fix 1: from config
-  const PHASE1_CAP = Number(cfg.backfill_phase1_cap ?? 1000)      // Fix 12
   const report: any = {
-    dry,
-    resume,
-    articlesScanned: 0,
-    embeddingsWritten: 0,
+    ranAt: new Date().toISOString(),
+    extracted: 0,
+    digests: 0,
+    citations: 0,
     entitiesResolved: 0,
-    attached: 0,
     arcsOriginated: 0,
+    attached: 0,
     unattached: 0,
-    skippedExistingArc: 0,
-    orphanEntitiesDeleted: 0,
-    checkpoints: {} as Record<string, any>,
+    clustersRejectedNoProcess: 0,
+    milestonesCreated: 0,
+    milestonesUpdated: 0,
     errors: [] as string[],
   }
 
-  const resolver = new EntityResolver(cfg)
-  await resolver.load(supabase)
-
-  const { data: outletRows } = await supabase.from('outlets').select('id, name')
-  const outletNames = new Set<string>((outletRows ?? []).map((o: any) => normalizeEntityName(o.name)))
-  for (const alias of OUTLET_NAME_ALIASES) outletNames.add(alias)
-
-  // Fix 3/16: hub entities excluded from origination input AND logged.
-  const hubEntityIds = await loadHubEntityIds(supabase, CLUSTER_MAX_DF)
-  const hubNames: string[] = []
-  for (const id of hubEntityIds) {
-    const ent = [...resolver.byNorm.values()].find((e: any) => e.id === id)
-    if (ent) hubNames.push(ent.canonical_name)
-  }
-  report.hubEntities = hubNames.sort()
-
-  // ---------- Phase 1: fill missing embeddings + resolve entities ----------
-  // Fix 21: cursor by fetched_at/id so reruns resume mid-table.
-  const p1Cursor = resume ? await getCheckpoint(supabase, 'backfill_phase1_cursor') : null
-  let q = supabase
-    .from('articles')
-    .select('id, title, summary, body_text, embedding, fetched_at')
-    .order('fetched_at', { ascending: true })
-    .order('id', { ascending: true })
-    .limit(PHASE1_CAP)
-  if (p1Cursor?.fetched_at) {
-    q = q.or(`fetched_at.gt.${p1Cursor.fetched_at},and(fetched_at.eq.${p1Cursor.fetched_at},id.gt.${p1Cursor.id})`)
-  }
-  const { data: arts, error: artErr } = await q
-  if (artErr) throw artErr
-
-  let phase1Processed = 0
-  for (const a of arts ?? []) {
-    report.articlesScanned++
-    try {
-      const analysisText = `${a.title}. ${a.body_text ?? a.summary ?? ''}`
-      let embedding = parseVec(a.embedding)
-      if (!embedding) {
-        embedding = await embed(analysisText, EMBED_MODEL)
-        if (!dry) {
-          await supabase.from('articles').update({ embedding: `[${embedding.join(',')}]` }).eq('id', a.id)
-        }
-        report.embeddingsWritten++
-      }
-      // Resolve + persist entities for legacy articles that predate entity extraction.
-      const { data: ae } = await supabase.from('article_entities').select('entity_id').eq('article_id', a.id).limit(1)
-      if ((ae ?? []).length === 0) {
-        const cands = extractEntityCandidates(analysisText, outletNames)
-        let n = 0
-        const articleEntityIds = new Set<string>()
-        for (const cand of cands.slice(0, 25)) {
-          const r = await resolver.resolve(supabase, cand)
-          if (!r || articleEntityIds.has(r.id)) continue
-          articleEntityIds.add(r.id)
-          if (!dry) {
-            // Fix 14: backfill confidence + extraction_method heuristically.
-            await supabase.from('article_entities').upsert(
-              { article_id: a.id, entity_id: r.id, confidence: r.confidence, extraction_method: 'heuristic', role: r.role },
-              { onConflict: 'article_id,entity_id' },
-            )
-          }
-          n++
-        }
-        // Fix 4: mention_count incremented ONCE per article, not per row.
-        if (!dry && articleEntityIds.size > 0) {
-          for (const eid of articleEntityIds) {
-            const ent = [...resolver.byNorm.values()].find((e: any) => e.id === eid)
-            if (ent) {
-              await supabase
-                .from('entities')
-                .update({ mention_count: (ent.mention_count ?? 0) + 1, last_seen: new Date().toISOString() })
-                .eq('id', eid)
-              ent.mention_count = (ent.mention_count ?? 0) + 1
-            }
-          }
-        }
-        report.entitiesResolved += n
-      }
-      phase1Processed++
-      if (!dry) await setCheckpoint(supabase, 'backfill_phase1_cursor', { fetched_at: a.fetched_at, id: a.id })
-    } catch (err) {
-      report.errors.push(`p1 ${a.id}: ${String(err)}`)
-    }
-  }
-  report.checkpoints.phase1_processed = phase1Processed
-  // Fix 12: if we hit the cap, caller must re-invoke to continue.
-  report.checkpoints.phase1_complete = (arts ?? []).length < PHASE1_CAP
-
-  // ---------- Phase 2: arc assignment for unattached, non-digest articles ----------
-  const { data: unattached } = await supabase
-    .from('articles')
-    .select('id, title, summary, url, outlet, published_at, embedding, is_digest')
-    .is('arc_id', null)
-    .eq('is_digest', false)
-    .order('published_at', { ascending: true })
-
-  const pool: any[] = []
-  for (const p of unattached ?? []) {
-    const { data: ae } = await supabase.from('article_entities').select('entity_id, confidence').eq('article_id', p.id)
-    let entityIds = (ae ?? []).filter((r: any) => r.confidence >= 0.5).map((r: any) => r.entity_id)
-    entityIds = entityIds.filter((id) => !hubEntityIds.has(id)) // Fix 3
-    pool.push({
-      id: p.id,
-      embedding: parseVec(p.embedding) ?? [],
-      entityIds,
-      art: p,
-      citationCount: 0,
-      citationPrimary: false,
-    })
-  }
-  report.poolSize = pool.length
-
-  const stillUnattached: any[] = []
-  const touchedArcs = new Set<string>()
-  for (const ca of pool) {
-    if (ca.entityIds.length === 0) {
-      stillUnattached.push(ca)
-      continue
-    }
-    const hit = await findArcBySharedEntity(supabase, ca.entityIds, ca.embedding.length ? ca.embedding : null, ATTACH_MIN_SIM)
-    if (hit) {
-      const text = `${ca.art.title}. ${ca.art.summary ?? ''}`
-      await attachToArc(supabase, ca.art, hit.arc, {
-        sharedEntities: hit.sharedNames,
-        sharedEntityIds: hit.sharedEntityIds,
-        similarity: hit.similarity,
-        causal: causalEvidence(text),
-        hasCitation: ca.citationCount > 0,
-        citationPrimary: ca.citationPrimary,
-        embedding: ca.embedding.length ? ca.embedding : null,
-      }, dry)
-      report.attached++
-      touchedArcs.add(hit.arc.id)
-      await maybeRetitleArc(supabase, hit.arc, CAT_FLOOR, dry)
-    } else {
-      stillUnattached.push(ca)
-    }
+  const deadline0 = Date.now() + BUDGET_MS
+  const mode = reqUrl.searchParams.get('mode')
+  if (mode === 'actors' || mode === 'topics') {
+    // Additive passes — never touch arcs/state.
+    if (mode === 'actors') await actorsPass(supabase, report, deadline0)
+    else await topicsPass(supabase, cfg, report, deadline0)
+    return Response.json({ ok: true, mode, ...report })
   }
 
-  // ---------- Phase 3: originate arcs from entity-sharing clusters ----------
-  const components = clusterBySharedEntities(
-    stillUnattached.filter((c) => c.entityIds.length > 0).map((c) => ({ id: c.id, entityIds: c.entityIds })),
-  )
-  const byId = new Map(stillUnattached.map((c) => [c.id, c]))
-  for (const comp of components) {
-    const members = comp.map((id) => byId.get(id)!)
-    if (members.length < 2) continue
-    const clusterText = members.map((m) => `${m.art.title}. ${m.art.summary ?? ''}`).join(' ')
-    const process = findProcess(clusterText)
-    // Fix 6: only real resolved entities are actors — no trailing-stopword
-    // 'other' junk. Load the entities for the cluster's entity ids.
-    const clusterEntityIds = [...new Set(members.flatMap((m) => m.entityIds))]
-    const clusterEntities: ResolvedEntity[] = []
-    for (const eid of clusterEntityIds) {
-      const ent = [...resolver.byNorm.values()].find((e: any) => e.id === eid)
-      if (ent) {
-        clusterEntities.push({
-          id: ent.id,
-          canonical_name: ent.canonical_name,
-          entity_type: ent.entity_type,
-          confidence: 0.5,
-          role: null,
-          isNew: false,
-        })
+  if (reqUrl.searchParams.get('reset') === '1') {
+    await wipeArcLayer(supabase)
+    await saveState(supabase, { phase: 'extract' })
+    report.reset = true
+  }
+
+  const state = await loadState(supabase)
+  if (!state) {
+    return Response.json({ ok: false, error: 'no backfill_state; call with ?reset=1 to wipe the arc layer and start a full reprocess' }, { status: 409 })
+  }
+  report.phaseStart = state.phase
+
+  const deadline = Date.now() + BUDGET_MS
+  if (state.phase === 'extract') {
+    const resolver = new EntityResolver(cfg)
+    await resolver.load(supabase)
+    const { data: outletRows } = await supabase.from('outlets').select('id, name')
+    const outletNames = new Set<string>((outletRows ?? []).map((o: any) => normalizeEntityName(o.name)))
+    while (Date.now() < deadline) {
+      const more = await extractBatch(supabase, resolver, outletNames, cfg, report)
+      if (!more) {
+        state.phase = 'originate'
+        await saveState(supabase, state)
+        break
       }
     }
-    const actor =
-      clusterEntities.find((e) => e.entity_type === 'institution') ??
-      clusterEntities.find((e) => e.entity_type === 'person') ??
-      clusterEntities[0]
-    if (!process || !actor) continue
-    members.sort((a, b) => String(a.art.published_at ?? '').localeCompare(String(b.art.published_at ?? '')))
-    const seed = members[0]
-    const arc = await originateArc(
-      supabase, seed.art, seed.embedding.length ? seed.embedding : null,
-      actor.canonical_name, process, CAT_FLOOR, members.length,
-      clusterEntities, clusterText, dry,
-    )
-    if (!arc) continue
-    report.arcsOriginated++
-    touchedArcs.add(arc.id)
-    for (const member of members) {
-      const text = `${member.art.title}. ${member.art.summary ?? ''}`
-      await attachToArc(supabase, member.art, arc, {
-        sharedEntities: clusterEntities.map((e) => e.canonical_name),
-        sharedEntityIds: clusterEntities.map((e) => e.id),
-        similarity: null,
-        causal: causalEvidence(text),
-        hasCitation: member.citationCount > 0,
-        citationPrimary: member.citationPrimary,
-        embedding: member.embedding.length ? member.embedding : null,
-      }, dry)
-      report.attached++
-    }
   }
-  report.unattached = stillUnattached.length
-
-  // Fix 15: last_assignment_run touched ONLY on arcs that received articles.
-  if (!dry && touchedArcs.size > 0) {
-    await supabase
-      .from('story_arcs')
-      .update({ last_assignment_run: new Date().toISOString() })
-      .in('id', [...touchedArcs])
-  }
-
-  // ---------- Phase 4: prune orphan entities (Fix 13) ----------
-  if (!dry) {
-    const cutoff = new Date(Date.now() - 30 * 86400000).toISOString()
-    const { data: orphans } = await supabase
-      .from('entities')
-      .select('id')
-      .lt('created_at', cutoff)
-    for (const o of orphans ?? []) {
-      const { data: ae } = await supabase.from('article_entities').select('article_id').eq('entity_id', o.id).limit(1)
-      const { data: ce } = await supabase.from('arc_entities').select('arc_id').eq('entity_id', o.id).limit(1)
-      if ((ae ?? []).length === 0 && (ce ?? []).length === 0) {
-        await supabase.from('entities').delete().eq('id', o.id)
-        report.orphanEntitiesDeleted++
+  if (state.phase === 'originate') {
+    while (Date.now() < deadline) {
+    report.originatePoolEmpty = false
+    report.originateExhausted = false
+    await originateStep(supabase, cfg, report, deadline)
+    if (report.originatePoolEmpty || report.originateExhausted) {
+        state.phase = 'attach'
+        await saveState(supabase, state)
+        break
       }
     }
-    await setCheckpoint(supabase, 'backfill_last_run', { at: new Date().toISOString(), report: { attached: report.attached, arcsOriginated: report.arcsOriginated } })
+  }
+  if (state.phase === 'attach') {
+    while (Date.now() < deadline) {
+      const more = await attachStep(supabase, cfg, report)
+      if (!more) {
+        state.phase = 'done'
+        await saveState(supabase, state)
+        break
+      }
+    }
   }
 
+  report.phaseEnd = state.phase
+  const { count: remainingExtract } = await supabase.from('articles').select('id', { count: 'exact', head: true }).is('entities_extracted_at', null)
+  const { count: remainingAssign } = await supabase.from('articles').select('id', { count: 'exact', head: true }).is('arc_id', null).is('arc_assign_attempted_at', null).eq('is_digest', false).not('entities_extracted_at', 'is', null)
+  report.remainingExtract = remainingExtract ?? 0
+  report.remainingAssign = remainingAssign ?? 0
   return Response.json({ ok: true, ...report })
 })
