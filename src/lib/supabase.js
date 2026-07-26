@@ -226,7 +226,6 @@ export async function loadSources(nodeKey) {
   return data
 }
 
-
 // A4 — Arc status derivation. The stored story_arcs.status column is a weak
 // signal; the UI dot is wired to status derived from real signals instead:
 //   - resolved: the arc has milestones and every milestone is in a
