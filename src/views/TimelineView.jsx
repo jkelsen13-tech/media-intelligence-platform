@@ -3,7 +3,9 @@ import { loadTimeline } from '../lib/supabase'
 import { EDGE_WEIGHTS } from '../graph/theme'
 
 // Causal timeline (concept doc §2.4): events ordered by date, with causal
-// links rendered between them — the connective tissue the news cycle severs.
+// and sequence links rendered between them — the connective tissue the news
+// cycle severs. Phase 0 Part 2 Tier 3: only links STATED as causal in
+// reporting render as causal; temporal-only adjacency renders as sequence.
 
 function confidenceColor(score) {
   if (score == null) return '#6b7280'
@@ -50,10 +52,11 @@ export default function TimelineView() {
   return (
     <div className="timeline-view">
       <div className="timeline-intro">
-        <h2>Causal Timeline</h2>
+        <h2>Causal &amp; Sequence Timeline</h2>
         <p>
-          Events mapped causally, not just chronologically. Institutional memory that survives the
-          news cycle.
+          Events mapped by consequence, not just chronologically — institutional memory that
+          survives the news cycle. Causal links are stated in reporting; sequence links are
+          temporal adjacency, not proven causation.
         </p>
       </div>
       <ol className="timeline">
@@ -75,9 +78,21 @@ export default function TimelineView() {
               {inbound.length > 0 && (
                 <div className="timeline-links">
                   {inbound.map((e) => (
-                    <span key={e.id} className="timeline-link inbound">
-                      ← {e.sourceLabel} <em>({e.label ?? 'caused'})</em>
-                      <i style={{ borderTopWidth: EDGE_WEIGHTS[e.weight] ?? 3 }} />
+                    <span
+                      key={e.id}
+                      className="timeline-link inbound"
+                      style={e.type === 'sequence' ? { color: '#9ca3af' } : undefined}
+                    >
+                      ← {e.sourceLabel}{' '}
+                      <em>({e.type === 'sequence' ? 'then' : (e.label ?? 'caused')})</em>
+                      <i
+                        style={{
+                          borderTopWidth: EDGE_WEIGHTS[e.weight] ?? 3,
+                          ...(e.type === 'sequence'
+                            ? { borderTopStyle: 'dashed', borderTopColor: '#9ca3af' }
+                            : null),
+                        }}
+                      />
                     </span>
                   ))}
                 </div>
@@ -85,9 +100,21 @@ export default function TimelineView() {
               {outbound.length > 0 && (
                 <div className="timeline-links">
                   {outbound.map((e) => (
-                    <span key={e.id} className="timeline-link outbound">
-                      → {e.targetLabel} <em>({e.label ?? 'led to'})</em>
-                      <i style={{ borderTopWidth: EDGE_WEIGHTS[e.weight] ?? 3 }} />
+                    <span
+                      key={e.id}
+                      className="timeline-link outbound"
+                      style={e.type === 'sequence' ? { color: '#9ca3af' } : undefined}
+                    >
+                      → {e.targetLabel}{' '}
+                      <em>({e.type === 'sequence' ? 'followed' : (e.label ?? 'led to')})</em>
+                      <i
+                        style={{
+                          borderTopWidth: EDGE_WEIGHTS[e.weight] ?? 3,
+                          ...(e.type === 'sequence'
+                            ? { borderTopStyle: 'dashed', borderTopColor: '#9ca3af' }
+                            : null),
+                        }}
+                      />
                     </span>
                   ))}
                 </div>

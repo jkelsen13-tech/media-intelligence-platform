@@ -45,6 +45,8 @@ export const RELIABILITY_MAX = 4
 
 export const EDGE_TYPES = {
   causal: { color: '#4d9aff', cssVar: '--cat-blue', label: 'Causal' }, // blue
+  // Phase 0 Part 2 Tier 3: temporal adjacency, NOT proven causation.
+  sequence: { color: '#9ca3af', cssVar: '--cat-grey', label: 'Sequence' }, // grey
   actor: { color: '#9ca3af', cssVar: '--cat-grey', label: 'Actor' }, // grey
   financial: { color: '#ffb01f', cssVar: '--cat-amber', label: 'Financial' }, // amber
   conflict: { color: '#ff5252', cssVar: '--cat-red', label: 'Conflict' }, // red

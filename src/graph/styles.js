@@ -156,6 +156,18 @@ export const graphStylesheet = [
       opacity: 0.6,
     },
   },
+  // Phase 0 Part 2 Tier 3: sequence edges mark temporal adjacency, not
+  // proven causation — dashed, no arrowhead, grey (like hypotheses, but
+  // they ARE sourced, so they are not hidden by the inferred toggle).
+  {
+    selector: "edge[type='sequence']",
+    style: {
+      'line-style': 'dashed',
+      'target-arrow-shape': 'none',
+      'line-color': cssToken('--cat-grey', '#9ca3af'),
+      opacity: 0.6,
+    },
+  },
   {
     selector: 'edge[?inferred].lbl',
     style: {
