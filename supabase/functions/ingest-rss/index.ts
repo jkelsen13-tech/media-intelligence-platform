@@ -231,6 +231,13 @@ const STOP_SINGLE = new Set([
 
 const ROLE_TITLES_RE = /^(?:President|Prime Minister|Vice President|Deputy Prime Minister|Minister|Foreign Minister|Defence Minister|Senator|Governor|Mayor|Secretary(?: of State)?|Chancellor(?: of the Exchequer)?|Attorney General|MP|Mr|Ms|Mrs|Miss|Dr|Sir|Dame|Judge|Justice|Chief|General|Admiral|Captain|Colonel|Spokesperson|Officer|Professor|Father|Rabbi|Pope|King|Queen|Prince|Princess)\s+/i
 
+// Phase 0 fix (entity hygiene): outlet names/aliases that must never become
+// story entities even when absent from the outlets table. 'Daily Mail' was
+// extracted and typed as a PERSON entity; it is a news outlet.
+const OUTLET_NAME_ALIASES = new Set([
+  'daily mail', 'mail online', 'mailonline', 'the daily mail', 'dailymail',
+])
+
 // Capitalized multi-word proper-noun phrases, allowing lowercase connectors
 // so "Ministry of Defence" / "Bank of England" resolve as ONE entity.
 // Token excludes trailing dots so sentence boundaries can't bleed into a
@@ -367,8 +374,16 @@ class EntityResolver {
           if (sub) hits.push(e)
         }
         if (hits.length === 1) {
-          ent = hits[0]
-          conf = this.fuzzyConf
+          // Phase 0 fix (entity hygiene): token-subset fuzzy resolution
+          // produced cross-type junk (e.g. outlets/places resolving onto
+          // person entities). Accept a fuzzy hit only when the candidate's
+          // type AGREES with the stored entity type and the fuzzy confidence
+          // meets the resolve floor.
+          const candType = (cand as ModelEntityCandidate).entityType ?? guessEntityType(cand.surface)
+          if (hits[0].entity_type === candType && this.fuzzyConf >= 0.5) {
+            ent = hits[0]
+            conf = this.fuzzyConf
+          }
         }
       }
     }
@@ -656,10 +671,15 @@ const PROCESS_PATTERNS: Array<{ process: string; re: RegExp }> = [
   { process: 'cross-border explosives interdiction', re: /\b(bomb|explosive\w*|ied)\b[\s\S]{0,80}\b(intercept\w*|seiz\w*)\b|\b(intercept\w*|seiz\w*)\b[\s\S]{0,80}\b(bomb|explosive\w*|ied)\b/i },
   { process: 'shipping interdiction', re: /\b(tanker\w*|shipping|vessel\w*)[\s\S]{0,80}(threat|u-turn|rerout\w*)|\b(shipping threat)\b/i },
   { process: 'ceasefire talks', re: /\b(ceasefire|truce|peace talks|peace deal)\b/i },
-  { process: 'military escalation', re: /\b(missile\w*|airstrike\w*|drone strike|strike\w*|attack\w*|war|invasion|troops)\b/i },
+  // Phase 0 fix: economic/legal processes must win over 'military escalation'
+  // (bare 'strike/attack/war' used to hijack trade-war and court stories), so
+  // they are ordered BEFORE it, and military escalation now requires genuine
+  // armed-conflict vocabulary — bare 'strike\w*|attack\w*' removed, 'war'
+  // word-bounded.
+  { process: 'trade dispute', re: /\b(tariff\w*|trade (war|deal|dispute|crosshairs))\b/i },
   { process: 'sanctions regime', re: /\bsanction\w*\b/i },
   { process: 'hostage negotiations', re: /\bhostage\w*\b/i },
-  { process: 'trade dispute', re: /\b(tariff\w*|trade (war|deal|dispute|crosshairs))\b/i },
+  { process: 'military escalation', re: /\b(missile\w*|airstrike\w*|drone strike|troops|invasion)\b|\b(air|drone|missile|military) strike\w*\b|\bwar\b/i },
   { process: 'interest-rate decision', re: /\b(interest rate\w*|rate (cut|rise|hike|decision)|central bank)\b/i },
   { process: 'budget decision', re: /\b(budget|spending review|fiscal)\b/i },
   { process: 'rent-control decision', re: /\brent control\w*\b/i },
@@ -686,11 +706,21 @@ const PROCESS_PATTERNS: Array<{ process: string; re: RegExp }> = [
   { process: 'enforcement action', re: /\b(enforcement|fine\w*|penalt\w+|crackdown|raid\w*)\b/i },
 ]
 
+// Phase 0 fix: pick the process with the MOST member-text matches instead of
+// the first matching entry — first-match let an early broad pattern
+// ('military escalation') claim arcs whose dominant signal was something else.
+// Ties keep the earlier (more specific) pattern. No matches => null => no arc.
 function findProcess(text: string): string | null {
+  let best: string | null = null
+  let bestCount = 0
   for (const { process, re } of PROCESS_PATTERNS) {
-    if (re.test(text)) return process
+    const matches = text.match(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g')) ?? []
+    if (matches.length > bestCount) {
+      bestCount = matches.length
+      best = process
+    }
   }
-  return null
+  return best
 }
 
 // NO 'developments' fallback: callers must not originate without a process.
@@ -1019,10 +1049,44 @@ interface AttachContext {
   citationPrimary?: boolean // citation to a primary document (court filing / agency release)
   actors?: ActorRef[] // the article's OWN resolved entities (conf >= floor)
   topicFloor?: number
+  embedding?: number[] | null // the article's embedding, used to refresh the arc centroid
 }
 
 async function attachToArc(supabase: any, art: any, arc: any, ctx: AttachContext) {
   await supabase.from('articles').update({ arc_id: arc.id }).eq('id', art.id)
+
+  // Phase 0 fix: arc embeddings were set once from the seed article and never
+  // updated, so similarity checks compared against a stale (sometimes wrong)
+  // vector. Maintain a RUNNING CENTROID over member embeddings instead.
+  if (ctx.embedding && ctx.embedding.length > 0) {
+    try {
+      const { data: fresh } = await supabase
+        .from('story_arcs')
+        .select('embedding')
+        .eq('id', arc.id)
+        .single()
+      const { count } = await supabase
+        .from('articles')
+        .select('id', { count: 'exact', head: true })
+        .eq('arc_id', arc.id)
+        .not('embedding', 'is', null)
+      const m = count ?? 1 // members with embeddings, INCLUDING the one just attached
+      const old = parseVec(fresh?.embedding)
+      const n = ctx.embedding.length
+      const next: number[] = new Array(n)
+      for (let i = 0; i < n; i++) {
+        const prev = old && old.length === n && m > 1 ? old[i] * (m - 1) : 0
+        next[i] = (prev + ctx.embedding[i]) / m
+      }
+      await supabase
+        .from('story_arcs')
+        .update({ embedding: `[${next.join(',')}]` })
+        .eq('id', arc.id)
+      arc.embedding = next
+    } catch {
+      // centroid refresh is best-effort; attachment itself must not fail
+    }
+  }
 
   const slug = `art-${slugify(art.title).slice(0, 40)}-${String(art.id).slice(0, 8)}`
   const { data: node } = await supabase
@@ -1103,34 +1167,76 @@ async function attachToArc(supabase: any, art: any, arc: any, ctx: AttachContext
   await supabase.from('story_arcs').update({ last_update_at: new Date().toISOString() }).eq('id', arc.id)
 }
 
+// Document frequency of every entity over article_entities, used to exclude
+// hub entities (e.g. 'Iran', 'Trump', 'AI') from arc matching. One generic
+// shared hub entity used to be enough to attach — that poisoned the arc layer.
+async function loadHubEntityIds(supabase: any, maxDf: number): Promise<Set<string>> {
+  const df = new Map<string, Set<string>>()
+  let from = 0
+  for (;;) {
+    const { data, error } = await supabase
+      .from('article_entities')
+      .select('article_id, entity_id')
+      .range(from, from + 999)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    for (const r of data) {
+      const set = df.get(r.entity_id) ?? new Set<string>()
+      set.add(r.article_id)
+      df.set(r.entity_id, set)
+    }
+    if (data.length < 1000) break
+    from += 1000
+  }
+  const hubs = new Set<string>()
+  for (const [entityId, arts] of df) {
+    if (arts.size > maxDf) hubs.add(entityId)
+  }
+  return hubs
+}
+
 // Embedding similarity only SHORTLISTS/ranks candidates that already share a
 // resolved entity. No shared entity => no attachment, whatever the cosine.
+// Phase 0 hardening: a candidate arc is acceptable only when
+//   - the article shares >= 2 of the arc's entities, OR
+//   - it shares the arc's role='primary' entity;
+// and when exactly ONE entity is shared, similarity to the (fresh) arc
+// embedding must clear attachMinSimilarity. Hub entities are excluded
+// upstream, so they can never satisfy this by themselves.
 async function findArcBySharedEntity(
   supabase: any,
   entityIds: string[],
   embedding: number[] | null,
+  attachMinSimilarity = 0.78,
 ): Promise<{ arc: any; sharedEntityIds: string[]; sharedNames: string[]; similarity: number | null } | null> {
   if (entityIds.length === 0) return null
   const { data, error } = await supabase
     .from('arc_entities')
-    .select('arc_id, entity_id, story_arcs!inner(id, slug, title, category, summary, status, root_node_id, embedding, title_article_count), entities!inner(canonical_name)')
+    .select('arc_id, entity_id, role, story_arcs!inner(id, slug, title, category, summary, status, root_node_id, embedding, title_article_count), entities!inner(canonical_name)')
     .in('entity_id', entityIds)
     .eq('story_arcs.status', 'active')
   if (error || !data || data.length === 0) return null
-  const byArc = new Map<string, { arc: any; sharedEntityIds: string[]; sharedNames: string[] }>()
+  const byArc = new Map<string, { arc: any; sharedEntityIds: string[]; sharedNames: string[]; sharedPrimary: boolean }>()
   for (const row of data) {
-    const cur = byArc.get(row.arc_id) ?? { arc: (row as any).story_arcs, sharedEntityIds: [], sharedNames: [] }
+    const cur = byArc.get(row.arc_id) ?? { arc: (row as any).story_arcs, sharedEntityIds: [], sharedNames: [], sharedPrimary: false }
     cur.sharedEntityIds.push(row.entity_id)
     cur.sharedNames.push((row as any).entities.canonical_name)
+    if ((row as any).role === 'primary') cur.sharedPrimary = true
     byArc.set(row.arc_id, cur)
   }
   let best: { arc: any; sharedEntityIds: string[]; sharedNames: string[]; similarity: number | null } | null = null
   for (const cand of byArc.values()) {
+    const sharedCount = cand.sharedEntityIds.length
+    // Minimum-evidence gate: >= 2 shared entities, or the arc's primary entity.
+    if (sharedCount < 2 && !cand.sharedPrimary) continue
     let sim: number | null = null
     if (embedding) {
       const vec = parseVec(cand.arc.embedding)
       if (vec) sim = cosine(embedding, vec)
     }
+    // Single-entity matches additionally require a similarity floor; with no
+    // comparable embedding there is no corroboration, so reject.
+    if (sharedCount < 2 && (sim === null || sim < attachMinSimilarity)) continue
     const entry = { ...cand, similarity: sim }
     if (
       !best ||
@@ -1162,17 +1268,56 @@ async function maybeRetitleArc(supabase: any, arc: any, catFloor: number): Promi
 
   const { data: arts } = await supabase
     .from('articles')
-    .select('title, summary')
+    .select('id, title, summary')
     .eq('arc_id', arc.id)
     .order('published_at', { ascending: true })
     .limit(10)
-  const text = (arts ?? []).map((a: any) => `${a.title}. ${a.summary ?? ''}`).join(' ')
+
+  // Phase 0 fix: retitle/reclassify ONLY from members that pass the attach
+  // keep-rule (share the arc's primary entity or >= 2 arc entities). Weak
+  // members must not steer the arc's title or category. If none pass (e.g.
+  // freshly originated arc), fall back to all members.
+  const { data: arcEnts } = await supabase
+    .from('arc_entities')
+    .select('entity_id, role')
+    .eq('arc_id', arc.id)
+  const primaryId = (arcEnts ?? []).find((r: any) => r.role === 'primary')?.entity_id ?? null
+  const arcEntIds = new Set((arcEnts ?? []).map((r: any) => r.entity_id))
+  let memberIds = (arts ?? []).map((a: any) => a.id)
+  if (arcEntIds.size > 0 && memberIds.length > 0) {
+    const { data: aeRows } = await supabase
+      .from('article_entities')
+      .select('article_id, entity_id')
+      .in('article_id', memberIds)
+    const sharedBy = new Map<string, { shared: number; primary: boolean }>()
+    for (const r of aeRows ?? []) {
+      if (!arcEntIds.has(r.entity_id)) continue
+      const cur = sharedBy.get(r.article_id) ?? { shared: 0, primary: false }
+      cur.shared++
+      if (r.entity_id === primaryId) cur.primary = true
+      sharedBy.set(r.article_id, cur)
+    }
+    const keepIds = memberIds.filter((id: string) => {
+      const s = sharedBy.get(id)
+      return s && (s.primary || s.shared >= 2)
+    })
+    if (keepIds.length > 0) memberIds = keepIds
+  }
+  const keepSet = new Set(memberIds)
+  const text = (arts ?? []).filter((a: any) => keepSet.has(a.id)).map((a: any) => `${a.title}. ${a.summary ?? ''}`).join(' ')
   const process = findProcess(text)
   const title = makeArcTitle(actorName, process)
   const cls = applyFloor(classifyArc(text), catFloor)
   const update: any = { title_article_count: n }
   if (title) update.title = title // no process => keep existing title, never 'developments'
-  if (arc.category === 'unclassified' && cls.category !== 'unclassified') {
+  // Phase 0 fix: ALWAYS recompute the category (previously frozen once a
+  // non-unclassified label existed, which kept wrong labels forever). Below
+  // the calibrated floor the arc is unclassified with NULL confidence.
+  if (cls.category === 'unclassified') {
+    update.category = 'unclassified'
+    update.category_confidence = null
+    update.category_evidence = cls.evidence
+  } else {
     update.category = cls.category
     update.category_confidence = cls.confidence
     update.category_evidence = cls.evidence
@@ -1245,12 +1390,24 @@ async function originateArc(
     .single()
   if (!arc) return null
 
+  // Phase 0 fix (anti-snowball): persist ONLY entities that appear in >= 2
+  // cluster members. Previously every entity of every member was written, so
+  // one bridging article poisoned the arc's entity set forever and pulled in
+  // unrelated articles on every subsequent attach. If nothing reaches 2
+  // members, fall back to the actor entity alone so the arc keeps a primary.
+  const memberCount = new Map<string, number>()
+  for (const e of clusterEntities) memberCount.set(e.id, (memberCount.get(e.id) ?? 0) + 1)
   const seen = new Set<string>()
   const rows: any[] = []
   for (const e of clusterEntities) {
     if (seen.has(e.id)) continue
     seen.add(e.id)
+    if ((memberCount.get(e.id) ?? 0) < 2) continue
     rows.push({ arc_id: arc.id, entity_id: e.id, role: e.canonical_name === actorName ? 'primary' : 'participant' })
+  }
+  if (rows.length === 0) {
+    const actorEntity = clusterEntities.find((e) => e.canonical_name === actorName)
+    if (actorEntity) rows.push({ arc_id: arc.id, entity_id: actorEntity.id, role: 'primary' })
   }
   if (rows.length > 0) await supabase.from('arc_entities').upsert(rows, { onConflict: 'arc_id,entity_id' })
 
@@ -1322,6 +1479,8 @@ Deno.serve(async () => {
   const MAX_NEW_PER_RUN = Number(cfg.max_new_per_run ?? 8)
   const ENT_MIN_CONF = Number(cfg.entity_resolve_min_confidence ?? 0.5)
   const DIGEST_ENTITY_COUNT = Number(cfg.digest_entity_count ?? 8)
+  const ATTACH_MIN_SIM = Number(cfg.attach_min_similarity ?? 0.78)
+  const CLUSTER_MAX_DF = Number(cfg.cluster_entity_max_df ?? 5)
   const PRIOR_POOL_LIMIT = 60
 
   const cutoff = new Date(Date.now() - LOOKBACK_DAYS * 86400000)
@@ -1331,6 +1490,12 @@ Deno.serve(async () => {
 
   const { data: outletRows } = await supabase.from('outlets').select('id, name')
   const outletNames = new Set<string>((outletRows ?? []).map((o: any) => normalizeEntityName(o.name)))
+  for (const alias of OUTLET_NAME_ALIASES) outletNames.add(alias)
+
+  // Phase 0 fix: hub entities (df > cluster_entity_max_df) are excluded from
+  // BOTH attachment and origination input — previously this filter existed
+  // only in the backfill originate step.
+  const hubEntityIds = await loadHubEntityIds(supabase, CLUSTER_MAX_DF)
 
   const { data: sources, error: srcErr } = await supabase
     .from('ingest_sources')
@@ -1467,7 +1632,7 @@ Deno.serve(async () => {
           embedding,
           citationCount: citations.length,
           citationPrimary: citations.some((c) => ['court_doc', 'agency_release'].includes(c.cited_type)),
-          entityIds: strongIds,
+          entityIds: strongIds.filter((id) => !hubEntityIds.has(id)),
           entities: strong,
           art: { id: art.id, title: item.title, summary: bodyText.slice(0, 500), published_at: item.published_at, url: item.url, outlet: outlet.name },
         })
@@ -1503,6 +1668,7 @@ Deno.serve(async () => {
       entities = resolved.filter((r) => r.confidence >= ENT_MIN_CONF)
       entityIds = entities.map((r) => r.id)
     }
+    entityIds = entityIds.filter((id) => !hubEntityIds.has(id))
     pool.push({
       id: p.id,
       outletKey: p.outlet_id ?? p.outlet ?? 'unknown',
@@ -1524,7 +1690,7 @@ Deno.serve(async () => {
       unattachedPool.push(ca)
       continue
     }
-    const hit = await findArcBySharedEntity(supabase, ca.entityIds, ca.embedding.length ? ca.embedding : null)
+    const hit = await findArcBySharedEntity(supabase, ca.entityIds, ca.embedding.length ? ca.embedding : null, ATTACH_MIN_SIM)
     if (hit) {
       const text = `${ca.art.title}. ${ca.art.summary ?? ''}`
       await attachToArc(supabase, ca.art, hit.arc, {
@@ -1536,6 +1702,7 @@ Deno.serve(async () => {
         citationPrimary: ca.citationPrimary,
         actors: ca.entities,
         topicFloor: TOPIC_FLOOR,
+        embedding: ca.embedding.length ? ca.embedding : null,
       })
       report.attached++
       report.milestonesUpdated += await checkMilestones(supabase, hit.arc, text, ca.art)
@@ -1601,6 +1768,7 @@ Deno.serve(async () => {
         citationPrimary: member.citationPrimary,
         actors: member.entities,
         topicFloor: TOPIC_FLOOR,
+        embedding: member.embedding.length ? member.embedding : null,
       })
       report.attached++
       report.milestonesUpdated += await checkMilestones(supabase, arc, text, member.art)
