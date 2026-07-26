@@ -4,58 +4,50 @@ import {
   demoEdges,
   demoSources,
   demoArcs,
-  demoMilestones,
   demoArcEvents,
-} from '../data/demoData'
+  demoMilestones,
+  demoActors,
+} from './data/demoData'
 
-// Env vars are used when present (local dev). The hardcoded fallbacks let the
-// static GitHub Pages build reach the live project — the anon key is a
-// publishable key and all tables are protected by read-only RLS policies.
-const url = import.meta.env.VITE_SUPABASE_URL ?? 'https://niejaejtbxgakyrsntxm.supabase.co'
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? 'sb_publishable_rlHzgeDjVuw9kO3cqcVa-g_ZavxEY7V'
+// Frontend reads go through the PUBLISHABLE key + RLS (Spec §2.6: writes
+// service-role only in edge functions, never the browser). Legacy
+// VITE_SUPABASE_ANON_KEY still works as a fallback for older env files.
+const url = import.meta.env.VITE_SUPABASE_URL
+const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY
+export const supabase = url && key ? createClient(url, key) : null
 
-export const supabase = url && anonKey ? createClient(url, anonKey) : null
+// ---------- Search input ----------
 
-// PostgREST .or() filters break on commas/parens/quotes in user input.
-function sanitizeSearch(q) {
-  return (q ?? '').replace(/[(),"\\%_]/g, ' ').trim()
+// PostgREST .or() filters are comma-delimited: an unescaped comma in user
+// input silently splits the filter. Escape %, _, and commas for ilike.
+export function sanitizeSearch(q) {
+  return String(q ?? '')
+    .trim()
+    .slice(0, 200)
+    .replace(/[%,_]/g, (ch) => `\\${ch}`)
 }
 
-// Loads the graph from Supabase when configured, otherwise returns the
-// bundled demo dataset. Both paths return { nodes, edges, source } in the
-// shape GraphView expects.
+// ---------- Concept-graph queries ----------
+
 export async function loadGraph() {
-  if (!supabase) {
-    return { nodes: demoNodes, edges: demoEdges, source: 'demo' }
-  }
-
-  const EDGE_BASE = 'id, source_id, target_id, type, weight, label, similarity'
-  // Evidence columns land with the Steps 6–9 backend migration. Try the
-  // extended select first; if the columns don't exist yet (PostgREST 400),
-  // fall back to the base select so the graph keeps working pre-migration.
-  const EDGE_EVIDENCE =
-    ', signal_source, doc_strength, claimed_by, stance, disputed_by, alternative_causes, counterfactual_test, reliability, metadata'
-
-  const nodesReq = supabase
-    .from('nodes')
-    .select('id, slug, label, type, description, confidence, summary, occurred_at, arc_id')
-  let [nodesRes, edgesRes] = await Promise.all([
-    nodesReq,
-    supabase.from('edges').select(EDGE_BASE + EDGE_EVIDENCE),
+  if (!supabase) return { nodes: demoNodes, edges: demoEdges }
+  const [nodesRes, edgesRes] = await Promise.all([
+    supabase.from('nodes').select('id, slug, label, type, summary, confidence, occurred_at, arc_id'),
+    supabase.from('edges').select('id, source_id, target_id, type, weight, label, similarity, reliability, counterfactual_test, claimed_by'),
   ])
-  if (edgesRes.error) {
-    edgesRes = await supabase.from('edges').select(EDGE_BASE)
-  }
-
   if (nodesRes.error) throw nodesRes.error
   if (edgesRes.error) throw edgesRes.error
-
-  if (nodesRes.data.length === 0) {
-    return { nodes: demoNodes, edges: demoEdges, source: 'demo (Supabase empty)' }
-  }
-
   return {
-    nodes: nodesRes.data,
+    nodes: nodesRes.data.map((n) => ({
+      id: n.id,
+      slug: n.slug,
+      label: n.label,
+      type: n.type,
+      summary: n.summary,
+      confidence: n.confidence,
+      occurred_at: n.occurred_at,
+      arc_id: n.arc_id ?? null,
+    })),
     edges: edgesRes.data.map((e) => ({
       id: e.id,
       source: e.source_id,
@@ -63,168 +55,182 @@ export async function loadGraph() {
       type: e.type,
       weight: e.weight,
       label: e.label,
-      similarity: e.similarity,
-      // Optional evidence fields — present only once the backend migration
-      // lands; every consumer treats them as possibly undefined.
-      signal_source: e.signal_source,
-      doc_strength: e.doc_strength,
-      claimed_by: e.claimed_by,
-      stance: e.stance,
-      disputed_by: e.disputed_by,
-      alternative_causes: e.alternative_causes,
-      counterfactual_test: e.counterfactual_test,
-      reliability: e.reliability,
-      metadata: e.metadata,
+      similarity: e.similarity ?? null,
+      reliability: e.reliability ?? null,
+      counterfactual_test: e.counterfactual_test ?? null,
+      claimed_by: e.claimed_by ?? null,
     })),
-    source: 'supabase',
   }
 }
 
-// Step 10 (§7.4): policy detail for the Consequence view. The `policies`
-// table (and policy_actors / policy_topics) may not exist yet — every
-// query is feature-detected and failures degrade to empty values so the
-// panel can still render from graph edges alone. The consequence edges
-// themselves come from the already-loaded graph (they carry the evidence
-// columns selected in loadGraph).
-export async function loadPolicyDetail(policyNodeId) {
-  const out = { policy: null, actors: [], topics: [] }
-  if (!supabase || !policyNodeId) return out
-  try {
-    const { data, error } = await supabase
-      .from('policies')
-      .select(
-        'id, name, jurisdiction, instrument_type, enacted_date, effective_date, status, source_url, full_text_url, external_id, metadata',
-      )
-      .eq('id', policyNodeId)
-      .maybeSingle()
-    if (error) return out // table likely absent — policy nodes just lack detail
-    out.policy = data
-  } catch {
-    return out
-  }
-  try {
-    const { data, error } = await supabase
-      .from('policy_actors')
-      .select('actor_id, role')
-      .eq('policy_id', policyNodeId)
-    if (!error) out.actors = data ?? []
-  } catch {}
-  try {
-    const { data, error } = await supabase
-      .from('policy_topics')
-      .select('topic_id')
-      .eq('policy_id', policyNodeId)
-    if (!error) out.topics = data ?? []
-  } catch {}
-  return out
-}
-
-// Step 8 (§5): topic taxonomy. The `topics` / `node_topics` tables may not
-// exist yet — feature-detect them and return null so the UI can hide the
-// Topics affordance instead of breaking.
-export async function loadTopics() {
-  if (!supabase) return null
-  try {
-    const [topicsRes, nodeTopicsRes] = await Promise.all([
-      supabase.from('topics').select('id, slug, name, parent_id'),
-      supabase.from('node_topics').select('node_id, topic_id, confidence'),
-    ])
-    if (topicsRes.error || nodeTopicsRes.error) return null
-    return { topics: topicsRes.data ?? [], nodeTopics: nodeTopicsRes.data ?? [] }
-  } catch {
-    return null
-  }
-}
-
-// Category tag for the article panel (§4.4): nodes carry no category column,
-// so the tag comes from the story arc the node belongs to (nodes.arc_id,
-// falling back to an arc rooted at this node). Returns null when the node
-// is in no arc — the panel then shows the neutral Unclassified tag.
-export async function loadNodeCategory(node) {
-  if (!node) return null
+export async function loadNodeDetail(nodeId) {
   if (!supabase) {
-    const arc = demoArcs.find((a) => a.id === node.arc_id || a.slug === node.arc_id)
-    return arc?.category ?? null
-  }
-  if (node.arc_id) {
-    const { data, error } = await supabase
-      .from('story_arcs')
-      .select('category')
-      .eq('id', node.arc_id)
-      .maybeSingle()
-    if (error) throw error
-    if (data?.category) return data.category
-  }
-  if (node.id) {
-    const { data, error } = await supabase
-      .from('story_arcs')
-      .select('category')
-      .eq('root_node_id', node.id)
-      .limit(1)
-    if (error) throw error
-    return data?.[0]?.category ?? null
-  }
-  return null
-}
-
-// Actor-panel derivation (targeted patch): actor/institution nodes carry no
-// category column and often have no rows in `sources` (sources attach to the
-// event nodes). When the panel's direct lookups come up empty, derive the
-// display category and source list from the node's connected EVENT nodes.
-export async function loadActorDerivation(eventNodeIds) {
-  const out = { category: null, sources: [] }
-  if (!supabase) return out
-  const ids = [...new Set((eventNodeIds ?? []).filter(Boolean))]
-  if (ids.length === 0) return out
-  try {
-    const { data: evNodes, error: evErr } = await supabase
-      .from('nodes')
-      .select('id, arc_id')
-      .in('id', ids)
-    if (evErr) return out
-    const arcIds = [...new Set((evNodes ?? []).map((n) => n.arc_id).filter(Boolean))]
-    if (arcIds.length > 0) {
-      const { data: arcs } = await supabase
-        .from('story_arcs')
-        .select('category')
-        .in('id', arcIds)
-      // Most common category wins; a real category always beats unclassified.
-      const counts = new Map()
-      for (const a of arcs ?? []) counts.set(a.category, (counts.get(a.category) ?? 0) + 1)
-      out.category =
-        [...counts.entries()].sort((x, y) => {
-          const ux = x[0] === 'unclassified' ? 0 : 1
-          const uy = y[0] === 'unclassified' ? 0 : 1
-          return uy - ux || y[1] - x[1]
-        })[0]?.[0] ?? null
+    const node = demoNodes.find((n) => n.id === nodeId)
+    return {
+      node,
+      sources: demoSources.filter((s) => s.node_id === nodeId),
+      anomalies: [],
     }
-    const { data: srcs } = await supabase
-      .from('sources')
-      .select('id, outlet, headline, url, published_at')
-      .in('node_id', ids)
-      .order('published_at', { ascending: false, nullsFirst: false })
-      .limit(15)
-    out.sources = srcs ?? []
-  } catch {
-    // derivation is best-effort — panel degrades to its original empty state
   }
-  return out
+  const [nodeRes, sourcesRes, anomaliesRes] = await Promise.all([
+    supabase.from('nodes').select('*').eq('id', nodeId).single(),
+    supabase.from('sources').select('*').eq('node_id', nodeId),
+    supabase.from('anomalies').select('*').eq('node_id', nodeId),
+  ])
+  if (nodeRes.error) throw nodeRes.error
+  return {
+    node: nodeRes.data,
+    sources: sourcesRes.data ?? [],
+    anomalies: anomaliesRes.data ?? [],
+  }
 }
 
-// Sources backing a single node (article panel source list).
-// nodeKey is the node uuid (supabase) or slug (demo data).
-export async function loadSources(nodeKey) {
-  if (!supabase) {
-    return demoSources.filter((s) => s.node_slug === nodeKey)
+export async function loadSourceDetail(sourceId) {
+  if (!supabase) return null
+  const [sourceRes, citationRes, claimRes] = await Promise.all([
+    supabase.from('sources').select('*').eq('id', sourceId).single(),
+    supabase.from('citations').select('*').eq('source_id', sourceId),
+    supabase.from('claims').select('*').eq('source_id', sourceId),
+  ])
+  if (sourceRes.error) throw sourceRes.error
+  return {
+    source: sourceRes.data,
+    citations: citationRes.data ?? [],
+    claims: claimRes.data ?? [],
   }
+}
+
+// ---------- Entity derivation (Step 2/3: who / what-for) ----------
+
+// Entities linked to a node, joined with canonical name + type.
+export async function loadNodeEntities(nodeId) {
+  if (!supabase) return []
   const { data, error } = await supabase
-    .from('sources')
-    .select('id, outlet, headline, url, published_at')
-    .eq('node_id', nodeKey)
-    .order('published_at', { ascending: false, nullsFirst: false })
+    .from('node_entities')
+    .select('role, confidence, entities (id, canonical_name, entity_type)')
+    .eq('node_id', nodeId)
+  if (error) throw error
+  return (data ?? []).map((row) => ({
+    role: row.role,
+    confidence: row.confidence,
+    id: row.entities?.id,
+    canonical_name: row.entities?.canonical_name ?? null,
+    entity_type: row.entities?.entity_type ?? null,
+  }))
+}
+
+// Every entity, for the "who" browser.
+export async function loadEntities() {
+  if (!supabase) return demoActors
+  const { data, error } = await supabase
+    .from('entities')
+    .select('id, canonical_name, entity_type, mention_count, last_seen')
+    .order('mention_count', { ascending: false })
   if (error) throw error
   return data
 }
+
+// Derivation chain for one entity: entity -> node_entities -> nodes.
+export async function loadEntityDetail(entityId) {
+  if (!supabase) return null
+  const [entRes, neRes] = await Promise.all([
+    supabase.from('entities').select('*').eq('id', entityId).single(),
+    supabase
+      .from('node_entities')
+      .select('role, confidence, nodes (id, slug, label, type, summary)')
+      .eq('entity_id', entityId),
+  ])
+  if (entRes.error) throw entRes.error
+  return {
+    entity: entRes.data,
+    mentions: (neRes.data ?? []).map((row) => ({
+      role: row.role,
+      confidence: row.confidence,
+      node: row.nodes,
+    })),
+  }
+}
+
+// ---------- Authors ----------
+
+// Author directory, most prolific first.
+export async function loadAuthors() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('authors')
+    .select('id, name, article_count, confidence, framing_profile, last_seen, last_computed')
+    .order('article_count', { ascending: false, nullsFirst: false })
+  if (error) throw error
+  return data ?? []
+}
+
+// One author + their recent articles (outlet included for the timeline).
+export async function loadAuthorDetail(authorId) {
+  if (!supabase) return null
+  const [authorRes, articlesRes] = await Promise.all([
+    supabase.from('authors').select('*').eq('id', authorId).single(),
+    supabase
+      .from('articles')
+      .select('id, title, url, outlet, published_at, summary, monoculture, unattributed')
+      .eq('author_id', authorId)
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .limit(20),
+  ])
+  if (authorRes.error) throw authorRes.error
+  return { author: authorRes.data, articles: articlesRes.data ?? [] }
+}
+
+// ---------- Actor nodes (Step 6) ----------
+
+// Actor nodes + their article counts for the Actors browser.
+export async function loadActorNodes() {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('nodes')
+    .select('id, slug, label, metadata')
+    .eq('type', 'actor')
+  if (error) throw error
+  return data ?? []
+}
+
+// Articles mentioning one actor, via the entity backlink on the actor node.
+export async function loadActorArticles(entityId) {
+  if (!supabase || !entityId) return []
+  const { data: ae, error } = await supabase
+    .from('article_entities')
+    .select('confidence, role, articles (id, title, outlet, published_at, url)')
+    .eq('entity_id', entityId)
+    .order('confidence', { ascending: false })
+    .limit(30)
+  if (error) throw error
+  return (ae ?? []).map((r) => ({ ...(r.articles ?? {}), confidence: r.confidence, role: r.role }))
+}
+
+// All actor-derivation edges for one event node: ENTITY -> EVENT ('involves')
+// edges where the source is an actor node. Returns them paired with the
+// actor entity_id so the UI can jump to the Actors view.
+export async function loadActorDerivation(nodeId) {
+  if (!supabase || !nodeId) return []
+  const { data, error } = await supabase
+    .from('edges')
+    .select('id, source_id, metadata, nodes!edges_source_id_fkey (id, label)')
+    .eq('target_id', nodeId)
+    .eq('type', 'actor')
+  if (error) throw error
+  return (data ?? []).map((e) => ({
+    id: e.id,
+    entity_id: e.metadata?.entity_id ?? null,
+    label: e.nodes?.label ?? null,
+  }))
+}
+
+export async function loadSources(nodeId) {
+  if (!supabase) return demoSources.filter((s) => s.node_id === nodeId)
+  const { data, error } = await supabase.from('sources').select('*').eq('node_id', nodeId)
+  if (error) throw error
+  return data
+}
+
 
 // A4 — Arc status derivation. The stored story_arcs.status column is a weak
 // signal; the UI dot is wired to status derived from real signals instead:
@@ -322,11 +328,14 @@ export async function loadArcDetail(arcKey) {
 // Causal timeline: event nodes with dates plus causal edges between them.
 // `labels` covers ALL node types so edges that point at non-event nodes
 // (institutions, anomalies, documents) resolve to a label, not a raw uuid.
+// Phase 0 Part 2 Tier 3: the timeline loads BOTH 'causal' edges (stated in
+// reporting) and 'sequence' edges (temporal adjacency — NOT causation); the
+// edge `type` is passed through so TimelineView can render them differently.
 export async function loadTimeline() {
   if (!supabase) {
     return {
       events: demoNodes.filter((n) => n.type === 'event'),
-      causalEdges: demoEdges.filter((e) => e.type === 'causal'),
+      causalEdges: demoEdges.filter((e) => ['causal', 'sequence'].includes(e.type)),
       labels: demoNodes.map((n) => ({ id: n.id ?? n.slug, slug: n.slug, label: n.label })),
     }
   }
@@ -336,7 +345,7 @@ export async function loadTimeline() {
       .select('id, slug, label, description, confidence, summary, occurred_at')
       .eq('type', 'event')
       .order('occurred_at', { ascending: true, nullsFirst: false }),
-    supabase.from('edges').select('id, source_id, target_id, weight, label').eq('type', 'causal'),
+    supabase.from('edges').select('id, source_id, target_id, type, weight, label').in('type', ['causal', 'sequence']),
     supabase.from('nodes').select('id, slug, label'),
   ])
   if (nodesRes.error) throw nodesRes.error
@@ -348,6 +357,7 @@ export async function loadTimeline() {
       id: e.id,
       source: e.source_id,
       target: e.target_id,
+      type: e.type,
       weight: e.weight,
       label: e.label,
     })),
