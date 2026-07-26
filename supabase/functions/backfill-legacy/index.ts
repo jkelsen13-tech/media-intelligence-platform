@@ -150,7 +150,9 @@ const STOP_SINGLE = new Set([
 
 const ROLE_TITLES_RE = /^(?:President|Prime Minister|Vice President|Deputy Prime Minister|Minister|Foreign Minister|Defence Minister|Senator|Governor|Mayor|Secretary(?: of State)?|Chancellor(?: of the Exchequer)?|Attorney General|MP|Mr|Ms|Mrs|Miss|Dr|Sir|Dame|Judge|Justice|Chief|General|Admiral|Captain|Colonel|Spokesperson|Officer|Professor|Father|Rabbi|Pope|King|Queen|Prince|Princess)\s+/i
 
-const PROPER_RE = /\b([A-Z][\w'’.\-]*(?:(?:\s+(?:of|the|de|del|van|von|der|al|bin|and|&|for)\s+|\s+)[A-Z][\w'’.\-]*)*)/g
+// Token excludes trailing dots so sentence boundaries can't bleed into a
+// surface ("England. The"); multi-letter abbreviations (U.S.) still match.
+const PROPER_RE = /\b((?:(?:[A-Z]\.){2,}|[A-Z][\w'’\-]*)(?:(?:\s+(?:of|the|de|del|van|von|der|al|bin|and|&|for)\s+|\s+)(?:(?:[A-Z]\.){2,}|[A-Z][\w'’\-]*))*)/g
 
 interface EntityCandidate {
   surface: string
@@ -171,6 +173,10 @@ function extractEntityCandidates(text: string, outletNames: Set<string>): Entity
       surface = surface.slice(r[0].length).trim()
     }
     if (surface.length < 2) continue
+    // Label sanity filter: reject surfaces that still contain a sentence
+    // break or read like a headline fragment (>6 words) — these are
+    // extraction artifacts, not entities, and must never reach the tables.
+    if (surface.includes('. ') || surface.split(/\s+/).length > 6) continue
     const words = surface.split(/\s+/)
     const norm = normalizeEntityName(surface)
     if (!norm) continue
@@ -593,7 +599,11 @@ function findProcess(text: string): string | null {
 function makeArcTitle(actorName: string | null, process: string | null): string | null {
   if (!process) return null
   if (!actorName) return `Unattributed cluster — ${process}`
-  return `${actorName} — ${process}`.slice(0, 140)
+  // Strip possessive leaks ("Charlie Kirk's" -> "Charlie Kirk") so the title
+  // subject is the entity name, not a surface form.
+  const subject = actorName.replace(/['’]s$/u, '').trim()
+  if (!subject) return `Unattributed cluster — ${process}`
+  return `${subject} — ${process}`.slice(0, 140)
 }
 
 
@@ -712,6 +722,10 @@ interface ActorRef {
 // Step 6 (§4): one ACTOR node per resolved entity, backlinked via
 // metadata.entity_id. Idempotent.
 async function ensureActorNode(supabase: any, e: ActorRef): Promise<string | null> {
+  // Type guard: never write non-string or malformed labels (a stray object
+  // here once rendered literally as "[object Object]" in the graph).
+  if (typeof e?.canonical_name !== 'string' || !e.canonical_name.trim()) return null
+  if (e.canonical_name.includes('. ') || e.canonical_name.trim().split(/\s+/).length > 6) return null
   const slug = `actor-${normalizeEntityName(e.canonical_name)}`
   const { data, error } = await supabase
     .from('nodes')
