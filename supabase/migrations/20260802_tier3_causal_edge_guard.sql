@@ -1,8 +1,10 @@
 -- Phase 0 Part 2, Tier 3: causal-logic fix — DB layer.
 -- Applied to production 2026-07-27.
 --
--- (A) CHECK constraint applied as Supabase migration
---     "tier3_causal_edge_evidence_guard".
+-- (A) CHECK constraint applied as Supabase migrations
+--     "tier3_causal_edge_evidence_guard" then hardened as
+--     "tier3_causal_edge_evidence_guard_hardened" (adversarial-gate
+--     remediation round 1; hardened form below is the live one).
 -- (B) Data remediation applied out-of-band via direct SQL the same day
 --     (recorded here for the audit trail; all statements idempotent).
 --
@@ -63,14 +65,49 @@ WHERE e.source_id = ns.id AND e.target_id = nt.id
   AND right(ns.slug,8) = right(nt.slug,8)
   AND ns.slug LIKE 'evt-%' AND nt.slug LIKE 'art-%';
 
+-- (B4) gate remediation (adversarial gate round 1, 2026-07-27): the 2 causal
+-- edges kept in round 0 rest on WEAK citations (named_official, 0.6). The
+-- deployed Step-3 standard requires a PRIMARY document (court_doc /
+-- agency_release) for citation-based causal; weak citation => sequence.
+-- Reclassified both; production now has 0 causal edges until an article with
+-- explicit causal language or a primary document comes through the pipeline.
+UPDATE edges
+SET type = 'sequence',
+    label = 'sequence: cited development in arc',
+    weight = 'light',
+    signal_source = 'shared_entity',
+    doc_strength = 'circumstantial',
+    claimed_by = 'reporting',
+    reliability = 4,
+    counterfactual_test = 'sequence_only',
+    metadata = metadata || jsonb_build_object(
+      'signal_source', 'shared_entity+sequence',
+      'reclassified_from', 'causal',
+      'reclass_reason', 'Tier 3 gate remediation 2026-07-27: citation is named_official (weak); deployed standard requires primary document (court_doc/agency_release) for causal'
+    )
+WHERE type = 'causal';
+
 -- (A) the guard: a causal edge must rest on more than a bare temporal
 -- keyword. Mirrors TEMPORAL_RE in ingest-rss / backfill-legacy.
+-- HARDENED (migration tier3_causal_edge_evidence_guard_hardened) after the
+-- adversarial gate evaded the original anchored regex with 'amidst' and
+-- whitespace/punctuation padding: label/evidence are normalized before
+-- matching (strip 'causal:' prefix, trim non-alphanumerics, lowercase,
+-- \s+ between words) and the keyword list adds amidst / in the aftermath of /
+-- later / subsequently.
+ALTER TABLE edges DROP CONSTRAINT edges_causal_evidence_guard;
 ALTER TABLE edges
   ADD CONSTRAINT edges_causal_evidence_guard CHECK (
     type <> 'causal'
     OR (
       signal_source IN ('causal_language', 'citation')
-      AND NOT (coalesce(metadata->>'evidence', '') ~* '^(after|following|amid|in the wake of|on the back of|days? after|hours? after)$')
-      AND NOT (coalesce(label, '') ~* '^causal:\s*(after|following|amid|in the wake of|on the back of|days? after|hours? after)$')
+      AND NOT (
+        lower(regexp_replace(regexp_replace(coalesce(metadata->>'evidence', ''), '^[^a-zA-Z0-9]+', ''), '[^a-zA-Z0-9]+$', ''))
+        ~ '^(after|following|amid|amidst|in\s+the\s+wake\s+of|on\s+the\s+back\s+of|days?\s+after|hours?\s+after|in\s+the\s+aftermath\s+of|later|subsequently)$'
+      )
+      AND NOT (
+        lower(regexp_replace(regexp_replace(regexp_replace(coalesce(label, ''), '^\s*causal:\s*', '', 'i'), '^[^a-zA-Z0-9]+', ''), '[^a-zA-Z0-9]+$', ''))
+        ~ '^(after|following|amid|amidst|in\s+the\s+wake\s+of|on\s+the\s+back\s+of|days?\s+after|hours?\s+after|in\s+the\s+aftermath\s+of|later|subsequently)$'
+      )
     )
   );
