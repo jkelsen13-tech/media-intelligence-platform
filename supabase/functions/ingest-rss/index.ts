@@ -48,6 +48,20 @@ const NAMED_ENTITIES: Record<string, string> = {
   iexcl: '¡', iquest: '¿', shy: '',
 }
 
+// Prefixes (>= 2 chars) of known entity names. A trailing '&' + one of these
+// at end-of-text is a truncated entity fragment ("...Asia.&lt"), not prose;
+// single-letter tails ("M&A", "R&D") and non-entity words ("Goldman & Co")
+// are left alone.
+const TRUNCATED_ENTITY_PREFIXES = new Set([
+  'lt', 'gt', 'am', 'amp', 'qu', 'quo', 'quot', 'ap', 'apo', 'apos',
+  'nb', 'nbs', 'nbsp', 'hel', 'hell', 'helli', 'hellip',
+  'mda', 'mdas', 'mdash', 'nda', 'ndas', 'ndash',
+  'lsq', 'lsqu', 'lsquo', 'rsq', 'rsqu', 'rsquo',
+  'ldq', 'ldqu', 'ldquo', 'rdq', 'rdqu', 'rdquo',
+  'mid', 'midd', 'middo', 'middot', 'bul', 'bull',
+  'cop', 'copy', 'reg', 'tra', 'trad', 'trade', 'deg',
+])
+
 function decodeEntities(s: string): string {
   // Phase 0 Part 2 Tier 2: decode to a FIXPOINT (max 3 passes) so
   // double-encoded input resolves fully (&amp;apos; -> &apos; -> '), and
@@ -80,7 +94,9 @@ interface Sanitized {
 // &lt;a href="..."&gt; become literal markup and get stripped too), strip
 // complete tags, strip broken/truncated tag fragments (</span&, unterminated
 // <a href="..., bare trailing <), drop residual unknown entities
-// (whitespace-tolerant), then collapse whitespace.
+// (whitespace-tolerant), decode bare entity words left by legacy
+// half-stripped input (apos;/quot;), remove truncated entity tails at
+// end-of-text, then collapse whitespace.
 function sanitize(raw: string | null | undefined): Sanitized {
   if (!raw) return { text: '', imageUrl: null, imageAlt: null }
   let s = String(raw).replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '')
@@ -102,6 +118,31 @@ function sanitize(raw: string | null | undefined): Sanitized {
   s = s.replace(/<\/?[a-zA-Z!][^>]{0,400}$/, ' ') // unterminated tag at end (<a href="htt)
   s = s.replace(/<\/?$/, ' ') // bare trailing < or </
   s = s.replace(/&\s*[a-zA-Z#0-9]{1,10};/g, ' ') // residual unknown entities (whitespace-tolerant)
+  // Tier 2 round 2: repair half-stripped entities (mirrors the r2
+  // mip_clean_display_text() in the database).
+  // (1) Bare known-entity words whose '&' was stripped upstream by legacy
+  //     cleaners ("Trump apos;s", 'quot;60 Minutes quot;') decode to their
+  //     character; an optional leading '&' and whitespace before ';' are
+  //     tolerated. For quot;, a preceding space is consumed only for a
+  //     CLOSING quote (followed by whitespace/end) so 'her quot;60' keeps
+  //     its opening-quote spacing.
+  s = s.replace(/&?\s+apos\s*;/g, "'")
+  s = s.replace(/&?\bapos\s*;/g, "'")
+  s = s.replace(/&?\s+quot\s*;(?=\s|$)/g, '"')
+  s = s.replace(/&?\bquot\s*;/g, '"')
+  s = s.replace(/&?\s*\bnbsp\s*;/g, ' ')
+  s = s.replace(/&?\bamp\s*;/g, '&')
+  s = s.replace(/&?\blt\s*;/g, '<')
+  s = s.replace(/&?\bgt\s*;/g, '>')
+  // (2) Truncated entity tails at end-of-text ("...war&", "...Asia.&lt")
+  //     are removed; trailing punctuation is kept (and not duplicated when
+  //     it already precedes the fragment: "Asia.&lt." -> "Asia.").
+  s = s.replace(/&(#x?[0-9a-fA-F]{0,7}|[a-zA-Z]{2,9})([.,;:!?)\]]*)\s*$/, (m, g, punct, off, str) => {
+    if (g[0] !== '#' && !TRUNCATED_ENTITY_PREFIXES.has(g.toLowerCase())) return m
+    const prev = str[off - 1]
+    return prev && punct.startsWith(prev) ? punct.slice(1) : punct
+  })
+  s = s.replace(/&(\s*[.,;:!?)\]]*)$/, '$1') // bare trailing '&' ("war&." -> "war.")
   s = s.replace(/\s+/g, ' ').trim()
   return { text: s, imageUrl, imageAlt }
 }
@@ -469,7 +510,7 @@ class EntityResolver {
 //   1. HF token-classification: [[{ entity_group|entity, word, start, end,
 //      score }...]] (also accepted unwrapped: [...])
 //   2. Generic span list: { "entities": [{ "text"|"surface", "type"?,
-//      "start"?, "end"?, "score"? }...] }
+//      "start"?, "end"?, "score"? }] }
 // Model entity types are mapped onto our entity_type vocabulary
 // (person/organization/institution/other) at merge time; PER->person,
 // ORG->organization, LOC/MISC->other.
@@ -765,13 +806,13 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   geopolitical_consequence: [
     { key: 'gp_ceasefire', title: 'Ceasefire or de-escalation agreed', confirm: /\b(ceasefire|truce|de-escalat\w+|peace (deal|agreement)|armistice|withdraw\w*)\b/i, fail: /\b(talks? (collapse\w*|fail\w*)|ceasefire (broken|collapses?|ends?))\b/i },
     { key: 'gp_sanctions', title: 'Sanctions or retaliation imposed', confirm: /\b(sanctions? (imposed|announced|extended)|retaliat\w+|expel\w+|travel ban)\b/i },
-    { key: 'gp_routes', title: 'Disrupted routes or activity normalize', confirm: /\b(resum\w+|reopen\w*|normali\w*|returns? to (the )?(red sea|route|port))\b/i },
-    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w+|strike\w*|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
+    { key: 'gp_routes', title: 'Disrupted routes or activity normalize', confirm: /\b(resum\w+|reopen\w*|normali[sz]e|returns? to (the )?(red sea|route|port))\b/i },
+    { key: 'gp_escalation', title: 'Further escalation or intervention', confirm: /\b(escalat\w*|strike\w*|attack\w*|intervention|deploy\w+|mobilis\w+|mobiliz\w+)\b/i },
   ],
   economic_policy: [
     { key: 'ep_enacted', title: 'Policy measure enacted or implemented', confirm: /\b(takes effect|comes into force|enacted|implement\w+|signed into law|approved)\b/i },
     { key: 'ep_market', title: 'Market or sector adjustment', confirm: /\b(markets? (react\w*|fall|rise|slide)|shares? (fell|fall|rose|rise)|prices? (rise|fall|rose|fell)|adjust\w+)\b/i },
-    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w+|withdraw\w+|scrapped|backs off|abandon\w+|u-turn)\b/i },
+    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w*|withdraw\w*|scrapped|backs off|abandon\w*|u-turn)\b/i },
     { key: 'ep_funding', title: 'Funding or budget allocated', confirm: /\b(funding|allocat\w+|budget|appropriat\w+|bailout)\b/i },
   ],
   legislative_regulatory: [
@@ -781,9 +822,9 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
     { key: 'lr_deadline', title: 'Implementation deadline met', confirm: /\b(takes effect|comes into force|deadline|implement\w+|in force)\b/i, fail: /\b(delayed|postponed|missed deadline|pushed back)\b/i },
   ],
   unclassified: [
-    { key: 'gen_response', title: 'Official response issued', confirm: /\b(respond\w+|statement|comment\w+|reaction)\b/i },
-    { key: 'gen_development', title: 'Further developments reported', confirm: /\b(develop\w+|update\w+|continu\w+|latest)\b/i },
-    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w+|criticis\w+|criticiz\w+|praise\w+|backlash|condemn\w+)\b/i },
+    { key: 'gen_response', title: 'Official response issued', confirm: /\b(respond\w*|statement|comment\w*|reaction)\b/i },
+    { key: 'gen_development', title: 'Further developments reported', confirm: /\b(develop\w*|update\w*|continu\w+|latest)\b/i },
+    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w*|criticis\w*|criticiz\w*|praise\w*|backlash|condemn\w+)\b/i },
   ],
 }
 
@@ -1447,7 +1488,7 @@ function clusterBySharedEntities(items: Array<{ id: string; entityIds: string[] 
   for (const it of items) {
     for (const e of it.entityIds) {
       const arr = byEntity.get(e) ?? []
-      arr.push(it.id)
+      arr.push(e)
       byEntity.set(e, arr)
     }
   }
