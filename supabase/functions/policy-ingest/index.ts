@@ -160,6 +160,7 @@ async function ensureActorNode(supabase: any, e: { id: string; canonical_name: s
 // Resolve an agency name through the entities pipeline (exact normalized
 // match, else create institution). Agencies are institutions by construction.
 async function resolveAgency(supabase: any, name: string): Promise<{ id: string; canonical_name: string; entity_type: string } | null> {
+  if (typeof name !== 'string' || !name.trim()) return null // type guard
   const clean = name.trim().slice(0, 160)
   const norm = normalizeEntityName(clean)
   if (!norm) return null
@@ -326,7 +327,9 @@ const federalRegisterAdapter: SourceAdapter = {
             regulation_id_numbers: d.regulation_id_numbers ?? [],
             pending_amends: [],
           },
-          agencies: (d.agencies ?? []).map((a: any) => a.name ?? String(a)),
+          agencies: (d.agencies ?? [])
+            .map((a: any) => (typeof a === 'string' ? a : typeof a?.name === 'string' ? a.name : null))
+            .filter((n: string | null): n is string => !!n && !n.includes('. ') && n.trim().split(/\s+/).length <= 6),
           topicText: `${d.abstract ?? ''} ${(d.cfr_references ?? []).map((c: any) => c.title ?? '').join(' ')}`,
         }, topicFloor)
         if (!up) { report.errors.push(`fr upsert ${d.document_number}`); continue }
