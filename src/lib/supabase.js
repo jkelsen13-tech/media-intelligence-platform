@@ -7,6 +7,7 @@ import {
   demoMilestones,
   demoArcEvents,
 } from '../data/demoData'
+import { canonicalizeTimelineEvents, remapTimelineEdges } from './timelineDedup'
 
 // Env vars are used when present (local dev). The hardcoded fallbacks let the
 // static GitHub Pages build reach the live project — the anon key is a
@@ -319,14 +320,23 @@ export async function loadArcDetail(arcKey) {
   return { milestones: milestonesRes.data, events: eventsRes.data }
 }
 
-// Causal timeline: event nodes with dates plus causal edges between them.
-// `labels` covers ALL node types so edges that point at non-event nodes
+// Causal timeline: event nodes with dates plus causal/sequence edges between
+// them. `labels` covers ALL node types so edges that point at non-event nodes
 // (institutions, anomalies, documents) resolve to a label, not a raw uuid.
+// Dedup: Tier 4 deterministic evt-/art- mirror rule — see lib/timelineDedup.js.
 export async function loadTimeline() {
   if (!supabase) {
+    const demoEvents = demoNodes.filter((n) => n.type === 'event')
+    const { events, canonicalOf, suppressed } = canonicalizeTimelineEvents(demoEvents)
     return {
-      events: demoNodes.filter((n) => n.type === 'event'),
-      causalEdges: demoEdges.filter((e) => e.type === 'causal'),
+      events,
+      suppressed,
+      relationEdges: remapTimelineEdges(
+        demoEdges
+          .filter((e) => e.type === 'causal' || e.type === 'sequence')
+          .map((e) => ({ id: e.id, source: e.source, target: e.target, type: e.type, weight: e.weight, label: e.label })),
+        canonicalOf,
+      ),
       labels: demoNodes.map((n) => ({ id: n.id ?? n.slug, slug: n.slug, label: n.label })),
     }
   }
@@ -336,21 +346,29 @@ export async function loadTimeline() {
       .select('id, slug, label, description, confidence, summary, occurred_at')
       .eq('type', 'event')
       .order('occurred_at', { ascending: true, nullsFirst: false }),
-    supabase.from('edges').select('id, source_id, target_id, weight, label').eq('type', 'causal'),
+    // Causal AND sequential relations — the UI must preserve the distinction
+    // (Tier 4 acceptance: "preserve causal versus sequential labels").
+    supabase.from('edges').select('id, source_id, target_id, type, weight, label').in('type', ['causal', 'sequence']),
     supabase.from('nodes').select('id, slug, label'),
   ])
   if (nodesRes.error) throw nodesRes.error
   if (edgesRes.error) throw edgesRes.error
   if (labelsRes.error) throw labelsRes.error
+  const { events, canonicalOf, suppressed } = canonicalizeTimelineEvents(nodesRes.data)
   return {
-    events: nodesRes.data,
-    causalEdges: edgesRes.data.map((e) => ({
-      id: e.id,
-      source: e.source_id,
-      target: e.target_id,
-      weight: e.weight,
-      label: e.label,
-    })),
+    events,
+    suppressed,
+    relationEdges: remapTimelineEdges(
+      edgesRes.data.map((e) => ({
+        id: e.id,
+        source: e.source_id,
+        target: e.target_id,
+        type: e.type,
+        weight: e.weight,
+        label: e.label,
+      })),
+      canonicalOf,
+    ),
     labels: labelsRes.data,
   }
 }
