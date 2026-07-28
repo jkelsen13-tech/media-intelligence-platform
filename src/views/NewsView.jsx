@@ -57,7 +57,7 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
   const [detail, setDetail] = useState(null)
   const [graphLinks, setGraphLinks] = useState([])
   const [detailError, setDetailError] = useState(null)
-  // Sky verification for the expanded article (null = none / table absent).
+  // Location corroboration for the expanded article (null = none / table absent).
   const [sky, setSky] = useState(null)
   // Mobile: filters collapse into a bottom sheet behind a single button.
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -338,7 +338,7 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
                 )}
                 {a.unattributed && <span className="news-badge muted">unattributed</span>}
                 {a.monoculture && <span className="news-badge mono">monoculture</span>}
-                {expanded === a.id && sky && <span className="news-badge sky">◈ sky-verified</span>}
+                {expanded === a.id && sky && <span className="news-badge sky">◈ location-corroborated</span>}
               </div>
             </button>
 
@@ -366,11 +366,12 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
                         </div>
                       </div>
                     )}
-                    {/* Sky task 5: renders only when a verification exists. */}
+                    {/* Location corroboration (formerly Sky verification; 02A
+                        Amendment B): renders only when a corroboration exists. */}
                     <SkyBadge verification={sky} />
                     {!sky && detail.image_url && (
                       <p className="sky-companion-hint">
-                        Sky verification available in the MIP companion app
+                        Location corroboration available in the MIP companion app
                       </p>
                     )}
                     <div className="news-detail-grid">
