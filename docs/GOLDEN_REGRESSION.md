@@ -2,7 +2,7 @@
 
 Created 2026-07-28. Owner-authorized scope: G1 only.
 Suite: `tests/golden/` (run `npm test`). Monitors: `supabase/monitors/golden_monitors.sql`.
-CI gate: `.github/workflows/golden.yml` (push/PR/manual) + `test` job gating Pages deploy in `blank.yml`.
+CI gate (**PENDING installation**): `.github/workflows/golden.yml` (push/PR/manual) and a `test` job gating Pages deploy in `blank.yml` were prepared on 2026-07-28 but could not be pushed by API — the GitHub App token used for G1 lacks the `workflow` scope, which GitHub requires for any write under `.github/workflows/`. Install manually (full contents recorded in `verifier/runs/2026-07-28_g1_golden_suite.md`) or re-push with a workflow-scoped token. Until then the suite runs locally via `npm test`; the monitors are unaffected.
 
 ## What the suite proves
 
@@ -53,8 +53,9 @@ or classification change, and on a weekly owner review cadence.
 
 - **Owner:** Joseph (repo owner, jkelsen13-tech) — owns golden-set review,
   monitor review, and remediation decisions.
-- **Suite alerts:** CI failure on push/PR → GitHub Actions notification to the
-  repo owner; failed deploy gate blocks Pages deploy automatically.
+- **Suite alerts (once the pending CI gate is installed):** CI failure on
+  push/PR → GitHub Actions notification to the repo owner; failed deploy gate
+  blocks Pages deploy automatically.
 - **Monitor alerts:** any ALERT row → owner opens a GitHub issue titled
   `G1 monitor ALERT: <monitor>` and remediates before the next ingestion run.
 - **Escalation:** repeated ALERT on the same monitor twice in a row → pause
