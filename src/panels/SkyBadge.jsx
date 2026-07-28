@@ -1,17 +1,20 @@
 import { skySummaryLine, skyMethodLabel } from '../lib/sky'
 
-// Sky verification badge (Sky task 5). Renders nothing when there is no
-// verification — this is a native-companion feature, so absence is the
-// normal state on web. Visual language matches the classifier-transparency
-// style (muted, honest, small caps + mono numbers), never a green check.
+// Location corroboration badge (formerly "Sky verification" — renamed per
+// 02A Amendment B; see docs/LOCATION_CORROBORATION.md). Renders nothing when
+// there is no corroboration — this is a native-companion feature, so absence
+// is the normal state on web. Visual language matches the
+// classifier-transparency style (muted, honest, small caps + mono numbers),
+// never a green check. Language rule: corroborates / consistent with /
+// does not support — never "verifies."
 export default function SkyBadge({ verification }) {
   if (!verification) return null
   const line = skySummaryLine(verification)
   const method = skyMethodLabel(verification.method)
   const err = Number(verification.angular_error_deg)
   return (
-    <div className="sky-badge" role="note" aria-label={`Sky verification: ${line}`}>
-      <span className="sky-badge-label">Sky verification</span>
+    <div className="sky-badge" role="note" aria-label={`Location corroboration: ${line}`}>
+      <span className="sky-badge-label">Location corroboration</span>
       <span className="sky-badge-line">{line}</span>
       <span className="sky-badge-caption">
         {method}

@@ -1,7 +1,11 @@
-// Sky verification (Sky tasks 5–6): pure helpers shared by the Article
-// Panel and the News Feed. The verification itself is produced by the
-// native companion app; the web UI only renders it and applies a small,
-// visible credibility adjustment.
+// Probabilistic Location Corroboration (formerly "Sky verification" —
+// renamed per 02A Amendment B; see docs/LOCATION_CORROBORATION.md).
+// Pure helpers shared by the Article Panel and the News Feed. The
+// corroboration itself is produced by the native companion app; the web UI
+// only renders it and applies a small, visible credibility adjustment.
+// Identifiers in this file keep the legacy `sky` prefix (deprecated name);
+// user-facing language must say "corroborates / consistent with / does not
+// support," never "verifies."
 
 // Task 6: confidence boost per sensor_quality tier. Kept in one place so
 // the weighting is auditable. Capped at 100.

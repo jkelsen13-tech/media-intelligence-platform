@@ -1,5 +1,12 @@
 # Sky Verification (Shadow-First) — iOS Prototype
 
+> **Deprecation note (02A, Amendment B):** this feature is renamed
+> **Probabilistic Location Corroboration**. The folder name, Swift type
+> names, and the text below are retained as historical identifiers only.
+> User-facing language must say "corroborates / is consistent with / does
+> not support" — never "verifies" — and any output is a plausible location
+> band, never a precise point. See `docs/LOCATION_CORROBORATION.md`.
+
 Standalone SwiftUI prototype of the MIP "Sky Verification" phase doc,
 Tasks 1–4 (native side). **Not wired to MIP yet** — no networking, no
 Supabase client, no app integration. The matching database migration is
