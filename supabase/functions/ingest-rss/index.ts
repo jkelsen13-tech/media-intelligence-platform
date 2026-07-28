@@ -680,6 +680,18 @@ function causalEvidence(text: string, sharedEntities: string[] = [], rootTitle: 
   return null
 }
 
+// Phase 2 (02B) evidence capture: sentence/window containing the evidence
+// marker, <= 400 chars. Stored in the NEW metadata.evidence_passage field —
+// metadata.evidence (the marker, read by the r5 guard) is NOT changed.
+function passageAround(text: string, marker: string | null): string | null {
+  if (!marker) return null
+  const i = text.toLowerCase().indexOf(marker.toLowerCase())
+  if (i < 0) return null
+  const lo = Math.max(0, text.lastIndexOf('.', i) + 1, i - 150)
+  const hi = Math.min(text.length, i + marker.length + 150)
+  return text.slice(lo, hi).trim().replace(/\s+/g, ' ').slice(0, 400)
+}
+
 // ---------- classifier ----------
 // Spec §2.5.3 defines exactly four named categories; 'unclassified' only when
 // genuinely ambiguous. Keyword/weight rubric operationalises those category
@@ -775,7 +787,7 @@ const PROCESS_PATTERNS: Array<{ process: string; re: RegExp }> = [
   { process: 'appointment', re: /\b(appoint\w*|named as|takes office)\b/i },
   { process: 'policy reversal', re: /\b(backs off|revers\w*|u-turn|abandon\w+|scrap\w*)\b/i },
   { process: 'legislative action', re: /\b(bill|vote\w*|executive order|amendment|legislation|act passed)\b/i },
-  { process: 'regulatory decision', re: /\b(regulat\w+|rules out|ban\w*|approv\w+|licen[cs]\w+)\b/i },
+  { process: 'regulatory decision', re: /\b(regulat\w+|rules out|ban\w*|approv\w+|licen[cs]\w*)\b/i },
   { process: 'legal ruling', re: /\b(ruling|verdict|court rules|judgment|appeal)\b/i },
   { process: 'medical evacuation', re: /\b(evacuation|evacuate\w*)\b/i },
   { process: 'disaster response', re: /\b(flood\w*|wildfire\w*|storm|earthquake|hurricane)\b/i },
@@ -841,7 +853,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   economic_policy: [
     { key: 'ep_enacted', title: 'Policy measure enacted or implemented', confirm: /\b(takes effect|comes into force|enacted|implement\w+|signed into law|approved)\b/i },
     { key: 'ep_market', title: 'Market or sector adjustment', confirm: /\b(markets? (react\w*|fall|rise|slide)|shares? (fell|fall|rose|rise)|prices? (rise|fall|rose|fell)|adjust\w+)\b/i },
-    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w*|withdraw\w*|scrapped|backs off|abandon\w+|u-turn)\b/i },
+    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w*|withdraw\w+|scrapped|backs off|abandon\w+|u-turn)\b/i },
     { key: 'ep_funding', title: 'Funding or budget allocated', confirm: /\b(funding|allocat\w+|budget|appropriat\w+|bailout)\b/i },
   ],
   legislative_regulatory: [
@@ -853,7 +865,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   unclassified: [
     { key: 'gen_response', title: 'Official response issued', confirm: /\b(respond\w+|statement|comment\w+|reaction)\b/i },
     { key: 'gen_development', title: 'Further developments reported', confirm: /\b(develop\w+|update\w+|continu\w+|latest)\b/i },
-    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w+|criticis\w+|criticiz\w+|praise\w+|backlash|condemn\w+)\b/i },
+    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w*|criticis\w*|criticiz\w*|praise\w*|backlash|condemn\w+)\b/i },
   ],
 }
 
@@ -1085,19 +1097,29 @@ const TOPIC_RULES: Array<{ slug: string; weight: number; re: RegExp }> = [
   { slug: 'civil-liberties', weight: 0.45, re: /\b(civil libert\w+|free speech|privacy|protest\w*|dissent|censorship|surveillance|press freedom)\b/i },
 ]
 
-function tagTopics(text: string, floor: number): Array<{ slug: string; confidence: number }> {
-  const conf = new Map<string, number>()
+// Phase 2 (02B) F6 fix: same slugs/confidences as before; each tag also
+// carries the sentence that matched, persisted to node_topics.evidence.
+function tagTopics(text: string, floor: number): Array<{ slug: string; confidence: number; evidence: string | null }> {
+  const conf = new Map<string, { c: number; ev: string | null }>()
   for (const { slug, weight, re } of TOPIC_RULES) {
-    if (re.test(text)) conf.set(slug, Math.min(1, (conf.get(slug) ?? 0) + weight))
+    const m = text.match(re)
+    if (!m) continue
+    const cur = conf.get(slug) ?? { c: 0, ev: null }
+    cur.c = Math.min(1, cur.c + weight)
+    if (!cur.ev) cur.ev = passageAround(text, m[0])
+    conf.set(slug, cur)
   }
-  for (const [slug, c] of [...conf]) {
+  for (const [slug, v] of [...conf]) {
     let p = TOPIC_PARENT[slug]
     while (p) {
-      conf.set(p, Math.max(conf.get(p) ?? 0, c))
+      const cur = conf.get(p) ?? { c: 0, ev: null }
+      cur.c = Math.max(cur.c, v.c)
+      if (!cur.ev) cur.ev = v.ev
+      conf.set(p, cur)
       p = TOPIC_PARENT[p] ?? null
     }
   }
-  return [...conf].filter(([, c]) => c >= floor).map(([slug, confidence]) => ({ slug, confidence }))
+  return [...conf].filter(([, v]) => v.c >= floor).map(([slug, v]) => ({ slug, confidence: v.c, evidence: v.ev }))
 }
 
 let topicIdCache: Map<string, string> | null = null
@@ -1113,7 +1135,7 @@ async function tagNodeTopics(supabase: any, nodeId: string, text: string, floor:
   if (tags.length === 0) return 0
   const ids = await loadTopicIds(supabase)
   const rows = tags
-    .map((t) => ({ node_id: nodeId, topic_id: ids.get(t.slug), confidence: t.confidence }))
+    .map((t) => ({ node_id: nodeId, topic_id: ids.get(t.slug), confidence: t.confidence, evidence: t.evidence }))
     .filter((r) => r.topic_id)
   if (rows.length === 0) return 0
   await supabase.from('node_topics').upsert(rows, { onConflict: 'node_id,topic_id' })
@@ -1133,10 +1155,21 @@ interface AttachContext {
   actors?: ActorRef[] // the article's OWN resolved entities (conf >= floor)
   topicFloor?: number
   embedding?: number[] | null // the article's embedding, used to refresh the arc centroid
+  articleText?: string // Phase 2 (02B): full analysis text for evidence_passage capture
 }
 
 async function attachToArc(supabase: any, art: any, arc: any, ctx: AttachContext) {
-  await supabase.from('articles').update({ arc_id: arc.id }).eq('id', art.id)
+  // Phase 2 (02B) evidence capture: persist assignment provenance (F5 fix).
+  await supabase.from('articles').update({
+    arc_id: arc.id,
+    arc_assignment_evidence: {
+      similarity: ctx.similarity,
+      shared_entity_ids: ctx.sharedEntityIds,
+      shared_entity_names: ctx.sharedEntities,
+      rule_version: 'arc_assign@20260724+gte-small(threshold=0.88)',
+      assigned_at: new Date().toISOString(),
+    },
+  }).eq('id', art.id)
 
   // Phase 0 fix: arc embeddings were set once from the seed article and never
   // updated, so similarity checks compared against a stale (sometimes wrong)
@@ -1260,7 +1293,9 @@ async function attachToArc(supabase: any, art: any, arc: any, ctx: AttachContext
         metadata: {
           signal_source: signalSource, // legacy mirror for pre-Step-7 readers
           shared_entities: ctx.sharedEntities,
-          evidence: ctx.causal ?? ctx.temporal ?? 'explicit citation in article',
+          evidence: ctx.causal ?? ctx.temporal ?? 'explicit citation in article', // UNCHANGED — r5 guard input
+          article_id: art.id, // Phase 2 (02B) F4 fix: restore source linkage
+          evidence_passage: passageAround(ctx.articleText ?? `${art.title}. ${art.summary ?? ''}`, ctx.causal ?? ctx.temporal), // Phase 2 (02B) F4 fix
         },
       },
       { onConflict: 'source_id,target_id,type' },
@@ -1806,6 +1841,7 @@ Deno.serve(async () => {
         actors: ca.entities,
         topicFloor: TOPIC_FLOOR,
         embedding: ca.embedding.length ? ca.embedding : null,
+        articleText: text,
       })
       report.attached++
       report.milestonesUpdated += await checkMilestones(supabase, hit.arc, text, ca.art)
@@ -1873,6 +1909,7 @@ Deno.serve(async () => {
         actors: member.entities,
         topicFloor: TOPIC_FLOOR,
         embedding: member.embedding.length ? member.embedding : null,
+        articleText: text,
       })
       report.attached++
       report.milestonesUpdated += await checkMilestones(supabase, arc, text, member.art)
@@ -1930,7 +1967,7 @@ Deno.serve(async () => {
       .order('published_at', { ascending: false })
       .limit(AUTHOR_MAX_PRIOR)
     const count = arts?.length ?? 0
-    await supabase.from('authors').update({ article_count: count }).eq('author_id', author.id)
+    await supabase.from('authors').update({ article_count: count }).eq('id', author.id)
     if (count < AUTHOR_MIN) continue
 
     let substantive = 0, framing = 0
@@ -1959,7 +1996,7 @@ Deno.serve(async () => {
     await supabase
       .from('authors')
       .update({ framing_profile: profile, confidence, last_computed: new Date().toISOString() })
-      .eq('author_id', author.id)
+      .eq('id', author.id)
     await supabase.from('author_profile_queue').update({ processed_at: new Date().toISOString() }).eq('author_id', author.id)
     report.authorsProfiled++
   }
