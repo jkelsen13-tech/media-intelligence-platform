@@ -160,8 +160,44 @@ export default function GraphView({
       layout: fcoseOptions({ firstRun: true }),
       minZoom: 0.2,
       maxZoom: 3,
-      wheelSensitivity: 0.3,
+      // Tier 5: cytoscape never sees wheel events (they are intercepted in
+      // capture phase below and normalized per input device), so the single
+      // wheelSensitivity knob is no longer what governs wheel zoom.
+      wheelSensitivity: 1,
     })
+
+    // --- Tier 5: device-normalized wheel zoom ---
+    // A single sensitivity cannot serve all three wheel sources: a standard
+    // mouse emits large discrete notches, a trackpad two-finger scroll emits
+    // a stream of tiny pixel deltas, and a trackpad pinch emits ctrl+wheel.
+    // Treating them identically is jumpy on trackpads and sluggish on mice.
+    // The capture-phase handler below stops the event before cytoscape's own
+    // wheel listener and applies a device-appropriate, cursor-centered step.
+    // Touch pinch is unaffected — touch gestures produce no wheel events.
+    const graphContainer = containerRef.current
+    const onWheelZoom = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (cy.destroyed()) return
+      const delta = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY // lines -> px
+      let factor
+      if (e.ctrlKey) {
+        // Trackpad pinch: rapid small ctrl+wheel stream.
+        factor = Math.exp(-delta * 0.008)
+      } else if (Math.abs(delta) >= 50) {
+        // Standard mouse notch: one fixed, predictable step per notch.
+        factor = delta < 0 ? 1.2 : 1 / 1.2
+      } else {
+        // Trackpad two-finger scroll: proportional, damped.
+        factor = Math.exp(-delta * 0.0028)
+      }
+      const rect = graphContainer.getBoundingClientRect()
+      cy.zoom({
+        level: Math.min(cy.maxZoom(), Math.max(cy.minZoom(), cy.zoom() * factor)),
+        renderedPosition: { x: e.clientX - rect.left, y: e.clientY - rect.top },
+      })
+    }
+    graphContainer.addEventListener('wheel', onWheelZoom, { passive: false, capture: true })
 
     // --- C3: grid layer, synced to viewport changes ---
     const gridCanvas = gridRef.current
@@ -367,6 +403,7 @@ export default function GraphView({
     redrawGrid()
     cyRef.current = cy
     return () => {
+      graphContainer.removeEventListener('wheel', onWheelZoom, { capture: true })
       clearTimeout(declutterTimer)
       resizeObserver?.disconnect()
       cy.destroy()
@@ -414,10 +451,37 @@ export default function GraphView({
     return () => clearTimeout(timer)
   }, [panelOpen])
 
+  // Tier 5: keyboard zoom. The canvas is tab-focusable; +/− zoom around the
+  // viewport center and 0 fits the graph (the PanJoystick +/− buttons remain
+  // the on-screen keyboard-operable equivalents).
+  const onGraphKeyDown = (e) => {
+    const cy = cyRef.current
+    if (!cy || cy.destroyed()) return
+    const { width, height } = cy.container().getBoundingClientRect()
+    const center = { x: width / 2, y: height / 2 }
+    if (e.key === '+' || e.key === '=') {
+      e.preventDefault()
+      cy.zoom({ level: Math.min(cy.maxZoom(), cy.zoom() * 1.2), renderedPosition: center })
+    } else if (e.key === '-' || e.key === '_') {
+      e.preventDefault()
+      cy.zoom({ level: Math.max(cy.minZoom(), cy.zoom() / 1.2), renderedPosition: center })
+    } else if (e.key === '0') {
+      e.preventDefault()
+      cy.fit(undefined, 60)
+    }
+  }
+
   return (
     <div className="graph-canvas-wrap">
       <canvas ref={gridRef} className="graph-grid" aria-hidden="true" />
-      <div ref={containerRef} className="graph-canvas" />
+      <div
+        ref={containerRef}
+        className="graph-canvas"
+        tabIndex={0}
+        role="application"
+        aria-label="Knowledge graph canvas. Plus and minus keys zoom, zero fits the graph."
+        onKeyDown={onGraphKeyDown}
+      />
       <PanJoystick cyRef={cyRef} dimmed={joystickDimmed} />
     </div>
   )
