@@ -515,12 +515,15 @@ export async function loadNodeArticles(nodeId) {
   return data
 }
 
-// ---------- Sky verification (companion-app feature) ----------
+// ---------- Location corroboration (companion-app feature) ----------
+// Formerly "Sky verification" — renamed per 02A Amendment B; identifiers and
+// the `sky_verifications` table keep the deprecated legacy name until a
+// separate migration plan renames them (see docs/LOCATION_CORROBORATION.md).
 
 const SKY_COLUMNS =
   'id, article_id, arc_id, observed_azimuth_deg, observed_altitude_deg, captured_at, centroid_lat, centroid_lng, confidence_radius_km, sensor_quality, angular_error_deg, image_hash, method'
 
-// Latest sky_verifications row for one article. The table may be absent
+// Latest sky_verifications row (legacy table name) for one article. The table may be absent
 // (or simply have no rows — it's a native-companion feature): any error
 // feature-detects to null and the UI renders nothing.
 export async function loadSkyVerification(articleId) {
@@ -539,7 +542,7 @@ export async function loadSkyVerification(articleId) {
   }
 }
 
-// Latest sky verification across the articles backing a graph node
+// Latest location corroboration across the articles backing a graph node
 // (citation-resolved + arc-attached), so the node panel can surface the
 // same badge and credibility boost.
 export async function loadSkyVerificationForNode(nodeId) {
