@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadTimeline } from '../lib/supabase'
 import { EDGE_WEIGHTS } from '../graph/theme'
+import '../styles/timeline.css'
 
 // Causal timeline (concept doc §2.4): events ordered by date, with causal AND
 // sequential links rendered between them — the connective tissue the news
