@@ -77,7 +77,7 @@ export default function ArticlePanel({
   const [category, setCategory] = useState(null)
   // Derived fallback for actor-type nodes with no direct category/sources.
   const [derived, setDerived] = useState(null)
-  // Sky verification across this node's backing articles (null = none).
+  // Location corroboration across this node's backing articles (null = none).
   const [sky, setSky] = useState(null)
 
   // Bottom-sheet geometry (mobile only). sheetFrac is the committed snap
@@ -125,7 +125,7 @@ export default function ArticlePanel({
     }
   }, [node.id, isUuid])
 
-  // Sky verification backing this node (latest across its articles).
+  // Location corroboration backing this node (latest across its articles).
   useEffect(() => {
     let cancelled = false
     setSky(null)
@@ -341,9 +341,10 @@ export default function ArticlePanel({
 
       {confidence != null &&
         (() => {
-          // Sky task 6: the sky boost is visible, never silent — the score
-          // shows the adjusted value with a sky-verified marker and the
-          // pre-boost score in the title.
+          // Location corroboration boost (formerly Sky verification; 02A
+          // Amendment B): the boost is visible, never silent — the score
+          // shows the adjusted value with a location-corroborated marker and
+          // the pre-boost score in the title.
           const boost = applySkyBoost(confidence, sky)
           const shown = boost.value
           return (
@@ -355,9 +356,9 @@ export default function ArticlePanel({
                   {boost.boosted && (
                     <span
                       className="sky-boost-marker"
-                      title={`Sky-verified: ${confidence}% + ${boost.delta} (sensor quality: ${sky.sensor_quality})`}
+                      title={`Location-corroborated: ${confidence}% + ${boost.delta} (sensor quality: ${sky.sensor_quality})`}
                     >
-                      ◈ sky-verified
+                      ◈ location-corroborated
                     </span>
                   )}
                 </span>
