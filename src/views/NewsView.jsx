@@ -62,6 +62,13 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
   // Mobile: filters collapse into a bottom sheet behind a single button.
   const [filtersOpen, setFiltersOpen] = useState(false)
   const debounceRef = useRef(null)
+  // Tier 5: request-sequence guard. Every query captures a monotonically
+  // increasing token; a response whose token is no longer current is dropped
+  // entirely (results, total, error, loading). Rapid typing or a filter
+  // change can therefore never be overwritten by a slower earlier request,
+  // and a pending search never presents a stale count as current.
+  const requestRef = useRef(0)
+  const loadingMoreRef = useRef(false)
 
   useEffect(() => {
     loadOutlets().then(setOutlets).catch(() => {})
@@ -74,15 +81,23 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
   }, [q])
 
   useEffect(() => {
+    const seq = ++requestRef.current
     setLoading(true)
     setError(null)
     loadArticles({ q: debouncedQ, outlet, status, limit: PAGE_SIZE, offset: 0 })
       .then(({ articles, total }) => {
+        if (seq !== requestRef.current) return // stale response — drop
         setArticles(articles)
         setTotal(total)
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
+      .catch((err) => {
+        if (seq !== requestRef.current) return
+        setError(err.message)
+      })
+      .finally(() => {
+        if (seq !== requestRef.current) return
+        setLoading(false)
+      })
   }, [debouncedQ, outlet, status])
 
   const expandArticle = (id) => {
@@ -113,9 +128,26 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
   }, [focusArticleId])
 
   const loadMore = () => {
+    // Tier 5: captured under the CURRENT token — if the user starts a new
+    // search while this page request is in flight, its (old-filter) response
+    // is dropped instead of being appended to the new result list. The
+    // in-flight ref also blocks double-clicks from appending the same page
+    // twice.
+    if (loadingMoreRef.current) return
+    loadingMoreRef.current = true
+    const seq = requestRef.current
     loadArticles({ q: debouncedQ, outlet, status, limit: PAGE_SIZE, offset: articles.length })
-      .then(({ articles: more }) => setArticles((prev) => [...prev, ...more]))
-      .catch((err) => setError(err.message))
+      .then(({ articles: more }) => {
+        if (seq !== requestRef.current) return
+        setArticles((prev) => [...prev, ...more])
+      })
+      .catch((err) => {
+        if (seq !== requestRef.current) return
+        setError(err.message)
+      })
+      .finally(() => {
+        loadingMoreRef.current = false
+      })
   }
 
   const toggleExpand = (id) => {
