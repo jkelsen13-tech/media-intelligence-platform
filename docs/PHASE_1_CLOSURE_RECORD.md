@@ -1,20 +1,22 @@
 # Phase 1 (02A) Closure Record
 
-Status: implemented, awaiting owner review. Owner approvals below are
-**PENDING** — this phase does not close until the owner records both product
-decisions.
+Status: **verified — closed.** Both owner decisions were approved by the owner
+on 2026-07-28, as documented in this record.
 
-## Owner decisions (required before closure)
+## Owner decisions
 
 - Amendment A (no composite legal alignment percentage; six independent
-  dimensions): **PENDING — owner decision required.**
+  dimensions): **APPROVED** — the six dimensions remain independent (never
+  averaged into a master score), and the no-guilt/innocence limitation is
+  retained as binding.
 - Amendment B (Sky Verification → Probabilistic Location Corroboration):
-  **PENDING — owner decision required.**
+  **APPROVED** — the feature is named "Probabilistic Location Corroboration."
 
 ## Specification commit
 
-- Commit SHA: recorded at push time (see run report; byte-verified).
 - Base: `4ef8e9ffe7e0047ba805f6964425e84d19a844c0`.
+- Specification HEAD: `54b32f0cd1eb685391930139a869aff2ec2d4cde`
+  (byte-verified against base: change set = exactly the 10 intended files).
 
 ## Changed files
 
