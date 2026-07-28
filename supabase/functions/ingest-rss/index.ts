@@ -787,7 +787,7 @@ const PROCESS_PATTERNS: Array<{ process: string; re: RegExp }> = [
   { process: 'appointment', re: /\b(appoint\w*|named as|takes office)\b/i },
   { process: 'policy reversal', re: /\b(backs off|revers\w*|u-turn|abandon\w+|scrap\w*)\b/i },
   { process: 'legislative action', re: /\b(bill|vote\w*|executive order|amendment|legislation|act passed)\b/i },
-  { process: 'regulatory decision', re: /\b(regulat\w+|rules out|ban\w*|approv\w+|licen[cs]\w*)\b/i },
+  { process: 'regulatory decision', re: /\b(regulat\w+|rules out|ban\w*|approv\w+|licen[cs]\w+)\b/i },
   { process: 'legal ruling', re: /\b(ruling|verdict|court rules|judgment|appeal)\b/i },
   { process: 'medical evacuation', re: /\b(evacuation|evacuate\w*)\b/i },
   { process: 'disaster response', re: /\b(flood\w*|wildfire\w*|storm|earthquake|hurricane)\b/i },
@@ -853,7 +853,7 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   economic_policy: [
     { key: 'ep_enacted', title: 'Policy measure enacted or implemented', confirm: /\b(takes effect|comes into force|enacted|implement\w+|signed into law|approved)\b/i },
     { key: 'ep_market', title: 'Market or sector adjustment', confirm: /\b(markets? (react\w*|fall|rise|slide)|shares? (fell|fall|rose|rise)|prices? (rise|fall|rose|fell)|adjust\w+)\b/i },
-    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w*|withdraw\w+|scrapped|backs off|abandon\w+|u-turn)\b/i },
+    { key: 'ep_reversal', title: 'Policy reversed or withdrawn', confirm: /\b(revers\w*|withdraw\w*|scrapped|backs off|abandon\w+|u-turn)\b/i },
     { key: 'ep_funding', title: 'Funding or budget allocated', confirm: /\b(funding|allocat\w+|budget|appropriat\w+|bailout)\b/i },
   ],
   legislative_regulatory: [
@@ -1967,7 +1967,7 @@ Deno.serve(async () => {
       .order('published_at', { ascending: false })
       .limit(AUTHOR_MAX_PRIOR)
     const count = arts?.length ?? 0
-    await supabase.from('authors').update({ article_count: count }).eq('id', author.id)
+    await supabase.from('authors').update({ article_count: count }).eq('author_id', author.id)
     if (count < AUTHOR_MIN) continue
 
     let substantive = 0, framing = 0
