@@ -641,7 +641,7 @@ body {
   background: var(--bg-elevated);
 }
 
-/* ---------- Sky tasks 5–6: sky verification badge + credibility boost ---------- */
+/* ---------- Location corroboration badge + credibility boost (formerly "Sky verification" — deprecated name per 02A Amendment B) ---------- */
 
 /* Muted, honest block in the classifier-transparency visual language —
    bordered case-file card, small-caps label, mono numbers. */
