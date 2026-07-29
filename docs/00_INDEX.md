@@ -106,7 +106,10 @@ Completed steps:
   passed 14/14 through the real read path against the live database. Owner
   reviewed the live site with `provenance_ui=true` and accepted the behavior.
   No rollback required. All 579 explanations remain excluded pending human
-  review (543 insufficient_evidence, 36 under_review; 0 published).**
+  review: 543 rows have state=insufficient_evidence, 36 have state=ok, all 579
+  have review_status=awaiting_review, 0 are published, and all 579 remain
+  blocked by an explicit `missing:` falsification condition (corrected
+  2026-07-29; previously misreported as "36 under_review").**
   Evidence: `verifier/runs/2026-07-29_flag_enable_run1.md`,
   `verifier/runs/2026-07-29_read_path_integration_run1.md`,
   `verifier/runs/2026-07-29_scope_reconciliation_0eb526ed.md`.
