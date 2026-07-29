@@ -113,6 +113,14 @@ Completed steps:
   Evidence: `verifier/runs/2026-07-29_flag_enable_run1.md`,
   `verifier/runs/2026-07-29_read_path_integration_run1.md`,
   `verifier/runs/2026-07-29_scope_reconciliation_0eb526ed.md`.
+- **D4/D5 enforcement erratum and gap record (2026-07-30):** read-only verification
+  confirmed D4 Layer 1 (trigger `explanations_publication_guard`, enabled) and D5
+  (`mark_source_change` + `source_change_events`, 0 invocations) are live; D4 Layer 2
+  read-path exclusion confirmed in code; counts re-verified identical pre/post.
+  Recorded gaps: (1) D4 rejection-audit recording not built — the guard raises but
+  writes no audit record; (2) D5 has no automatic source-side trigger — propagation
+  runs only when `mark_source_change` is explicitly called. See
+  `docs/PASS2_CLOSURE_ERRATUM_2026-07-30.md`.
 
 Current flags and runtime state:
 - `pipeline_config.provenance_ui = true` — **owner-authorized 2026-07-29, verified,
@@ -122,7 +130,14 @@ Current flags and runtime state:
 - pg_cron: `mip-ingest-rss-daily` and `mip-backfill-legacy` both `active=false`;
   active crons = 0.
 - Core-table counts at checkpoint: articles 572, edges 372, story_arcs 40,
-  nodes 703, arc_entities 49; explanations 579 (all awaiting_review).
+  nodes 703, arc_entities 49; explanations 581 total / 579 current.
+  Pass 2 closure checkpoint (owner-accepted 2026-07-30): state ok=42,
+  insufficient_evidence=533, source_unavailable=4; review_status reviewed=10,
+  withdrawn=2, awaiting_review=567; published=0; duplicate current
+  assertion_ids=0; backups `explanations_pass2_backup_20260730` (579 rows) and
+  `edges_pass2_a2_backup_20260730` (1 row) retained — do not drop.
+  Convention: withdrawn A2 retains state=source_unavailable (source_unavailable=4
+  is correct, not 3).
 
 ### Phase 2 — gated items (require explicit owner authorization)
 

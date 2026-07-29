@@ -1,5 +1,19 @@
 # Phase 2 (02B) — Owner Decisions D4 and D5
 
+> **SUPERSEDED STATUS (erratum 2026-07-30):** The "NOT IMPLEMENTED" status below was
+> true when recorded (2026-07-29, pre-implementation) but is no longer current. D4
+> Layer 1 and D5 were implemented later on 2026-07-29 via migration
+> `20260806_d4_d5_enforcement` (DB ledger version
+> `20260729023113_d4_d5_publication_guard_and_source_change_propagation`):
+> trigger `explanations_publication_guard` on `public.explanations` (enabled),
+> function `public.mark_source_change`, audit table `public.source_change_events`.
+> D4 Layer 2 read-path exclusion exists separately in
+> `src/lib/explanationEligibility.js` + `src/lib/explanationReadPath.js`;
+> `pipeline_config.provenance_ui = true` is live and owner-accepted.
+> Remaining gaps: (1) no audit sink for D4 rejections; (2) no automatic
+> source-side trigger for D5 — propagation requires calling `mark_source_change`.
+> The design record below is retained verbatim as the requirement source.
+
 Status: **owner-approved, recorded 2026-07-29. NOT IMPLEMENTED.** This document is a
 design/decision record only. No enforcement machinery has been built. `provenance_ui`
 remains false, the read path remains disabled, active crons remain 0, and no
