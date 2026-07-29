@@ -22,7 +22,7 @@ project phases.
 | 00_INDEX | Governing rules, shared vocabulary, integration seams, current checkpoint | Always attach |
 | 01_PHASE_0_REPAIR | Correctness repair and regression protection | **Closed — verified** |
 | 02A_PHASE_1_AMENDMENTS | Spec amendments only | **Closed — verified** |
-| 02B_PHASE_2_PROVENANCE | Per-assertion provenance and explanation objects | **Active** (D2 sample under owner review) |
+| 02B_PHASE_2_PROVENANCE | Per-assertion provenance and explanation objects | **Active** (read path live with provenance_ui=true; 579 rows awaiting human review) |
 | 02C_PHASE_3_LEGAL_POLICY | Policy lifecycle and curated legal-case layer | Waiting |
 | 03_BACKLOG | Later features and captured ideas | Waiting |
 | 04_TRACK_B_DESIGN | Light, open public-knowledge visual system | Step 1 may run in parallel; all other steps gated |
@@ -89,29 +89,49 @@ Completed steps:
   inserts). Owner-accepted as a bounded owner-review artifact only.**
   Full scope, field mappings, enum vocabulary, and verification evidence:
   `verifier/v1/D2_SAMPLE_SCOPE_AND_RULES.md` and `verifier/runs/2026-07-29_*.md`.
+- **Full D2 explanations backfill (owner-authorized 2026-07-29): complete and
+  verified — 579 explanation rows, 0 duplicate current assertion_ids, all
+  machine / awaiting_review with explicit missing states.**
+- **D4/D5 database enforcement (2026-07-29): migration
+  `20260806_d4_d5_enforcement` — publication-guard trigger on
+  `public.explanations` (D4 layer 1), `public.source_change_events` audit table,
+  and `mark_source_change` propagation function (D5). Applied; fixtures passed;
+  no production data change. Migration-timestamp reconciliation completed.**
+- **Read-path eligibility layer (2026-07-29): `src/lib/explanationEligibility.js`
+  (D4 layer 2 predicate, commit `cdfe8ec1`) and integration read path
+  `src/lib/explanationReadPath.js` (commit `0eb526ed`), each byte-verified.
+  Test suite 63/63; build green.**
+- **Read-path enablement (owner-authorized and verified 2026-07-29):
+  `provenance_ui` flipped false → true (only mutation). Post-enable smoke tests
+  passed 14/14 through the real read path against the live database. Owner
+  reviewed the live site with `provenance_ui=true` and accepted the behavior.
+  No rollback required. All 579 explanations remain excluded pending human
+  review (543 insufficient_evidence, 36 under_review; 0 published).**
+  Evidence: `verifier/runs/2026-07-29_flag_enable_run1.md`,
+  `verifier/runs/2026-07-29_read_path_integration_run1.md`,
+  `verifier/runs/2026-07-29_scope_reconciliation_0eb526ed.md`.
 
 Current flags and runtime state:
-- `pipeline_config.provenance_ui = false` — **must remain false until the owner
-  explicitly authorizes read-path enablement.**
-- Explanation read path: not implemented/deployed; remains disabled.
+- `pipeline_config.provenance_ui = true` — **owner-authorized 2026-07-29, verified,
+  live-site review accepted.** Rollback on record: set value back to `false`.
+- Explanation read path: implemented, integrated, and live; serves only
+  presentation-eligible explanations (currently none — 0 published rows).
 - pg_cron: `mip-ingest-rss-daily` and `mip-backfill-legacy` both `active=false`;
   active crons = 0.
 - Core-table counts at checkpoint: articles 572, edges 372, story_arcs 40,
-  nodes 703, arc_entities 49; explanations 15 (sample only).
+  nodes 703, arc_entities 49; explanations 579 (all awaiting_review).
 
 ### Phase 2 — gated items (require explicit owner authorization)
 
-1. **Full D2 explanations backfill** — remains gated on owner review of the 15-row
-   sample. Not authorized.
-2. Read-path enablement (`provenance_ui = true`, explanation reads in the app).
-3. Phase 2 final acceptance fixtures (missing-provenance block, corrected-source
-   propagation, manual review of 5 edges / 5 arc assignments / 5 classifications,
+1. Phase 2 final acceptance fixtures (corrected-source propagation live exercise,
+   manual review of 5 edges / 5 arc assignments / 5 classifications,
    accessibility alternative, feature-flag rollback test).
-4. Phase 3 (02C) legal/policy work — not started; deferred owner decision on
+2. Phase 3 (02C) legal/policy work — not started; deferred owner decision on
    SourceComparison/SilenceDetection sequencing still open.
 
 ### Next authorized action
 
-Owner review of the D2 sample artifact. No further database mutations, backfill
-expansion, read-path enablement, ingestion, cron activation, UI work, or Phase 3
-work without explicit owner authorization.
+Human review of the 579 awaiting_review explanation rows (which publishes
+eligible assertions onto the now-live read path). No further database mutations,
+ingestion, cron activation, UI work, or Phase 3 work without explicit owner
+authorization.
