@@ -1,5 +1,18 @@
 # Phase 2 (02B) — Owner Decisions D4 and D5
 
+> **SECOND ERRATUM (2026-07-30): both remaining gaps CLOSED.**
+> Gap (1) — D4 rejection-audit sink — closed by migration
+> `20260730030709 d4_rejection_audit` (repo commit `8a0b080a`):
+> `publication_rejection_audit` table + `publish_explanation(uuid, text)` wrapper;
+> fixtures proved audit persistence after rejected publish attempts.
+> Gap (2) — automatic source-side trigger for D5 — closed by migration
+> `20260730150925 d5_article_source_trigger` (repo commit `c2e9cc1d`):
+> `articles.source_status` marking fields and a BEFORE UPDATE trigger delegating to
+> `mark_source_change`; owner decision Q1-a skips withdrawn explanations from
+> mutation (never requeued) while recording them in the audit payload counts;
+> 11/11 acceptance fixtures passed. The design record below remains the
+> requirement source, retained verbatim.
+
 > **SUPERSEDED STATUS (erratum 2026-07-30):** The "NOT IMPLEMENTED" status below was
 > true when recorded (2026-07-29, pre-implementation) but is no longer current. D4
 > Layer 1 and D5 were implemented later on 2026-07-29 via migration

@@ -40,3 +40,20 @@ edges 372; provenance_ui=true; active crons 0; duplicate current assertion_ids 0
 backups explanations_pass2_backup_20260730=579, edges_pass2_a2_backup_20260730=1.
 No rows, code, flags, crons, publications, or backups were changed by the
 verification run or by this erratum.
+
+## Closing addendum (2026-07-30, documentation-only sync)
+
+Both remaining real gaps listed above are now CLOSED:
+
+1. **D4 rejection-audit recording** — closed by migration
+   `20260730030709 d4_rejection_audit` (repo commit `8a0b080a`):
+   `publication_rejection_audit` table + `publish_explanation(uuid, text)` wrapper;
+   fixtures proved audit persistence after rejected publish attempts.
+2. **D5 automatic source-side trigger** — closed by migration
+   `20260730150925 d5_article_source_trigger` (repo commit `c2e9cc1d`):
+   `articles.source_status` marking fields + automatic BEFORE UPDATE trigger;
+   owner decision Q1-a skips withdrawn explanations from mutation while recording
+   them in the audit payload; 11/11 acceptance fixtures passed.
+
+No database rows, code, flags, crons, publications, or backups were changed by this
+addendum.
