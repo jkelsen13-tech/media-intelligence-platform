@@ -136,8 +136,9 @@ Current flags and runtime state:
   withdrawn=2, awaiting_review=567; published=0; duplicate current
   assertion_ids=0; backups `explanations_pass2_backup_20260730` (579 rows) and
   `edges_pass2_a2_backup_20260730` (1 row) retained — do not drop.
-  Convention: withdrawn A2 retains state=source_unavailable (source_unavailable=4
-  is correct, not 3).
+  Convention: the withdrawn Pass 2 row (assertion
+  `edge:53c4b62b-f10c-4fdb-86fc-7d5d06a40bb3`) retains state=source_unavailable
+  (source_unavailable=4 is correct, not 3).
 
 ### Phase 2 — gated items (require explicit owner authorization)
 
