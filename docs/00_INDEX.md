@@ -117,10 +117,27 @@ Completed steps:
   confirmed D4 Layer 1 (trigger `explanations_publication_guard`, enabled) and D5
   (`mark_source_change` + `source_change_events`, 0 invocations) are live; D4 Layer 2
   read-path exclusion confirmed in code; counts re-verified identical pre/post.
-  Recorded gaps: (1) D4 rejection-audit recording not built — the guard raises but
-  writes no audit record; (2) D5 has no automatic source-side trigger — propagation
-  runs only when `mark_source_change` is explicitly called. See
+  Both recorded gaps are now CLOSED (see the two bullets below). See
   `docs/PASS2_CLOSURE_ERRATUM_2026-07-30.md`.
+- **D4 rejection-audit (2026-07-30): CLOSED.** Migration
+  `20260730030709 d4_rejection_audit` — `publication_rejection_audit` table and
+  `publish_explanation(uuid, text)` SECURITY DEFINER wrapper; fixtures proved audit
+  persistence after rejected publish attempts. Repo commit `8a0b080a`, byte-verified.
+- **D5 automatic source-side trigger (2026-07-30): CLOSED.** Migration
+  `20260730150925 d5_article_source_trigger` — `articles.source_status` marking
+  fields (active/corrected/withdrawn, plus changed-at and note columns) and a
+  BEFORE UPDATE trigger that fires only on transitions into corrected/withdrawn and
+  delegates to `mark_source_change`. Owner decision Q1-a: explanations whose
+  review_status is withdrawn are skipped from mutation (never requeued) but are
+  recorded in the audit payload (linked / mutated / skipped-withdrawn ids and
+  counts). 11/11 acceptance fixtures passed, including withdrawn-row preservation,
+  no-auto-republish composition with the D4 guard, atomicity, and zero-residue
+  cleanup. Repo commit `c2e9cc1d`, byte-verified. New pre-migration backup
+  `articles_pre_d5_backup_20260730` (572 rows) retained — do not drop.
+- **CI repair (2026-07-30):** commit `6838e7f6` — golden vocabulary-drift false
+  positive (a Pass 2 fixture identifier read as a vocabulary level token) fixed by
+  minimal documentation rewording; golden suite 63/63 locally; GitHub Actions green
+  at HEAD.
 
 Current flags and runtime state:
 - `pipeline_config.provenance_ui = true` — **owner-authorized 2026-07-29, verified,
@@ -134,8 +151,9 @@ Current flags and runtime state:
   Pass 2 closure checkpoint (owner-accepted 2026-07-30): state ok=42,
   insufficient_evidence=533, source_unavailable=4; review_status reviewed=10,
   withdrawn=2, awaiting_review=567; published=0; duplicate current
-  assertion_ids=0; backups `explanations_pass2_backup_20260730` (579 rows) and
-  `edges_pass2_a2_backup_20260730` (1 row) retained — do not drop.
+  assertion_ids=0; backups `explanations_pass2_backup_20260730` (579 rows),
+  `edges_pass2_a2_backup_20260730` (1 row), and
+  `articles_pre_d5_backup_20260730` (572 rows) retained — do not drop.
   Convention: the withdrawn Pass 2 row (assertion
   `edge:53c4b62b-f10c-4fdb-86fc-7d5d06a40bb3`) retains state=source_unavailable
   (source_unavailable=4 is correct, not 3).
@@ -145,7 +163,13 @@ Current flags and runtime state:
 1. Phase 2 final acceptance fixtures (corrected-source propagation live exercise,
    manual review of 5 edges / 5 arc assignments / 5 classifications,
    accessibility alternative, feature-flag rollback test).
-2. Phase 3 (02C) legal/policy work — not started; deferred owner decision on
+2. Human review of the 567 awaiting_review explanation rows (substantive remaining
+   Phase 2 work; owner-in-the-loop).
+3. Open observations (non-blocking): 40 of 209 distinct explanation source_ids
+   resolve to no live source row (orphaned references; content retained in
+   archived_sources) — provenance-hygiene item; backup-table RLS posture decision
+   deferred by the owner (do not drop or secure backups yet).
+4. Phase 3 (02C) legal/policy work — not started; deferred owner decision on
    SourceComparison/SilenceDetection sequencing still open.
 
 ### Next authorized action
