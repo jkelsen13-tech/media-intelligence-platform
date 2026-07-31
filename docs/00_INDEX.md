@@ -22,7 +22,7 @@ project phases.
 | 00_INDEX | Governing rules, shared vocabulary, integration seams, current checkpoint | Always attach |
 | 01_PHASE_0_REPAIR | Correctness repair and regression protection | **Closed — verified** |
 | 02A_PHASE_1_AMENDMENTS | Spec amendments only | **Closed — verified** |
-| 02B_PHASE_2_PROVENANCE | Per-assertion provenance and explanation objects | **Active** (read path live with provenance_ui=true; 579 rows awaiting human review) |
+| 02B_PHASE_2_PROVENANCE | Per-assertion provenance and explanation objects | **Closed — owner sign-off 2026-07-31** (read path live with provenance_ui=true; 567 rows awaiting human review as post-closure work) |
 | 02C_PHASE_3_LEGAL_POLICY | Policy lifecycle and curated legal-case layer | Waiting |
 | 03_BACKLOG | Later features and captured ideas | Waiting |
 | 04_TRACK_B_DESIGN | Light, open public-knowledge visual system | Step 1 may run in parallel; all other steps gated |
@@ -74,7 +74,7 @@ dimensions) — APPROVED. Amendment B (Sky Verification → Probabilistic Locati
 Corroboration) — APPROVED. Spec HEAD `54b32f0c`, byte-verified, 10-file change set.
 No production behavior change; golden suite 47/47.
 
-### Phase 2 (02B) — in progress
+### Phase 2 (02B) — CLOSED (owner sign-off 2026-07-31)
 
 Completed steps:
 - Schema migration `20260728142816_explanations_schema` (canonical explanation object;
@@ -193,8 +193,8 @@ Current flags and runtime state:
 1. ~~Phase 2 final acceptance fixtures~~ — CLOSED 2026-07-31: all four remaining
    fixtures PASS (missing-provenance block, corrected-source propagation,
    accessibility alternative, feature-flag rollback test); the manual 5/5/5
-   review closed earlier via Pass 2 (2026-07-30). Phase 2 is now READY FOR
-   OWNER SIGN-OFF toward formal closure.
+   review closed earlier via Pass 2 (2026-07-30). OWNER SIGN-OFF GIVEN
+   2026-07-31: Phase 2 is formally CLOSED.
 2. Human review of the 567 awaiting_review explanation rows (substantive remaining
    Phase 2 work; owner-in-the-loop).
 3. Open observations (non-blocking): 40 of 209 distinct explanation source_ids
@@ -206,7 +206,8 @@ Current flags and runtime state:
 
 ### Next authorized action
 
-Owner sign-off on Phase 2 formal closure (all acceptance fixtures pass as of
-2026-07-31), then human review of the 567 awaiting_review explanation rows. No
-further database mutations, ingestion, cron activation, UI work, or Phase 3 work
-without explicit owner authorization.
+Phase 2 formally CLOSED by owner sign-off 2026-07-31. Next scope awaits owner
+selection among: (a) human review of the 567 awaiting_review explanation rows,
+(b) one of the three needs-source-first rows (A1/B5/C5), or (c) Phase 3 (02C).
+No further database mutations, ingestion, cron activation, UI work, or Phase 3
+work without explicit owner authorization.
