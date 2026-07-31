@@ -1,6 +1,6 @@
 # MIP — Index and Governing Rules
 
-> **Authoritative. Adopted by the owner 2026-07-29** as the Index amendment
+> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14** as the Index amendment
 > superseding the 2026-07-26 checkpoint. All governing rules, shared vocabulary,
 > integration seams, and the execution contract are carried forward unchanged
 > unless explicitly noted below.
@@ -138,6 +138,36 @@ Completed steps:
   positive (a Pass 2 fixture identifier read as a vocabulary level token) fixed by
   minimal documentation rewording; golden suite 63/63 locally; GitHub Actions green
   at HEAD.
+- **Phase 2 final acceptance fixtures (owner-authorized 2026-07-31, Item 6): ALL
+  FOUR PASS.**
+  1. Missing-provenance block: fixture row (state=insufficient_evidence, no
+     supporting_passage / falsification_condition) rejected by the live
+     `explanations_publication_guard` trigger on both UPDATE-to-published and
+     INSERT-as-published paths (exact D4 exception). Zero-count cleanup proven.
+  2. Corrected-source propagation (D5 end-to-end): ordinary UPDATE of a fixture
+     article to source_status='corrected' fired the live automatic
+     `articles_source_status_d5_propagate` trigger (no manual mark_source_change
+     call); linked explanation moved to awaiting_review / source_corrected with
+     correction-history entry, control untouched, `source_change_events` audit row
+     recorded actor='system:auto-trigger' (linked=1, mutated=1, skipped=0).
+     Fixture rows and audit record deleted; zero-count cleanup proven
+     (581 explanations / 580 articles / 0 events restored).
+  3. Accessibility alternative: did not exist; BUILT — `src/graph/EdgeList.jsx`
+     (keyboard/screen-reader relationship table mirroring canvas filters, opening
+     the same EdgeEvidence dialog) + `src/graph/edge-list.css` + App.jsx toggle
+     wiring. HEAD `360f0484`, byte-verified (index.css restored byte-exact to
+     pre-run original after a same-day self-corrected placeholder-push incident);
+     clean npm install + build PASS. Website version 79c1bd1.
+  4. Feature-flag rollback test (live flip, owner-authorized): pre-check
+     confirmed both crons active=false and no autonomous edge-function
+     invocation path; provenance_ui flipped true -> false -> true (~2 min
+     window). While disabled: explanations counts identical (581/579/42/0
+     published) — legacy read posture restored (read path skips fetch when
+     flag != true), zero provenance data loss; flag safely restored to true.
+  Evidence: `verifier/runs/2026-07-31_item6_fixtures_1_to_3.md`,
+  `verifier/runs/2026-07-31_item6_fixture4_rollback_test.md`.
+  The manual 5/5/5 review was already CLOSED by Pass 2 (2026-07-30) and was not
+  re-run.
 
 Current flags and runtime state:
 - `pipeline_config.provenance_ui = true` — **owner-authorized 2026-07-29, verified,
@@ -160,9 +190,11 @@ Current flags and runtime state:
 
 ### Phase 2 — gated items (require explicit owner authorization)
 
-1. Phase 2 final acceptance fixtures (corrected-source propagation live exercise,
-   manual review of 5 edges / 5 arc assignments / 5 classifications,
-   accessibility alternative, feature-flag rollback test).
+1. ~~Phase 2 final acceptance fixtures~~ — CLOSED 2026-07-31: all four remaining
+   fixtures PASS (missing-provenance block, corrected-source propagation,
+   accessibility alternative, feature-flag rollback test); the manual 5/5/5
+   review closed earlier via Pass 2 (2026-07-30). Phase 2 is now READY FOR
+   OWNER SIGN-OFF toward formal closure.
 2. Human review of the 567 awaiting_review explanation rows (substantive remaining
    Phase 2 work; owner-in-the-loop).
 3. Open observations (non-blocking): 40 of 209 distinct explanation source_ids
@@ -174,7 +206,7 @@ Current flags and runtime state:
 
 ### Next authorized action
 
-Human review of the 579 awaiting_review explanation rows (which publishes
-eligible assertions onto the now-live read path). No further database mutations,
-ingestion, cron activation, UI work, or Phase 3 work without explicit owner
-authorization.
+Owner sign-off on Phase 2 formal closure (all acceptance fixtures pass as of
+2026-07-31), then human review of the 567 awaiting_review explanation rows. No
+further database mutations, ingestion, cron activation, UI work, or Phase 3 work
+without explicit owner authorization.
