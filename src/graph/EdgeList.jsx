@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { EDGE_TYPES, INFERRED_CLAIMED_BY } from './theme'
+import './edge-list.css'
 
 // 02B Phase 2 final acceptance — accessibility alternative.
 // The cytoscape canvas is inherently visual and pointer-driven; this
