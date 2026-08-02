@@ -208,6 +208,7 @@ Current flags and runtime state:
 
 Phase 2 formally CLOSED by owner sign-off 2026-07-31. Next scope awaits owner
 selection among: (a) human review of the 567 awaiting_review explanation rows,
-(b) one of the three needs-source-first rows (A1/B5/C5), or (c) Phase 3 (02C).
+(b) one of the three needs-source-first rows (row identifiers per
+02B_PHASE_2_PROVENANCE), or (c) Phase 3 (02C).
 No further database mutations, ingestion, cron activation, UI work, or Phase 3
 work without explicit owner authorization.
