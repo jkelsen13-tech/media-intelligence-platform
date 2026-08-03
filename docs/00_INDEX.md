@@ -176,7 +176,9 @@ Current flags and runtime state:
   presentation-eligible explanations (currently none — 0 published rows).
 - pg_cron: `mip-ingest-rss-daily` and `mip-backfill-legacy` both `active=false`;
   active crons = 0.
-- Core-table counts at checkpoint: articles 572, edges 372, story_arcs 40,
+- Core-table counts at checkpoint: articles 580 (corrected 2026-08-03,
+  live-verified; was misrecorded as 572 — cause note under "Housekeeping and
+  owner decisions — 2026-08-03" below), edges 372, story_arcs 40,
   nodes 703, arc_entities 49; explanations 581 total / 579 current.
   Pass 2 closure checkpoint (owner-accepted 2026-07-30): state ok=42,
   insufficient_evidence=533, source_unavailable=4; review_status reviewed=10,
@@ -188,6 +190,33 @@ Current flags and runtime state:
   `edge:53c4b62b-f10c-4fdb-86fc-7d5d06a40bb3`) retains state=source_unavailable
   (source_unavailable=4 is correct, not 3).
 
+### Housekeeping and owner decisions — 2026-08-03
+
+Index reconciliation (documentation correction only; no data mutation). The
+"Core-table counts at checkpoint" line above misrecorded articles as 572; live
+verification on 2026-08-03 (fresh count, not assumed) confirms **articles = 580**.
+Delta = +8 rows, all with `fetched_at` in hour 2026-07-30 22:00 UTC. The previously
+suspected cause (migration `20260729075130 review_batch_20260729_checkpoint`,
+applied 2026-07-29 07:51 UTC) is **NOT confirmed** — the 8 rows did not exist at
+migration time. Actual trigger: **UNKNOWN** (both pg_crons remain `active=false`;
+no ingestion was authorized after 2026-07-28).
+
+- **Decision A — Phase 3 (Legal) sequencing (owner, 2026-08-03).** Per Working
+  Document 03's deferred sequencing decision: Legal/Policy (02C) remains fully
+  deferred — not started, not scoped further — until the owner is ready to pursue
+  public launch and has engaged independent legal review. Source Comparison View
+  and Silence Detection Dashboard (backlog items 1 and 2) are promoted ahead of
+  Legal and may be scoped as working documents once selected. This resolves the
+  "deferred owner decision" note in 03_BACKLOG in favor of option 2 (public
+  comparison tools move earlier; Legal remains internal/deferred).
+- **Decision B — Phase 2 human-review approach (owner, 2026-08-03).** Per 02B's
+  Phase 2 final acceptance, the owner has decided against manual one-by-one review
+  of the 567 awaiting_review explanation rows. In its place: a lightweight,
+  non-calibrated auto-promotion pass (02B-ADD Part A) plus a community-flagging
+  feature deferred until an account pipeline exists (02B-ADD Part B). Full manual
+  review is explicitly out of scope going forward; this is a permanent process
+  change, not a one-time exception.
+
 ### Phase 2 — gated items (require explicit owner authorization)
 
 1. ~~Phase 2 final acceptance fixtures~~ — CLOSED 2026-07-31: all four remaining
@@ -195,20 +224,29 @@ Current flags and runtime state:
    accessibility alternative, feature-flag rollback test); the manual 5/5/5
    review closed earlier via Pass 2 (2026-07-30). OWNER SIGN-OFF GIVEN
    2026-07-31: Phase 2 is formally CLOSED.
-2. Human review of the 567 awaiting_review explanation rows (substantive remaining
-   Phase 2 work; owner-in-the-loop).
+2. ~~Human review of the 567 awaiting_review explanation rows~~ — SUPERSEDED
+   2026-08-03 by Decision B (auto-promotion pass per 02B-ADD Part A replaces
+   manual one-by-one review; permanent process change).
 3. Open observations (non-blocking): 40 of 209 distinct explanation source_ids
    resolve to no live source row (orphaned references; content retained in
    archived_sources) — provenance-hygiene item; backup-table RLS posture decision
    deferred by the owner (do not drop or secure backups yet).
-4. Phase 3 (02C) legal/policy work — not started; deferred owner decision on
-   SourceComparison/SilenceDetection sequencing still open.
+4. Phase 3 (02C) legal/policy work — not started; sequencing resolved 2026-08-03
+   by Decision A (remains fully deferred until public-launch readiness and
+   independent legal review; Source Comparison View and Silence Detection
+   Dashboard promoted ahead of Legal).
 
 ### Next authorized action
 
-Phase 2 formally CLOSED by owner sign-off 2026-07-31. Next scope awaits owner
-selection among: (a) human review of the 567 awaiting_review explanation rows,
+Phase 2 formally CLOSED by owner sign-off 2026-07-31. Next scope per the 2026-08-03
+housekeeping handoff and owner decisions:
+(a) ~~human review of the 567 awaiting_review explanation rows~~ — superseded by
+    Decision B; replaced by the 02B-ADD Part A conservative auto-promotion pass
+    (evidence_strength >= 0.75 + confirmed live source; single reviewed batch;
+    owner spot-check of >= 10 sampled rows before acceptance);
 (b) one of the three needs-source-first rows (row identifiers per
-02B_PHASE_2_PROVENANCE), or (c) Phase 3 (02C).
+    02B_PHASE_2_PROVENANCE);
+(c) ~~Phase 3 (02C)~~ — deferred per Decision A; Source Comparison View / Silence
+    Detection Dashboard may be scoped next once selected.
 No further database mutations, ingestion, cron activation, UI work, or Phase 3
 work without explicit owner authorization.
