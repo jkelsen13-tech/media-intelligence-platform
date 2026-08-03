@@ -172,6 +172,9 @@ Completed steps:
 Current flags and runtime state:
 - `pipeline_config.provenance_ui = true` — **owner-authorized 2026-07-29, verified,
   live-site review accepted.** Rollback on record: set value back to `false`.
+- `pipeline_config.auto_promotion` — record of the 2026-08-03 Part A pass
+  (threshold, rule, rows_promoted=8). `pipeline_config.auto_verified_revert` —
+  revert switch with documented no-data-loss revert SQL.
 - Explanation read path: implemented, integrated, and live; serves only
   presentation-eligible explanations (currently none — 0 published rows).
 - pg_cron: `mip-ingest-rss-daily` and `mip-backfill-legacy` both `active=false`;
@@ -217,6 +220,41 @@ no ingestion was authorized after 2026-07-28).
   review is explicitly out of scope going forward; this is a permanent process
   change, not a one-time exception.
 
+**02B-ADD Part A auto-promotion pass (owner-authorized 2026-08-03): EXECUTED and
+verified.** Rule applied: `evidence_strength >= 0.75` read as the existing stored
+per-assertion value `story_arcs.category_confidence` (the only per-assertion 0–1
+evidence-strength value in the model; G2 legacy mapping row 29) AND the underlying
+arc confirmed live at promotion time. Single reviewed batch, not a background job.
+- Migration `auto_verified_status_and_promotion_flag`: `auto_verified` added to the
+  `review_status` CHECK as a distinct value (never conflated with `reviewed`);
+  pre-mutation backup `explanations_pre_auto_verified_backup_20260803` (8 rows);
+  pipeline_config keys `auto_promotion` (pass record) and `auto_verified_revert`
+  (revert switch + documented no-data-loss revert SQL).
+- **8 classification rows promoted** awaiting_review → auto_verified (audit entry
+  appended to each row's correction_history). 0 rows published; D4 publication
+  guard trigger and function definition byte-identical pre/post; duplicate current
+  assertion_ids = 0.
+- Band verification (owner challenge): join integrity 40/40 classification rows
+  (source_ids[1] == assertion arc); full pool distribution 0.95×3, 0.80×2, 0.75×3
+  (promoted), 0.60×4, 0.45×11, 0.30×1, null×8 — nearest miss 0.60, so 8 is the
+  complete eligible set, not a filtering artifact. Edge/arc_assignment pools
+  contribute zero: their only state=ok rows (6) are already human-reviewed; the
+  529 awaiting insufficient_evidence rows are a provenance-completeness problem,
+  unreachable by any confidence threshold.
+- Counts after pass: review_status awaiting_review=561, auto_verified=8,
+  reviewed=10, withdrawn=2, published=0 (total 581 / 579 current).
+- UI: Review status panel (`src/panels/ReviewStatusPanel.jsx`, flag-gated read
+  path only) renders `auto_verified` ("Auto-verified — system confidence
+  threshold (not human-reviewed)", system tone) visually distinct from `reviewed`
+  ("Reviewed — human confirmed", human tone); badge vocabulary exported from
+  `src/lib/explanationEligibility.js`. Test suite 67/67 (4 new pins); build green.
+  Repo commits `fea1f9be`, `ff336bc0`, `4e555926` (last is a same-day
+  self-corrected transcription fix, caught by byte-verification); all five files
+  byte-verified against local hash-object. Website version c689247.
+- Sample for owner spot-check: all 8 promoted rows (assertion IDs +
+  category_confidence + live-arc check) in the run evidence bundle
+  (`verifier/runs/2026-08-03_*.md` in the housekeeping handoff bundle).
+
 ### Phase 2 — gated items (require explicit owner authorization)
 
 1. ~~Phase 2 final acceptance fixtures~~ — CLOSED 2026-07-31: all four remaining
@@ -226,7 +264,8 @@ no ingestion was authorized after 2026-07-28).
    2026-07-31: Phase 2 is formally CLOSED.
 2. ~~Human review of the 567 awaiting_review explanation rows~~ — SUPERSEDED
    2026-08-03 by Decision B (auto-promotion pass per 02B-ADD Part A replaces
-   manual one-by-one review; permanent process change).
+   manual one-by-one review; permanent process change). Part A pass EXECUTED
+   2026-08-03 — see the housekeeping entry above.
 3. Open observations (non-blocking): 40 of 209 distinct explanation source_ids
    resolve to no live source row (orphaned references; content retained in
    archived_sources) — provenance-hygiene item; backup-table RLS posture decision
@@ -238,15 +277,15 @@ no ingestion was authorized after 2026-07-28).
 
 ### Next authorized action
 
-Phase 2 formally CLOSED by owner sign-off 2026-07-31. Next scope per the 2026-08-03
-housekeeping handoff and owner decisions:
-(a) ~~human review of the 567 awaiting_review explanation rows~~ — superseded by
-    Decision B; replaced by the 02B-ADD Part A conservative auto-promotion pass
-    (evidence_strength >= 0.75 + confirmed live source; single reviewed batch;
-    owner spot-check of >= 10 sampled rows before acceptance);
+Phase 2 formally CLOSED by owner sign-off 2026-07-31. Housekeeping run of
+2026-08-03 complete (Index reconciliation, Decisions A/B recorded, 02B-ADD Part A
+executed). Next scope awaits owner selection among:
+(a) owner spot-check/acceptance of the 8 auto-verified rows (sample in the
+    housekeeping evidence bundle) and any revert decision via
+    `pipeline_config.auto_verified_revert`;
 (b) one of the three needs-source-first rows (row identifiers per
     02B_PHASE_2_PROVENANCE);
-(c) ~~Phase 3 (02C)~~ — deferred per Decision A; Source Comparison View / Silence
-    Detection Dashboard may be scoped next once selected.
+(c) scoping Source Comparison View or Silence Detection Dashboard as a working
+    document (promoted ahead of Legal per Decision A).
 No further database mutations, ingestion, cron activation, UI work, or Phase 3
 work without explicit owner authorization.
