@@ -49,6 +49,9 @@ status, remaining uncertainty. Missing evidence is not contradicting evidence.)*
 ## Authoritative current checkpoint
 
 Checkpoint supplied by the owner: **2026-07-29** (supersedes 2026-07-26 ET / 2026-07-27 database date).
+Data checkpoint advanced to **2026-08-03 UTC** by the owner-directed manual catch-up ingestion
+(gap 2026-07-30 22:47 UTC → 2026-08-03 18:56 UTC; see "Catch-up ingestion (manual, gap period)" below).
+Crons were NOT re-enabled.
 
 ### Phase 0 — verified-closed
 
@@ -179,10 +182,12 @@ Current flags and runtime state:
   presentation-eligible explanations (currently none — 0 published rows).
 - pg_cron: `mip-ingest-rss-daily` and `mip-backfill-legacy` both `active=false`;
   active crons = 0.
-- Core-table counts at checkpoint: articles 580 (corrected 2026-08-03,
-  live-verified; was misrecorded as 572 — cause note under "Housekeeping and
-  owner decisions — 2026-08-03" below), edges 372, story_arcs 40,
-  nodes 703, arc_entities 49; explanations 581 total / 579 current.
+- Core-table counts at checkpoint: articles 699, edges 398
+  (320 actor / 77 sequence / 1 constrained_by / 0 causal), story_arcs 48,
+  nodes 737, arc_entities 57; explanations 581 total / 579 current.
+  (Counts updated 2026-08-03 UTC after the manual catch-up ingestion below;
+  the 2026-08-03 reconciliation that established articles=580 is retained under
+  "Housekeeping and owner decisions — 2026-08-03".)
   Pass 2 closure checkpoint (owner-accepted 2026-07-30): state ok=42,
   insufficient_evidence=533, source_unavailable=4; review_status reviewed=10,
   withdrawn=2, awaiting_review=567; published=0; duplicate current
@@ -254,6 +259,47 @@ arc confirmed live at promotion time. Single reviewed batch, not a background jo
 - Sample for owner spot-check: all 8 promoted rows (assertion IDs +
   category_confidence + live-arc check) in the run evidence bundle
   (`verifier/runs/2026-08-03_*.md` in the housekeeping handoff bundle).
+
+### Catch-up ingestion (manual, gap period) — 2026-08-03 UTC
+
+Owner-directed catch-up ingestion covering the gap since the crons were paused.
+**This was a manual, observed set of runs of the deployed ingest-rss function
+(v24) — NOT a resumed daily cron. Both crons remain `active=false`.**
+- Coverage: 2026-07-30 22:47 UTC (confirmed last ingestion, from
+  max(articles.fetched_at) — not assumed) through 2026-08-03 18:56 UTC.
+- Method: 18 sequential manual invocations of ingest-rss via net.http_post
+  (identical call to the cron command), each observed; run 18 returned
+  ingested=0 (feeds exhausted; skippedExisting=111).
+- Result: +119 articles (580 → 699), +8 story_arcs (40 → 48),
+  +26 edges (372 → 398; +10 sequence, +16 actor, 0 causal, 0 constrained_by),
+  +34 nodes (703 → 737), +8 arc_entities (49 → 57). Explanations unchanged
+  (581 / 579 current; 0 auto-promotions from this run).
+- Verification (all PASS): preflight matched the Index (crons off, baseline
+  counts, Tier 3 guard `edges_causal_evidence_guard` live in r4+r5 form,
+  ingest-rss v24 ≥ v22 with D3 evidence capture); G1 golden suite 67/67;
+  Tier 6 duplicate check 0 duplicate actor labels, 0 duplicate arc titles;
+  0 HTML artifacts; monitors within thresholds (unattached 73.5% < 85,
+  arc_max 36 < 72, fallback titles 0, unsupported causal 0);
+  explanations internally consistent (561 awaiting + 10 reviewed +
+  8 auto_verified + 2 withdrawn = 581; states 42/533/6 = 581).
+- Evidence: `verifier/v1/BASELINE.md`, `verifier/runs/2026-08-04_ingest_run*.md`,
+  `verifier/runs/2026-08-04_post_ingest_verification.md` (catch-up handoff bundle).
+- **Deviation noted:** newly ingested assertions did NOT receive explanation
+  rows. The D3 evidence-capture path (arc_assignment_evidence,
+  metadata.evidence_passage) ran and captured, but no deployed mechanism
+  auto-creates explanation rows for new assertions (the 581 existing rows came
+  from the bounded D2 backfill). Whether to backfill explanations for the new
+  assertions is an owner decision; nothing was auto-promoted.
+- **Residual gap:** the CNN feed (rss.cnn.com) was unreachable in all 6
+  attempts (TLS handshake eof from the edge runtime); CNN gap-period items are
+  not ingested. Any fix (feed URL or function change) is out of scope here and
+  awaits owner direction.
+- **Open observations (non-blocking):** two weak-entity bridge clusters from
+  this run — "Nolan Smith — criminal prosecution" includes an unrelated
+  Netflix-host article, and "West Ham — misconduct case" includes an unrelated
+  BBC-presenter article. Both produced sequence-only edges (no causal claims);
+  the rules ran as designed (hub-entity filter is computed pre-run). Flagged
+  for owner review; no thresholds changed.
 
 ### Phase 2 — gated items (require explicit owner authorization)
 
