@@ -27,14 +27,43 @@ const FAILURE_STATE_SET = new Set(FAILURE_STATES)
 // Review statuses from the live review_status CHECK vocabulary that are NOT
 // presentation-eligible. Anything here maps to the 02B "connection under review"
 // failure state when the row is otherwise well-formed.
+// 'auto_verified' (02B-ADD Part A, 2026-08-03) is a system-threshold status and
+// stays excluded exactly like human-queue statuses — it is NOT a path to
+// presentation; only review_status = 'published' is.
 const NON_PUBLISHED_REVIEW_STATUSES = new Set([
   'draft',
   'awaiting_review',
+  'auto_verified',
   'reviewed',
   'disputed',
   'corrected',
   'withdrawn',
 ])
+
+// 02B-ADD Part A status note: "auto-verified" must never be conflated with human
+// review. These badges are the single source for user-facing review-status labels:
+// 'reviewed' says a human confirmed the row; 'auto_verified' says only that the
+// system confidence threshold (evidence_strength >= 0.75 + live source) was met.
+// Tones: 'human' (a person decided) vs 'system' (a threshold fired) vs 'muted' /
+// 'warn' for the remaining queue states.
+export const REVIEW_STATUS_BADGES = Object.freeze({
+  draft: Object.freeze({ label: 'Draft', tone: 'muted' }),
+  awaiting_review: Object.freeze({ label: 'Awaiting review', tone: 'muted' }),
+  auto_verified: Object.freeze({
+    label: 'Auto-verified — system confidence threshold (not human-reviewed)',
+    tone: 'system',
+  }),
+  reviewed: Object.freeze({ label: 'Reviewed — human confirmed', tone: 'human' }),
+  published: Object.freeze({ label: 'Published', tone: 'human' }),
+  disputed: Object.freeze({ label: 'Disputed', tone: 'warn' }),
+  corrected: Object.freeze({ label: 'Corrected', tone: 'warn' }),
+  withdrawn: Object.freeze({ label: 'Withdrawn', tone: 'warn' }),
+})
+
+/** Badge { label, tone } for a review_status; unknown values get a muted fallback. */
+export function reviewStatusBadge(reviewStatus) {
+  return REVIEW_STATUS_BADGES[reviewStatus] ?? { label: 'Unknown status', tone: 'muted' }
+}
 
 function hasText(value) {
   return typeof value === 'string' && value.trim().length > 0
