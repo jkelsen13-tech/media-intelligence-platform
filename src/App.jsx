@@ -4,6 +4,7 @@ import Legend from './graph/Legend'
 import EdgeControls from './graph/EdgeControls'
 import EdgeEvidence from './graph/EdgeEvidence'
 import EdgeList from './graph/EdgeList'
+import ReviewStatusPanel from './panels/ReviewStatusPanel'
 import TopicBrowser from './graph/TopicBrowser'
 import ArticlePanel from './panels/ArticlePanel'
 import PolicyPanel from './panels/PolicyPanel'
@@ -28,7 +29,6 @@ function useMediaQuery(query) {
   )
   useEffect(() => {
     const mql = window.matchMedia(query)
-    const onChange = (e) => setMatches(e.matches)
     mql.addEventListener('change', onChange)
     setMatches(mql.matches)
     return () => mql.removeEventListener('change', onChange)
@@ -104,6 +104,7 @@ export default function App() {
   const [edgeEvidence, setEdgeEvidence] = useState(null)
   // 02B final acceptance: nonvisual (screen-reader/keyboard) relationship list.
   const [edgeListOpen, setEdgeListOpen] = useState(false)
+  const [reviewStatusOpen, setReviewStatusOpen] = useState(false)
   // Step 10 (§7.4): policy consequence view — set when a policy node is
   // tapped (replaces the article panel for policy nodes).
   const [policyNode, setPolicyNode] = useState(null)
@@ -506,6 +507,17 @@ export default function App() {
                       onSelectEdge={(edge) => setEdgeEvidence({ edge, position: null })}
                       onClose={() => setEdgeListOpen(false)}
                     />
+                  )}
+                  <button
+                    type="button"
+                    className="edge-list-toggle"
+                    aria-expanded={reviewStatusOpen}
+                    onClick={() => setReviewStatusOpen((v) => !v)}
+                  >
+                    Review status
+                  </button>
+                  {reviewStatusOpen && (
+                    <ReviewStatusPanel onClose={() => setReviewStatusOpen(false)} />
                   )}
                   {edgeEvidence && (
                     <EdgeEvidence
