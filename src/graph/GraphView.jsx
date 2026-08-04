@@ -3,8 +3,20 @@ import cytoscape from 'cytoscape'
 import fcose from 'cytoscape-fcose'
 import { graphStylesheet } from './styles'
 import PanJoystick from './PanJoystick'
+import { seedPositions } from '../analysis/layoutSeed'
 
 cytoscape.use(fcose)
+
+// G-ALG-1: opt-in deterministic layout. `?layout=deterministic` seeds every
+// node with its stable phyllotaxis position (FNV-1a id hash) and runs fCoSE
+// with randomize:false, so the same graph renders the same geometry on every
+// visit and every machine. Default (flag absent) is byte-for-byte unchanged.
+function deterministicLayoutRequested() {
+  return (
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('layout') === 'deterministic'
+  )
+}
 
 // --- Arc-weighted force helpers (fcose supports function values) ----------
 
@@ -39,11 +51,14 @@ function edgeElasticity(edge) {
 
 // Shared fcose options. `firstRun` randomizes positions and runs the full
 // iteration budget; reheat runs (post-drag) keep current positions and fit.
-function fcoseOptions({ firstRun }) {
+// `positions` (G-ALG-1, only ever passed under ?layout=deterministic) pins
+// the seed geometry and forces randomize:false.
+function fcoseOptions({ firstRun, positions }) {
   return {
     name: 'fcose',
     quality: 'default',
-    randomize: firstRun,
+    randomize: positions ? false : firstRun,
+    ...(positions ? { positions } : {}),
     animate: true,
     animationDuration: firstRun ? 800 : 600,
     nodeRepulsion: () => 8000,
@@ -157,7 +172,12 @@ export default function GraphView({
           data: { ...e, inferred: e.claimed_by === 'MIP_inferred' },
         })),
       },
-      layout: fcoseOptions({ firstRun: true }),
+      layout: fcoseOptions({
+        firstRun: true,
+        positions: deterministicLayoutRequested()
+          ? seedPositions(nodes.map((n) => String(n.id ?? n.slug)))
+          : undefined,
+      }),
       minZoom: 0.2,
       maxZoom: 3,
       // Tier 5: cytoscape never sees wheel events (they are intercepted in
@@ -466,7 +486,6 @@ export default function GraphView({
       e.preventDefault()
       cy.zoom({ level: Math.max(cy.minZoom(), cy.zoom() / 1.2), renderedPosition: center })
     } else if (e.key === '0') {
-      e.preventDefault()
       cy.fit(undefined, 60)
     }
   }
