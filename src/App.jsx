@@ -11,6 +11,8 @@ import PolicyPanel from './panels/PolicyPanel'
 import TimelineView from './views/TimelineView'
 import ArcsView from './views/ArcsView'
 import NewsView from './views/NewsView'
+import Phase3View from './views/Phase3View'
+import { loadPhase3BetaFlag } from './lib/phase3ReadPath'
 import { loadGraph, loadTopics } from './lib/supabase'
 
 const VIEWS = [
@@ -19,6 +21,11 @@ const VIEWS = [
   { key: 'timeline', label: 'Causal Timeline', shortLabel: 'Timeline' },
   { key: 'arcs', label: 'Story Arcs', shortLabel: 'Arcs' },
 ]
+
+// 02C Phase 3 internal closed beta — nav entry exists ONLY while
+// pipeline_config.phase3_beta is true. Public release stays blocked per the
+// 02C gate; this flag is beta-internal and never implies public exposure.
+const PHASE3_VIEW = { key: 'phase3', label: 'Legal & Policy (Beta)', shortLabel: 'Beta' }
 
 // Mobile-first graph entry: the top N hubs by degree centrality.
 const HUB_LIST_SIZE = 30
@@ -113,6 +120,9 @@ export default function App() {
   // affordance entirely.
   const [topicsData, setTopicsData] = useState(null)
   const [topicsOpen, setTopicsOpen] = useState(false)
+  // 02C Phase 3: beta flag. False until pipeline_config.phase3_beta === true;
+  // unreadable flag also resolves false (withhold posture).
+  const [phase3Beta, setPhase3Beta] = useState(false)
   // Cross-view focus: clicking an arc/article/node link in one view opens
   // the target in its own view.
   const [focusArc, setFocusArc] = useState(null)
@@ -128,6 +138,9 @@ export default function App() {
         if (data && data.topics.length > 0) setTopicsData(data)
       })
       .catch(() => {})
+    loadPhase3BetaFlag()
+      .then((on) => setPhase3Beta(on === true))
+      .catch(() => setPhase3Beta(false))
   }, [])
 
   // Step 9 (§8): tapping a node makes it focal — its depth-2 neighborhood
@@ -310,13 +323,16 @@ export default function App() {
     [graph],
   )
 
+  // 02C: nav entries — the beta tab exists only while phase3Beta is true.
+  const navViews = phase3Beta ? [...VIEWS, PHASE3_VIEW] : VIEWS
+
   return (
     <div className="app">
       <header className="app-header">
         <h1>MIP</h1>
         <span className="subtitle">Media Intelligence Platform</span>
         <nav className="app-nav" aria-label="Primary">
-          {VIEWS.map((v) => (
+          {navViews.map((v) => (
             <button
               key={v.key}
               className={`nav-tab${view === v.key ? ' active' : ''}`}
@@ -581,10 +597,11 @@ export default function App() {
             onOpenNode={openNodeInGraph}
           />
         )}
+        {view === 'phase3' && phase3Beta && <Phase3View />}
       </main>
 
       <nav className="bottom-nav" aria-label="Primary">
-        {VIEWS.map((v) => (
+        {navViews.map((v) => (
           <button
             key={v.key}
             className={`bottom-tab${view === v.key ? ' active' : ''}`}
