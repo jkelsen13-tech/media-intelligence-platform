@@ -486,6 +486,7 @@ export default function GraphView({
       e.preventDefault()
       cy.zoom({ level: Math.max(cy.minZoom(), cy.zoom() / 1.2), renderedPosition: center })
     } else if (e.key === '0') {
+      e.preventDefault()
       cy.fit(undefined, 60)
     }
   }
