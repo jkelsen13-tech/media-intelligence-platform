@@ -13,6 +13,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # No npm install needed: the suite imports only app source modules
-      # with zero runtime dependencies.
+      # G-ALG-0 added a real runtime dependency (graphology); the suite no
+      # longer runs on zero node_modules, so npm ci is required first.
+      - run: npm ci
       - run: npm test
