@@ -1,0 +1,246 @@
+/* Source Comparison (Item 1) beta view — mirrors phase3.css conventions:
+   sc- prefix, same banner/notice reuse, same chip vocabulary, dashed #6c71c4
+   for absence-style markers. No composite-score affordances anywhere. */
+
+.sc-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sc-banner {
+  background: #1b1f2a;
+  border: 1px solid #2a3040;
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.sc-banner h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  color: #cfd3e0;
+}
+
+.sc-banner p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #9aa0b4;
+}
+
+.sc-event {
+  background: #161a24;
+  border: 1px solid #262c3a;
+  border-radius: 8px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sc-event-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sc-event-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #dde1ec;
+}
+
+.sc-meta {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #8a90a4;
+}
+
+.sc-outlet {
+  font-weight: 600;
+  color: #cfd3e0;
+}
+
+.sc-outlet-inline {
+  margin-right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sc-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  border: 1px solid #3a4152;
+  color: #aab0c4;
+  white-space: nowrap;
+}
+
+.sc-chip-r1 { border-color: #3d7a4f; color: #8fd6a3; }
+.sc-chip-r2 { border-color: #6a7a3d; color: #c2d68f; }
+.sc-chip-r3 { border-color: #8a6d3b; color: #e0b36a; }
+.sc-chip-r4 { border-color: #8a3b3b; color: #e08a8a; }
+
+.sc-chip-e1 { border-color: #3d7a4f; color: #8fd6a3; }
+.sc-chip-e2 { border-color: #6a7a3d; color: #c2d68f; }
+.sc-chip-e3 { border-color: #8a6d3b; color: #e0b36a; }
+.sc-chip-e4 { border-color: #4a5064; color: #9aa0b4; }
+
+.sc-chip-shared { border-color: #3d5a80; color: #8fb3e0; }
+.sc-chip-unique { border-color: #5a4a80; color: #b3a0e0; }
+
+.sc-chip-muted { color: #6a7084; border-style: dashed; }
+.sc-chip-thin { border-color: #8a6d3b; color: #e0b36a; border-style: dashed; }
+.sc-chip-loaded { border-color: #8a3b6a; color: #e08ac0; margin-right: 4px; }
+
+.sc-claim {
+  border: 1px solid #232a38;
+  border-radius: 6px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #141821;
+}
+
+.sc-claim-thin {
+  border-left: 3px solid #8a6d3b;
+}
+
+.sc-claim-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.sc-claim-text {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #dde1ec;
+  line-height: 1.45;
+}
+
+/* Omission vs coverage_unknown — deliberately distinct styling and copy.
+   Omission uses the dashed #6c71c4 absence marker convention from phase3. */
+.sc-omission {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #aab0c4;
+  border-left: 3px dashed #6c71c4;
+  padding: 4px 10px;
+}
+
+.sc-unknown {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #7d8397;
+  border-left: 3px dotted #4a5064;
+  padding: 4px 10px;
+  font-style: italic;
+}
+
+.sc-syndicated {
+  color: #8fb3e0;
+}
+
+.sc-timing {
+  color: #9aa0b4;
+}
+
+.sc-single-source,
+.sc-empty {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #7d8397;
+  border: 1px dashed #3a4152;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.sc-correction {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #e0b36a;
+}
+
+.sc-surface-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sc-surface {
+  border: 1px solid #202634;
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sc-surface-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.sc-surface-text {
+  margin: 0;
+  font-size: 0.84rem;
+  color: #c3c8d8;
+  line-height: 1.5;
+}
+
+.sc-loaded {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #9aa0b4;
+}
+
+.sc-loaded-cat {
+  color: #7d8397;
+}
+
+.sc-src {
+  color: #8fb3e0;
+  text-decoration: none;
+  font-size: 0.78rem;
+}
+
+.sc-src:hover {
+  text-decoration: underline;
+}
+
+.sc-details summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: #8a90a4;
+}
+
+.sc-details[open] summary {
+  margin-bottom: 6px;
+}
+
+.sc-explanation {
+  border-top: 1px dashed #2a3040;
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sc-ev-passage {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #b8bdd0;
+  line-height: 1.45;
+}
