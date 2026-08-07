@@ -12,7 +12,9 @@ import TimelineView from './views/TimelineView'
 import ArcsView from './views/ArcsView'
 import NewsView from './views/NewsView'
 import Phase3View from './views/Phase3View'
+import SourceComparisonView from './views/SourceComparisonView'
 import { loadPhase3BetaFlag } from './lib/phase3ReadPath'
+import { loadSourceComparisonBetaFlag } from './lib/sourceComparisonReadPath'
 import { loadGraph, loadTopics } from './lib/supabase'
 
 const VIEWS = [
@@ -26,6 +28,12 @@ const VIEWS = [
 // pipeline_config.phase3_beta is true. Public release stays blocked per the
 // 02C gate; this flag is beta-internal and never implies public exposure.
 const PHASE3_VIEW = { key: 'phase3', label: 'Legal & Policy (Beta)', shortLabel: 'Beta' }
+
+// 03_BACKLOG Item 1 Source Comparison — internal beta. Nav entry exists
+// ONLY while pipeline_config.source_comparison_beta is true, and the route
+// itself is gated a second time below (mirroring phase3_beta's double
+// gate). source_comparison_public stays false — no public exposure.
+const SOURCE_COMPARISON_VIEW = { key: 'compare', label: 'Source Comparison (Beta)', shortLabel: 'Compare' }
 
 // Mobile-first graph entry: the top N hubs by degree centrality.
 const HUB_LIST_SIZE = 30
@@ -123,6 +131,9 @@ export default function App() {
   // 02C Phase 3: beta flag. False until pipeline_config.phase3_beta === true;
   // unreadable flag also resolves false (withhold posture).
   const [phase3Beta, setPhase3Beta] = useState(false)
+  // 03_BACKLOG Item 1: source comparison beta flag. Same withhold posture:
+  // false until pipeline_config.source_comparison_beta === true.
+  const [sourceComparisonBeta, setSourceComparisonBeta] = useState(false)
   // Cross-view focus: clicking an arc/article/node link in one view opens
   // the target in its own view.
   const [focusArc, setFocusArc] = useState(null)
@@ -141,6 +152,9 @@ export default function App() {
     loadPhase3BetaFlag()
       .then((on) => setPhase3Beta(on === true))
       .catch(() => setPhase3Beta(false))
+    loadSourceComparisonBetaFlag()
+      .then((on) => setSourceComparisonBeta(on === true))
+      .catch(() => setSourceComparisonBeta(false))
   }, [])
 
   // Step 9 (§8): tapping a node makes it focal — its depth-2 neighborhood
@@ -323,8 +337,13 @@ export default function App() {
     [graph],
   )
 
-  // 02C: nav entries — the beta tab exists only while phase3Beta is true.
-  const navViews = phase3Beta ? [...VIEWS, PHASE3_VIEW] : VIEWS
+  // 02C / Item 1: nav entries — each beta tab exists only while its flag is
+  // true. Withhold posture: an unreadable flag resolves false above.
+  const navViews = [
+    ...VIEWS,
+    ...(phase3Beta ? [PHASE3_VIEW] : []),
+    ...(sourceComparisonBeta ? [SOURCE_COMPARISON_VIEW] : []),
+  ]
 
   return (
     <div className="app">
@@ -598,6 +617,7 @@ export default function App() {
           />
         )}
         {view === 'phase3' && phase3Beta && <Phase3View />}
+        {view === 'compare' && sourceComparisonBeta && <SourceComparisonView />}
       </main>
 
       <nav className="bottom-nav" aria-label="Primary">
