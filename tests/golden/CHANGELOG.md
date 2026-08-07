@@ -10,3 +10,4 @@
 <!-- CI note 2026-08-06: commit 57c59e4d workflows were cancelled by runner-queue
      starvation (test job never assigned a runner; no steps executed). This line
      re-triggers CI on identical code. -->
+| 2026-08-07 | Source Comparison (Item 1, Batch 3): `source_comparison_readpath.test.mjs` (9 tests over `src/lib/sourceComparisonReadPath.js` pure seams: canonical-URL normalization, syndicate collapse to a single original source, omission-vs-coverage_unknown separation, thin-extraction marker, E1/E2/E4 evidence mapping with no composite score, G2 tiering with untiered-outlet null, timing with all outlets kept, single-source labeling, explanation-object attachment). Suite 114 → 123 tests. | Owner-authorized Batch 3 (UI behind source_comparison_beta); locks the read-path presentation rules the beta view renders | Item 1 Batch 3 run (owner-authorized) |
