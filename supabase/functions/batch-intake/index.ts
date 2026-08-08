@@ -18,6 +18,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 //   The run's real ceiling is the manifest itself; this is the backstop.
 // - This function does NO arc work. Arc processing is backfill-legacy's
 //   scoped mode (?run=<tag>), keeping intake and processing separate.
+// - v2 (2026-08-08, Doc 07 canary): ManifestArticle accepts optional
+//   is_pre_ruling / different_causal_chain flags (default false); they are
+//   written to the articles columns added by migration
+//   add_pre_ruling_tag_columns_to_articles. All other behavior unchanged.
 // ---------------------------------------------------------------------------
 
 const MAX_ARTICLES = 300
@@ -29,6 +33,9 @@ interface ManifestArticle {
   published_at?: string | null
   outlet: string
   byline?: string | null
+  // v2 (Doc 07 canary): optional pre-ruling context flags. Absent => false.
+  is_pre_ruling?: boolean
+  different_causal_chain?: boolean
 }
 
 function json(body: unknown, status = 200) {
@@ -184,6 +191,8 @@ Deno.serve(async (req: Request) => {
         published_at: a.published_at ?? null,
         embedding: `[${embedding.join(',')}]`,
         ingestion_run_id: runId,
+        is_pre_ruling: a.is_pre_ruling === true,
+        different_causal_chain: a.different_causal_chain === true,
       })
       if (insErr) throw insErr
       report.inserted++
