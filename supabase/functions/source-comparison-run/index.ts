@@ -67,6 +67,58 @@ async function pagedSelect(
   }
 }
 
+// --- dedupe begin ---
+// Insert-time dedupe (owner-authorized 2026-08-09, Option A, live-run repair):
+// the pipeline may legitimately group two DISTINCT surface texts from the same
+// article into one claim group, but the DB constraints are one row per
+// (claim, article) — article_claims_claim_id_article_id_version_key, and the
+// same duplicates would collide on explanation assertion_ids.
+// Winner per (claim_key, article_id): highest extraction_confidence; tiebreak
+// longer surface_text; then lexicographically smallest surface_text.
+// The SAME winner set filters the claim_grouping explanation rows, so
+// article_claims and explanations always agree on which row survived.
+function dedupeArticleClaims(rows: any[]): { winners: Map<string, any>; rows: any[] } {
+  const winners = new Map<string, any>()
+  for (const r of rows) {
+    const k = r.claim_key + '|' + r.article_id
+    const cur = winners.get(k)
+    if (!cur ||
+        r.extraction_confidence > cur.extraction_confidence ||
+        (r.extraction_confidence === cur.extraction_confidence &&
+          (r.surface_text.length > cur.surface_text.length ||
+            (r.surface_text.length === cur.surface_text.length && r.surface_text < cur.surface_text)))) {
+      winners.set(k, r)
+    }
+  }
+  return { winners, rows: rows.filter((r) => winners.get(r.claim_key + '|' + r.article_id) === r) }
+}
+
+function dedupeExplanations(explanations: any[], winners: Map<string, any>): any[] {
+  const PREFIX = 'sc:claim_grouping:'
+  const groups = new Map<string, any[]>()
+  for (const e of explanations) {
+    if (e.assertion_type !== 'claim_grouping') continue
+    if (!groups.has(e.assertion_id)) groups.set(e.assertion_id, [])
+    groups.get(e.assertion_id)!.push(e)
+  }
+  const keep = new Set<any>()
+  for (const [aid, rows] of groups) {
+    if (rows.length === 1) { keep.add(rows[0]); continue }
+    const rest = aid.slice(PREFIX.length)
+    const cut = rest.lastIndexOf(':')
+    const w = winners.get(rest.slice(0, cut) + '|' + rest.slice(cut + 1))
+    if (!w) throw new Error('dedupe: no article_claims winner for ' + aid)
+    const matches = rows.filter((e) => e.supporting_passage.startsWith(
+      'Surface claim "' + w.surface_text + '" grouped under canonical "'))
+    if (matches.length !== 1) {
+      throw new Error('dedupe: explanation winner match failed for ' + aid + ' (' + matches.length + ' matches)')
+    }
+    keep.add(matches[0])
+  }
+  return explanations.filter((e) => e.assertion_type !== 'claim_grouping' || keep.has(e))
+}
+// --- dedupe end ---
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json(405, { error: 'POST only' })
 
@@ -104,7 +156,19 @@ Deno.serve(async (req: Request) => {
   const articles = (articleRows || []).map((a: any) => ({ ...a, embedding: parseEmbedding(a.embedding) }))
   const plan = runPipeline(articles, entityPairs || [], cfg, lexicon)
 
-  const stats = { ...plan.stats, comparisons: undefined, comparison_sample: plan.stats.comparisons.slice(0, 5), page_size: pageSize }
+  // Option A dedupe (fail-closed): single shared winner logic for both tables.
+  let dedupedAC: any[] = plan.article_claims
+  let dedupedExp: any[] = plan.explanations
+  try {
+    const d = dedupeArticleClaims(plan.article_claims)
+    dedupedAC = d.rows
+    dedupedExp = dedupeExplanations(plan.explanations, d.winners)
+  } catch (e) {
+    return json(500, { error: `dedupe failed: ${(e as Error).message}` })
+  }
+
+  const stats = { ...plan.stats, comparisons: undefined, comparison_sample: plan.stats.comparisons.slice(0, 5), page_size: pageSize,
+    article_claims_deduped: dedupedAC.length, explanations_deduped: dedupedExp.length }
   if (dryRun) return json(200, { dry_run: true, rule_version: RULE_VERSION, ...stats })
 
   // Rebuild: clear own sc-v1 namespace only, in dependency order.
@@ -149,7 +213,8 @@ Deno.serve(async (req: Request) => {
     keyToClaimId.set(claim_key, data.id)
   }
   for (const t of ['event_articles', 'article_claims'] as const) {
-    const rows = (plan as any)[t].map((r: any) => t === 'event_articles'
+    const src = t === 'article_claims' ? dedupedAC : (plan as any)[t]
+    const rows = src.map((r: any) => t === 'event_articles'
       ? { event_id: keyToEventId.get(r.event_key), article_id: r.article_id, membership_method: r.membership_method, membership_confidence: r.membership_confidence }
       : { claim_id: keyToClaimId.get(r.claim_key), article_id: r.article_id, surface_text: r.surface_text, extraction_method: r.extraction_method, extraction_confidence: r.extraction_confidence, stance: r.stance, loaded_language: r.loaded_language })
     for (let i = 0; i < rows.length; i += 500) {
@@ -157,8 +222,8 @@ Deno.serve(async (req: Request) => {
       if (error) return json(500, { error: `${t} insert failed: ${error.message}` })
     }
   }
-  for (let i = 0; i < plan.explanations.length; i += 500) {
-    const { error } = await supabase.from('explanations').insert(plan.explanations.slice(i, i + 500))
+  for (let i = 0; i < dedupedExp.length; i += 500) {
+    const { error } = await supabase.from('explanations').insert(dedupedExp.slice(i, i + 500))
     if (error) return json(500, { error: `explanations insert failed: ${error.message}` })
   }
 
