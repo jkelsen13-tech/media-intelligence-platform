@@ -138,6 +138,9 @@ export default function App() {
   // the target in its own view.
   const [focusArc, setFocusArc] = useState(null)
   const [focusArticle, setFocusArticle] = useState(null)
+  // Doc 05: timeline focus key (8-hex group suffix) and comparison event id.
+  const [focusTimelineEvent, setFocusTimelineEvent] = useState(null)
+  const [focusComparisonEvent, setFocusComparisonEvent] = useState(null)
 
   const isMobile = useMediaQuery('(max-width: 767px)')
 
@@ -283,6 +286,19 @@ export default function App() {
     setView('news')
   }, [])
 
+  // Doc 05 pair 3/6 destination: focus an event card in the Causal Timeline
+  // by its 8-hex group suffix.
+  const openEventInTimeline = useCallback((eventKey) => {
+    setFocusTimelineEvent(eventKey)
+    setView('timeline')
+  }, [])
+
+  // Doc 05 pair 5 destination: focus an event in Source Comparison.
+  const openComparisonEvent = useCallback((eventId) => {
+    setFocusComparisonEvent(eventId)
+    setView('compare')
+  }, [])
+
   // Graph node search: label substring match, top 8 suggestions.
   const nodeMatches = useMemo(() => {
     if (!graph || !nodeQuery.trim()) return []
@@ -410,6 +426,9 @@ export default function App() {
             onOpenArc={openArcInView}
             onOpenNode={openNodeInGraph}
             focusArticleId={focusArticle}
+            onOpenTimeline={openEventInTimeline}
+            // Pair 5 degrades honestly when the destination tab is gated off.
+            onOpenComparison={sourceComparisonBeta ? openComparisonEvent : undefined}
           />
         )}
 
@@ -608,7 +627,13 @@ export default function App() {
           </>
         )}
 
-        {view === 'timeline' && <TimelineView />}
+        {view === 'timeline' && (
+          <TimelineView
+            onOpenArc={openArcInView}
+            onOpenArticle={openArticleInNews}
+            focusEventKey={focusTimelineEvent}
+          />
+        )}
         {view === 'arcs' && (
           <ArcsView
             focusArcId={focusArc}
@@ -617,7 +642,14 @@ export default function App() {
           />
         )}
         {view === 'phase3' && phase3Beta && <Phase3View />}
-        {view === 'compare' && sourceComparisonBeta && <SourceComparisonView />}
+        {view === 'compare' && sourceComparisonBeta && (
+          <SourceComparisonView
+            onOpenArticle={openArticleInNews}
+            onOpenArc={openArcInView}
+            onOpenTimeline={openEventInTimeline}
+            focusEventId={focusComparisonEvent}
+          />
+        )}
       </main>
 
       <nav className="bottom-nav" aria-label="Primary">
