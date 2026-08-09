@@ -320,6 +320,85 @@ export async function loadArcDetail(arcKey) {
   return { milestones: milestonesRes.data, events: eventsRes.data }
 }
 
+// Doc 05 pairs 1–3 support: build the suffix → article-id map (8-hex art-
+// slug suffix = article id prefix; the same suffix groups evt-/art- mirrors,
+// so it also resolves canonical evt- cards to their article) and an
+// arc-id → arc-title map. Both return Maps; empty when joins resolve to
+// nothing — honest degradation, never a fabricated destination.
+export function buildTimelineCrossLinks(allEventNodes, canonicalOf, articleRows, arcRows) {
+  const articleIdBySuffix = new Map()
+  const idByPrefix = new Map()
+  for (const a of articleRows ?? []) idByPrefix.set(String(a.id).slice(0, 8), a.id)
+  // Map by GROUP suffix (shared by evt-/art- mirrors): any art- node in a
+  // group gives the whole group its article. Walk art- nodes, resolve their
+  // canonical card's suffix.
+  for (const n of allEventNodes ?? []) {
+    const slug = n.slug ?? ''
+    if (!slug.startsWith('art-')) continue
+    const articleId = idByPrefix.get(slug.slice(-8))
+    if (!articleId) continue
+    const canonicalId = canonicalOf?.get(n.id ?? n.slug) ?? (n.id ?? n.slug)
+    const canonical = (allEventNodes ?? []).find((x) => (x.id ?? x.slug) === canonicalId)
+    if (canonical) articleIdBySuffix.set((canonical.slug ?? '').slice(-8), articleId)
+  }
+  const arcTitleById = new Map((arcRows ?? []).map((a) => [a.id, a.title]))
+  return { articleIdBySuffix, arcTitleById }
+}
+
+// Doc 05 pair 3 (News → Timeline): the timeline focus key for an article is
+// its id's 8-hex prefix, IF an event node exists with a slug ending in that
+// suffix (art- node or its evt- twin — same dedup group key). Returns null
+// when no timeline event covers this article — the link then does not render.
+export async function loadArticleTimelineKey(articleId) {
+  if (!supabase || !articleId) return null
+  const prefix = String(articleId).slice(0, 8)
+  try {
+    const { data, error } = await supabase
+      .from('nodes')
+      .select('id, slug')
+      .eq('type', 'event')
+      .like('slug', `%${prefix}`)
+      .limit(1)
+    if (error) return null
+    return data && data.length > 0 ? prefix : null
+  } catch {
+    return null
+  }
+}
+
+// Doc 05 pair 5 (News → Source Comparison): comparison events covering an
+// article, via event_articles and via article_claims → claims. Returns
+// [{ eventId, title }] (deduped); empty when the article is in no comparison
+// event — the link then does not render.
+export async function loadArticleComparisonEvents(articleId) {
+  if (!supabase || !articleId) return []
+  try {
+    const [memberRes, claimRes] = await Promise.all([
+      supabase.from('event_articles').select('event_id').eq('article_id', articleId),
+      supabase.from('article_claims').select('claim_id').eq('article_id', articleId).eq('is_current', true),
+    ])
+    if (memberRes.error) return []
+    const eventIds = new Set((memberRes.data ?? []).map((r) => r.event_id))
+    if (!claimRes.error && (claimRes.data ?? []).length > 0) {
+      const claimIds = [...new Set(claimRes.data.map((r) => r.claim_id))]
+      const { data: claimRows, error: cErr } = await supabase
+        .from('claims')
+        .select('event_id')
+        .in('id', claimIds)
+      if (!cErr) for (const c of claimRows ?? []) eventIds.add(c.event_id)
+    }
+    if (eventIds.size === 0) return []
+    const { data: evRows, error: eErr } = await supabase
+      .from('events')
+      .select('id, canonical_title')
+      .in('id', [...eventIds])
+    if (eErr) return []
+    return (evRows ?? []).map((e) => ({ eventId: e.id, title: e.canonical_title }))
+  } catch {
+    return []
+  }
+}
+
 // Causal timeline: event nodes with dates plus causal/sequence edges between
 // them. `labels` covers ALL node types so edges that point at non-event nodes
 // (institutions, anomalies, documents) resolve to a label, not a raw uuid.
@@ -340,24 +419,43 @@ export async function loadTimeline() {
       labels: demoNodes.map((n) => ({ id: n.id ?? n.slug, slug: n.slug, label: n.label })),
     }
   }
-  const [nodesRes, edgesRes, labelsRes] = await Promise.all([
+  const [nodesRes, edgesRes, labelsRes, articlesRes, arcsRes] = await Promise.all([
     supabase
       .from('nodes')
-      .select('id, slug, label, description, confidence, summary, occurred_at')
+      .select('id, slug, label, description, confidence, summary, occurred_at, arc_id')
       .eq('type', 'event')
       .order('occurred_at', { ascending: true, nullsFirst: false }),
     // Causal AND sequential relations — the UI must preserve the distinction
     // (Tier 4 acceptance: "preserve causal versus sequential labels").
     supabase.from('edges').select('id, source_id, target_id, type, weight, label').in('type', ['causal', 'sequence']),
     supabase.from('nodes').select('id, slug, label'),
+    // Doc 05 pairs 2/3: art- slug 8-hex suffix = article id 8-hex prefix
+    // (verified 361/361 live). Ids only — the map is built in JS below.
+    supabase.from('articles').select('id'),
+    // Doc 05 pair 1: arc titles for event nodes that carry arc_id.
+    supabase.from('story_arcs').select('id, title'),
   ])
   if (nodesRes.error) throw nodesRes.error
   if (edgesRes.error) throw edgesRes.error
   if (labelsRes.error) throw labelsRes.error
+  if (articlesRes.error) throw articlesRes.error
+  if (arcsRes.error) throw arcsRes.error
   const { events, canonicalOf, suppressed } = canonicalizeTimelineEvents(nodesRes.data)
+  const { articleIdBySuffix, arcTitleById } = buildTimelineCrossLinks(
+    nodesRes.data,
+    canonicalOf,
+    articlesRes.data,
+    arcsRes.data,
+  )
   return {
-    events,
+    // Cross-link fields are additive and optional: article_id only when the
+    // art- suffix join resolves, arc_id straight from the node row.
+    events: events.map((evt) => ({
+      ...evt,
+      article_id: articleIdBySuffix.get((evt.slug ?? '').slice(-8)) ?? null,
+    })),
     suppressed,
+    arcTitles: arcTitleById,
     relationEdges: remapTimelineEdges(
       edgesRes.data.map((e) => ({
         id: e.id,
