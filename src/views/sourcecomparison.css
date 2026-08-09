@@ -244,3 +244,35 @@
   color: #b8bdd0;
   line-height: 1.45;
 }
+
+/* Doc 05 pairs 4–6: cross-window links + focus highlight. */
+.sc-xlink {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.sc-xlink:focus-visible {
+  outline: 2px solid #8fb3e0;
+  outline-offset: 1px;
+}
+
+.sc-xlinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sc-xlink-group {
+  display: inline-flex;
+  gap: 10px;
+}
+
+.sc-event.sc-focused {
+  outline: 2px solid #8fb3e0;
+  outline-offset: 4px;
+  border-radius: 4px;
+  transition: outline-color 0.3s ease;
+}
