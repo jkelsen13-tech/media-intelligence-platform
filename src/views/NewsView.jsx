@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadArticles, loadOutlets, loadArticleDetail, loadArticleGraphLinks, loadSkyVerification } from '../lib/supabase'
+import { loadArticles, loadOutlets, loadArticleDetail, loadArticleGraphLinks, loadSkyVerification, loadArticleTimelineKey, loadArticleComparisonEvents } from '../lib/supabase'
 import SkyBadge from '../panels/SkyBadge'
 
 // News Feed: the live ingested article stream across all outlets — search,
@@ -43,7 +43,9 @@ function strengthBadge(strength) {
   )
 }
 
-export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
+// Doc 05 pairs 3 & 5: onOpenTimeline / onOpenComparison are optional — when a
+// destination is unavailable the corresponding chip simply never renders.
+export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpenTimeline, onOpenComparison }) {
   const [q, setQ] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
   const [outlet, setOutlet] = useState(null)
@@ -59,6 +61,10 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
   const [detailError, setDetailError] = useState(null)
   // Location corroboration for the expanded article (null = none / table absent).
   const [sky, setSky] = useState(null)
+  // Doc 05: cross-window keys for the expanded article. null = join found no
+  // target → chip does not render (honest degradation).
+  const [timelineKey, setTimelineKey] = useState(null)
+  const [comparisonEvents, setComparisonEvents] = useState([])
   // Mobile: filters collapse into a bottom sheet behind a single button.
   const [filtersOpen, setFiltersOpen] = useState(false)
   const debounceRef = useRef(null)
@@ -106,6 +112,8 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
     setGraphLinks([])
     setDetailError(null)
     setSky(null)
+    setTimelineKey(null)
+    setComparisonEvents([])
     loadArticleDetail(id)
       .then(setDetail)
       .catch((err) => setDetailError(err.message))
@@ -115,6 +123,19 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
     loadSkyVerification(id)
       .then(setSky)
       .catch(() => {})
+    // Doc 05 pair 3: art- slug suffix ↔ article id prefix join, resolved at
+    // read time. No matching timeline event node → no chip.
+    if (onOpenTimeline) {
+      loadArticleTimelineKey(id)
+        .then(setTimelineKey)
+        .catch(() => {})
+    }
+    // Doc 05 pair 5: event_articles + current article_claims FKs.
+    if (onOpenComparison) {
+      loadArticleComparisonEvents(id)
+        .then(setComparisonEvents)
+        .catch(() => {})
+    }
   }
 
   // Cross-view entry: another view asked us to open a specific article.
@@ -155,6 +176,8 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
       setExpanded(null)
       setDetail(null)
       setSky(null)
+      setTimelineKey(null)
+      setComparisonEvents([])
       return
     }
     expandArticle(id)
@@ -172,6 +195,36 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
   // If a focused article isn't in the current page, still render its detail.
   const focusedMissing =
     expanded && !articles.some((a) => a.id === expanded) ? expanded : null
+
+  // Doc 05 pairs 3 & 5: cross-window chips. Each renders only when its join
+  // resolved — never a broken link, never a fabricated destination.
+  const crossWindowChips = (timelineKey || comparisonEvents.length > 0) && (
+    <div className="news-graph-links">
+      <span className="ap-label">Other views</span>
+      <div className="news-filter-row">
+        {timelineKey && onOpenTimeline && (
+          <button
+            className="news-chip graph-link"
+            title="Open this article's event in the Causal Timeline"
+            onClick={() => onOpenTimeline(timelineKey)}
+          >
+            ◈ Causal Timeline →
+          </button>
+        )}
+        {onOpenComparison &&
+          comparisonEvents.map((ev) => (
+            <button
+              key={ev.eventId}
+              className="news-chip graph-link"
+              title={`Compare outlet coverage of “${ev.title}”`}
+              onClick={() => onOpenComparison(ev.eventId)}
+            >
+              ◈ Compare coverage: {ev.title} →
+            </button>
+          ))}
+      </div>
+    </div>
+  )
 
   return (
     <div className="news-view">
@@ -366,6 +419,7 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
                         </div>
                       </div>
                     )}
+                    {crossWindowChips}
                     {/* Location corroboration (formerly Sky verification; 02A
                         Amendment B): renders only when a corroboration exists. */}
                     <SkyBadge verification={sky} />
@@ -429,6 +483,7 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId }) {
           {detail && (
             <>
               <h3 className="news-focus-title">{detail.title}</h3>
+              {crossWindowChips}
               <SkyBadge verification={sky} />
               {graphLinks.length > 0 && (
                 <div className="news-graph-links">
