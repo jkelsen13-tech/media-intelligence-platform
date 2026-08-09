@@ -174,20 +174,36 @@ Deno.serve(async (req: Request) => {
   // Rebuild: clear own sc-v1 namespace only, in dependency order.
   // (article_claims/event_articles carry no rule_version; scope through the
   // sc-v1 events/claims they belong to.)
+  // IN-lists are chunked: a single .in() with hundreds of UUIDs exceeds the
+  // PostgREST URL length limit (Bad Request) — hit live 2026-08-09 with 839
+  // claim ids. Chunking deletes the identical row set, just batched.
+  const deleteInChunks = async (table: string, col: string, ids: string[], label: string) => {
+    for (let i = 0; i < ids.length; i += 100) {
+      const { error } = await supabase.from(table).delete().in(col, ids.slice(i, i + 100))
+      if (error) return json(500, { error: `${label} cleanup failed: ${error.message}` })
+    }
+    return null
+  }
   {
     const eventIds = (await supabase.from('events').select('id').eq('rule_version', RULE_VERSION)).data?.map((r: any) => r.id) || []
     if (eventIds.length) {
-      const { error: e0 } = await supabase.from('event_articles').delete().in('event_id', eventIds)
-      if (e0) return json(500, { error: `event_articles cleanup failed: ${e0.message}` })
-      const claimIds = (await supabase.from('claims').select('id').in('event_id', eventIds)).data?.map((r: any) => r.id) || []
-      if (claimIds.length) {
-        const { error } = await supabase.from('article_claims').delete().in('claim_id', claimIds)
-        if (error) return json(500, { error: `article_claims cleanup failed: ${error.message}` })
-        const { error: e2 } = await supabase.from('claims').delete().in('id', claimIds)
-        if (e2) return json(500, { error: `claims cleanup failed: ${e2.message}` })
+      let r = await deleteInChunks('event_articles', 'event_id', eventIds, 'event_articles')
+      if (r) return r
+      // The claims id select carries the event ids in its query string too —
+      // same URL ceiling — so it is chunked identically.
+      const claimIdsChunked: string[] = []
+      for (let i = 0; i < eventIds.length; i += 100) {
+        const { data } = await supabase.from('claims').select('id').in('event_id', eventIds.slice(i, i + 100))
+        claimIdsChunked.push(...(data?.map((r: any) => r.id) || []))
       }
-      const { error: e3 } = await supabase.from('events').delete().in('id', eventIds)
-      if (e3) return json(500, { error: `events cleanup failed: ${e3.message}` })
+      if (claimIdsChunked.length) {
+        r = await deleteInChunks('article_claims', 'claim_id', claimIdsChunked, 'article_claims')
+        if (r) return r
+        r = await deleteInChunks('claims', 'id', claimIdsChunked, 'claims')
+        if (r) return r
+      }
+      r = await deleteInChunks('events', 'id', eventIds, 'events')
+      if (r) return r
     }
   }
   {
