@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { loadSourceComparisonView, R_LEVEL_NAMES, E_LEVEL_NAMES, OUTLET_RELIABILITY } from '../lib/sourceComparisonReadPath.js'
 import './sourcecomparison.css'
 
@@ -43,7 +43,9 @@ function ExplanationDetails({ explanation }) {
   )
 }
 
-function SurfaceRow({ surface }) {
+// Doc 05 pair 4: each surface row links straight to its article in the News
+// Feed. Renders only when articleId is present and the callback exists.
+function SurfaceRow({ surface, onOpenArticle }) {
   return (
     <li className="sc-surface">
       <header className="sc-surface-head">
@@ -53,6 +55,15 @@ function SurfaceRow({ surface }) {
         )}
         {surface.url && (
           <a className="sc-src" href={surface.url} target="_blank" rel="noreferrer">Article ↗</a>
+        )}
+        {surface.articleId && onOpenArticle && (
+          <button
+            type="button"
+            className="sc-src sc-xlink"
+            onClick={() => onOpenArticle(surface.articleId)}
+          >
+            Open in News →
+          </button>
         )}
       </header>
       <p className="sc-surface-text">{surface.surfaceText}</p>
@@ -74,7 +85,7 @@ function SurfaceRow({ surface }) {
   )
 }
 
-function ClaimCard({ claim }) {
+function ClaimCard({ claim, onOpenArticle }) {
   return (
     <article className={`sc-claim${claim.thinExtraction ? ' sc-claim-thin' : ''}`}>
       <header className="sc-claim-head">
@@ -127,15 +138,18 @@ function ClaimCard({ claim }) {
       )}
 
       <ul className="sc-surface-list">
-        {claim.surfaces.map((s) => <SurfaceRow key={s.id} surface={s} />)}
+        {claim.surfaces.map((s) => <SurfaceRow key={s.id} surface={s} onOpenArticle={onOpenArticle} />)}
       </ul>
     </article>
   )
 }
 
-function EventCard({ event }) {
+// Doc 05 pair 6: event.arcLinks comes from the live read-time join
+// (event_articles → articles.arc_id → timeline nodes). Empty array = no arc
+// resolved = no chips (honest degradation; ~12/347 events resolve today).
+function EventCard({ event, onOpenArticle, onOpenArc, onOpenTimeline, focused, sectionRef }) {
   return (
-    <section className="sc-event">
+    <section className={`sc-event${focused ? ' sc-focused' : ''}`} ref={sectionRef}>
       <header className="sc-event-head">
         <h3>{event.title}</h3>
         <span className="sc-meta">
@@ -143,6 +157,35 @@ function EventCard({ event }) {
           {event.occurredAtEnd && event.occurredAtEnd !== event.occurredAtStart ? ` → ${event.occurredAtEnd}` : ''}
         </span>
       </header>
+
+      {(event.arcLinks?.length ?? 0) > 0 && (onOpenArc || onOpenTimeline) && (
+        <p className="sc-meta sc-xlinks">
+          {event.arcLinks.map((l) => (
+            <span key={l.arcId} className="sc-xlink-group">
+              {onOpenArc && (
+                <button
+                  type="button"
+                  className="sc-src sc-xlink"
+                  title="Open this story arc"
+                  onClick={() => onOpenArc(l.arcId)}
+                >
+                  Arc{l.title ? `: ${l.title}` : ''} →
+                </button>
+              )}
+              {l.timelineKey && onOpenTimeline && (
+                <button
+                  type="button"
+                  className="sc-src sc-xlink"
+                  title="Open this arc's events in the Causal Timeline"
+                  onClick={() => onOpenTimeline(l.timelineKey)}
+                >
+                  Causal Timeline →
+                </button>
+              )}
+            </span>
+          ))}
+        </p>
+      )}
 
       {event.singleSource ? (
         <p className="sc-single-source">
@@ -169,15 +212,19 @@ function EventCard({ event }) {
       {event.claims.length === 0 ? (
         <p className="sc-empty">No claims extracted for this event yet.</p>
       ) : (
-        event.claims.map((claim) => <ClaimCard key={claim.id} claim={claim} />)
+        event.claims.map((claim) => <ClaimCard key={claim.id} claim={claim} onOpenArticle={onOpenArticle} />)
       )}
     </section>
   )
 }
 
-export default function SourceComparisonView() {
+// Doc 05 pairs 4–6: onOpenArticle / onOpenArc / onOpenTimeline are optional;
+// focusEventId scrolls + highlights a specific comparison event (pair 5's
+// destination).
+export default function SourceComparisonView({ onOpenArticle, onOpenArc, onOpenTimeline, focusEventId }) {
   const [view, setView] = useState(null)
   const [error, setError] = useState(null)
+  const eventRefs = useRef(new Map())
 
   useEffect(() => {
     let cancelled = false
@@ -186,6 +233,18 @@ export default function SourceComparisonView() {
       .catch((e) => { if (!cancelled) setError(e) })
     return () => { cancelled = true }
   }, [])
+
+  // Cross-window focus (Doc 05 pair 5): once events render, scroll to the
+  // requested comparison event and highlight it briefly.
+  useEffect(() => {
+    if (!focusEventId || !view?.events?.length) return
+    const el = eventRefs.current.get(focusEventId)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    el.classList.add('sc-focused')
+    const t = setTimeout(() => el.classList.remove('sc-focused'), 4000)
+    return () => clearTimeout(t)
+  }, [focusEventId, view])
 
   if (error) return <div className="notice error">Source comparison view failed to load.</div>
   if (view === null) return <div className="notice">Loading…</div>
@@ -219,7 +278,20 @@ export default function SourceComparisonView() {
           Events appear here after the source-comparison-run function is invoked.
         </p>
       ) : (
-        view.events.map((event) => <EventCard key={event.id} event={event} />)
+        view.events.map((event) => (
+          <EventCard
+            key={event.id}
+            event={event}
+            onOpenArticle={onOpenArticle}
+            onOpenArc={onOpenArc}
+            onOpenTimeline={onOpenTimeline}
+            focused={event.id === focusEventId}
+            sectionRef={(el) => {
+              if (el) eventRefs.current.set(event.id, el)
+              else eventRefs.current.delete(event.id)
+            }}
+          />
+        ))
       )}
     </div>
   )
