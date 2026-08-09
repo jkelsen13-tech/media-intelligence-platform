@@ -1,6 +1,6 @@
 # MIP — Index and Governing Rules
 
-> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14. Phase 3 authorization and sequencing resolution folded in 2026-08-04. Graph Analysis Layer (G-ALG) status and CI regression folded in 2026-08-05. Source Comparison View (06C) build and auto-promotion reversal folded in 2026-08-07. Document 07 cross-surface ingestion canary folded in 2026-08-08. All governing rules, shared vocabulary, integration seams, and the execution contract are carried forward unchanged unless explicitly noted below.**
+> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14. Phase 3 authorization and sequencing resolution folded in 2026-08-04. Graph Analysis Layer (G-ALG) status and CI regression folded in 2026-08-05. Source Comparison View (06C) build and auto-promotion reversal folded in 2026-08-07. Document 07 cross-surface ingestion canary folded in 2026-08-08. 06C functional closure (live full-corpus write, three surfaced write-path repairs, key rotation) folded in 2026-08-09. All governing rules, shared vocabulary, integration seams, and the execution contract are carried forward unchanged unless explicitly noted below.**
 
 Always attach this document. Attach exactly one active working document with it.
 
@@ -17,7 +17,7 @@ Always attach this document. Attach exactly one active working document with it.
 | 02A_PHASE_1_AMENDMENTS | Spec amendments only | **Closed — verified** |
 | 02B_PHASE_2_PROVENANCE | Per-assertion provenance and explanation objects | **Closed — owner sign-off 2026-07-31** (read path live; 561 rows structurally blocked, see below) |
 | 02C_PHASE_3_LEGAL_POLICY | Policy lifecycle and curated legal-case layer | **Internal closed beta LIVE since 2026-08-05. Public release blocked pending existing gate.** |
-| 03_BACKLOG | Later features and captured ideas | Item 1 (Source Comparison View) — Batches 1–3 complete, functional closure pending (see 06C). Item 2 (Silence Detection Dashboard) — not started. |
+| 03_BACKLOG | Later features and captured ideas | Item 1 (Source Comparison View) — **CLOSED 2026-08-09** (see 06C). Item 2 (Silence Detection Dashboard) — not started. |
 | 04_TRACK_B_DESIGN | Light, open public-knowledge visual system | Step 1 authorized to run in parallel — deployment status still unconfirmed |
 | 07_DOC07_CALLAIS_CANARY | Cross-surface ingestion test corpus (Louisiana v. Callais) | **Canary ingestion COMPLETE 2026-08-08 (see 06D below). Extraction NOT authorized — separate checkpoint.** |
 | MIP_MASTER_PLAN | Consolidated owner reference | Archive, not an execution prompt |
@@ -34,7 +34,7 @@ Always attach this document. Attach exactly one active working document with it.
 
 ## Authoritative current checkpoint
 
-Checkpoint supplied by the owner: **2026-08-08** (supersedes 2026-08-05 checkpoint). Source Comparison View functional status and auto-promotion reversal added 2026-08-07. Document 07 canary completion added 2026-08-08.
+Checkpoint supplied by the owner: **2026-08-08** (supersedes 2026-08-05 checkpoint). Source Comparison View functional status and auto-promotion reversal added 2026-08-07. Document 07 canary completion added 2026-08-08. 06C functional closure added 2026-08-09 (see 06C section).
 
 ### Phase 0 — verified-closed
 
@@ -61,7 +61,7 @@ Article count discrepancy note superseded: count grew from 580 → 699 via a man
 - Explanation read path: implemented, integrated, live.
 - pg_cron: `mip-ingest-rss-daily` and `mip-backfill-legacy` both `active=false`.
 - Cron status (2026-08-09): both jobs remain `active=false` — confirmed unchanged by the 06C source-comparison work (dry-run/full-corpus test made zero cron mutations). Re-enabling `mip-ingest-rss-daily` is tracked as open thread (f) and requires explicit owner authorization before any `active=true` flip.
-- Core-table counts as of Document 07 canary close (2026-08-08): articles 728 (was 699 pre-canary; +29 from Doc 07 canary), edges 398, story_arcs 48, nodes 737, arc_entities 57, arc_events 67, arc_milestones 31, sources 336, citations 36, entities 924, article_entities 1490, explanations 581, bias_incidents 0. All non-articles counts confirmed unchanged by the canary's after-count discipline — the 29 new rows are inert pending extraction (see 06D).
+- Core-table counts as of Document 07 canary close (2026-08-08): articles 728 (was 699 pre-canary; +29 from Doc 07 canary), edges 398, story_arcs 48, nodes 737, arc_entities 57, arc_events 67, arc_milestones 31, sources 336, citations 36, entities 924, article_entities 1490, explanations 581, bias_incidents 0. All non-articles counts confirmed unchanged by the canary's after-count discipline — the 29 new rows are inert pending extraction (see 06D). **06C closure (2026-08-09) added 347 events / 839 claims / 898 article_claims / 413 event_articles and moved explanations 581 → 1892 (+1,311 sc-v1 rows, planned carve-out); the 12 core tables above verified zero-delta.**
 
 ### Phase 2 — gated items (require explicit owner authorization)
 
@@ -82,14 +82,18 @@ Article count discrepancy note superseded: count grew from 580 → 699 via a man
 
 *(Unchanged from 2026-08-05. CI regression CLOSED, both Golden regression suite and Deploy to GitHub Pages green on `b8a14a59`, byte-verified. G-ALG-0 and G-ALG-1 shipped and CI-confirmed. G-ALG-1's full functional verification — insert/reuse row check against production hashes using the live GRAPH_ANALYSIS_RUN_KEY — remains incomplete. Still requires the owner to invoke the function directly and hand K3 the resulting JSON. Not the same thing as CI passing.)*
 
-### 06C — Backlog Item 1: Source Comparison View
+### 06C — Backlog Item 1: Source Comparison View — CLOSED 2026-08-09
 
-Batches 1 (schema), 2 (pipeline), and 3 (UI) all complete and CI-verified as of 2026-08-07. Six new tables, seven pipeline_config keys, additive-only migration (74→80 tables). Deterministic-only clustering/extraction pipeline: 12/12 golden tests, 114/114 full suite. `d08f8c06` CI question (three consecutive red runs) diagnosed as GitHub runner starvation, not a real failure — confirmed clear on re-run (~20s).
+Batches 1 (schema), 2 (pipeline), and 3 (UI) code-complete and CI-verified 2026-08-07. Functional closure completed 2026-08-09: key set, full-corpus live write succeeded, populated UI owner-checked.
 
-Not yet functionally closed:
-1. `SOURCE_COMPARISON_RUN_KEY` still needs to be set in Supabase and source-comparison-run invoked (dry-run first) to populate the pipeline tables — currently empty, live UI shows the honest "no comparison events yet" empty state.
-2. A live visual/manual check of the populated UI (syndication collapse, thin-extraction chip, omission-vs-coverage_unknown styling) has not happened — Chow and Wells (Phase 3 fixtures) both got this check before being called closed; Batch 3 hasn't yet.
-3. Batch 4+ (if any further Source Comparison scope exists beyond initial build) awaits owner direction — current instruction on record is "holding at checkpoint."
+Live closure write (source-comparison-run v12, ezbr `85fee3d9…`, HTTP 200 in 59s): events 347 (19 multi-outlet), claims 839, article_claims 898, event_articles 413; explanations 581 → 1,892 (+1,311 sc-v1 rows: 413 event_membership + 898 claim_grouping — the planned carve-out). Zero-delta verified on the other 12 core tables. Sanity pulls passed, including a dedupe-winner spot check. CPU remediation shipped same day: tokenize hoist + Date cache in lib.js (behavior-preservation proven by byte-identical full-corpus output diff, sha256 `4de7046a…` both runs; 5.8× faster), which also retired the chunk-probe question — no worker ceiling remains at current corpus scale.
+
+Three latent write-path bugs surfaced and repaired during closure — all invisible until the first production-scale write because dry-runs never insert and CI never exercises the write path:
+1. article_claims unique-constraint violation — one article can legitimately contribute multiple distinct surface texts to one claim group. Fixed by insert-time dedupe in index.ts (Option A: highest extraction_confidence, tiebreak longer surface_text then lexical; explanations deduped with the identical winner set). lib.js untouched. Counts: article_claims 974→898, explanations 1,387→1,311.
+2. Rebuild cleanup `.in()` with hundreds of UUIDs exceeds the PostgREST URL ceiling — fixed by chunking all cleanup deletes/selects at 100 ids (commit `68c5ddfc`).
+3. `explanations_assertion_type_check` never extended for the 06C vocabulary — fixed by migration `20260809_extend_explanations_assertion_type_check` (commit `eca00157`, byte-verified, rollback documented in-file).
+
+**Process observation (standing):** staging/CI never exercises the production-scale write path; full-corpus dry-run plus at least one real write against a throwaway namespace is the only way this class of bug surfaces. Also on record: `syndicated_articles = 0` on the current corpus (verified two ways) — the syndication-collapse UI path is live but unfired; `syndicated_single_source` flags (57 claims) mean "single independent outlet," not wire collapse. `SOURCE_COMPARISON_RUN_KEY` rotated post-closure. Repair commits: `3991aea` (tokenize hoist; supersedes `cf32f75` which carried a transcription error caught by byte-verify before any deploy), `0d3c93ea` (dedupe), `68c5ddfc` (cleanup chunking), `eca00157` (constraint migration).
 
 ### 06D — Document 07: Callais Cross-Surface Ingestion Canary — NEW SECTION, 2026-08-08
 
@@ -119,8 +123,7 @@ Extraction — deliberately NOT authorized. Would run as backfill-legacy's scope
 
 ### Next authorized action
 
-Six open threads:
-- (a) Source Comparison View (06C) functional closure — set `SOURCE_COMPARISON_RUN_KEY`, invoke source-comparison-run (dry-run first), then a live visual check of the populated UI matching the Chow/Wells bar. Batch 4+ holding at checkpoint pending owner direction.
+Five open threads:
 - (b) G-ALG-1 full functional verification — insert/reuse row check against production hashes using the live GRAPH_ANALYSIS_RUN_KEY. Requires the owner to invoke the function directly (not paste the key into chat) and hand K3 the resulting JSON for verification. Unchanged from 2026-08-05.
 - (c) Document 07 extraction (06D) — attach 00_INDEX + 07_DOC07_CALLAIS_CANARY as its own dedicated session/checkpoint. Authorizes backfill-legacy scoped mode against `doc07-canary-2026-08-08` only. Do not bundle with other scope.
 - (d) Phase 3 (02C) continued build — attach 00_INDEX + 02C_PHASE_3_LEGAL_POLICY for any further Phase 3 work beyond what's already shipped and live internally. Unchanged.
@@ -140,7 +143,7 @@ No further database mutations, ingestion, cron activation, UI work, or scope exp
 - 02C Phase 3 — internal beta authorized, read path + beta UI shipped, CI-confirmed green, LIVE 2026-08-05
 - G-ALG-0 / G-ALG-1 — shipped, CI-confirmed green as of `b8a14a59`; functional verification (insert/reuse check) still pending owner action
 - CI regression fix — CLOSED 2026-08-05 (missing dependency + poisoned mirror registry + stale workflow assumption, all three root-caused and fixed)
-- 06C Source Comparison View — Batches 1–3 code-complete and CI-verified 2026-08-07; functional closure (key set, pipeline invoked, UI visually checked) still pending
+- 06C Source Comparison View — CLOSED 2026-08-09: live full-corpus write verified (347 events / 839 claims / 898 article_claims / 413 event_articles / +1,311 explanations), zero-delta on other 12 core tables, owner UI check passed, key rotated; three latent write-path bugs surfaced and repaired same day (dedupe Option A, cleanup chunking, assertion_type CHECK extension)
 - 06D Document 07 Callais canary — ingestion COMPLETE 2026-08-08, 29/29 rows verified row-level and count-matched; extraction deliberately held as separate checkpoint
 - 561 awaiting_review rows — structurally blocked on provenance-completeness backfill, not yet scoped
 - Backlog Item 2 (Silence Detection Dashboard) — not started
