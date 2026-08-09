@@ -1,6 +1,6 @@
 # MIP — Index and Governing Rules
 
-> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14. Phase 3 authorization and sequencing resolution folded in 2026-08-04. Graph Analysis Layer (G-ALG) status and CI regression folded in 2026-08-05. Source Comparison View (06C) build and auto-promotion reversal folded in 2026-08-07. Document 07 cross-surface ingestion canary folded in 2026-08-08. 06C functional closure (live full-corpus write, three surfaced write-path repairs, key rotation) folded in 2026-08-09. All governing rules, shared vocabulary, integration seams, and the execution contract are carried forward unchanged unless explicitly noted below.**
+> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14. Phase 3 authorization and sequencing resolution folded in 2026-08-04. Graph Analysis Layer (G-ALG) status and CI regression folded in 2026-08-05. Source Comparison View (06C) build and auto-promotion reversal folded in 2026-08-07. Document 07 cross-surface ingestion canary folded in 2026-08-08. 06C functional closure (live full-corpus write, three surfaced write-path repairs, key rotation) folded in 2026-08-09. Manual pre-demo ingest-rss runs (0801Z/0804Z) folded in 2026-08-09; core-table census verified live 2026-08-10. All governing rules, shared vocabulary, integration seams, and the execution contract are carried forward unchanged unless explicitly noted below.**
 
 Always attach this document. Attach exactly one active working document with it.
 
@@ -34,7 +34,7 @@ Always attach this document. Attach exactly one active working document with it.
 
 ## Authoritative current checkpoint
 
-Checkpoint supplied by the owner: **2026-08-08** (supersedes 2026-08-05 checkpoint). Source Comparison View functional status and auto-promotion reversal added 2026-08-07. Document 07 canary completion added 2026-08-08. 06C functional closure added 2026-08-09 (see 06C section).
+Checkpoint supplied by the owner: **2026-08-09** (supersedes 2026-08-08 checkpoint). Source Comparison View functional status and auto-promotion reversal added 2026-08-07. Document 07 canary completion added 2026-08-08. 06C functional closure added 2026-08-09 (see 06C section). Manual pre-demo ingest-rss runs (0801Z/0804Z) folded in 2026-08-09 (see census note below); census verified live 2026-08-10.
 
 ### Phase 0 — verified-closed
 
@@ -56,12 +56,12 @@ Checkpoint supplied by the owner: **2026-08-08** (supersedes 2026-08-05 checkpoi
 
 Article count discrepancy note superseded: count grew from 580 → 699 via a manual backfill the owner ran directly (erratum, not an unexplained discrepancy — the earlier "cause UNKNOWN" note is resolved).
 
-**Current flags and runtime state (updated 2026-08-08 post-canary):**
+**Current flags and runtime state (updated 2026-08-09 post ingest-rss runs; census verified live 2026-08-10):**
 - `pipeline_config.provenance_ui = true` — unchanged.
 - Explanation read path: implemented, integrated, live.
 - pg_cron: `mip-ingest-rss-daily` and `mip-backfill-legacy` both `active=false`.
 - Cron status (2026-08-09): both jobs remain `active=false` — confirmed unchanged by the 06C source-comparison work (dry-run/full-corpus test made zero cron mutations). Re-enabling `mip-ingest-rss-daily` is tracked as open thread (f) and requires explicit owner authorization before any `active=true` flip.
-- Core-table counts as of Document 07 canary close (2026-08-08): articles 728 (was 699 pre-canary; +29 from Doc 07 canary), edges 398, story_arcs 48, nodes 737, arc_entities 57, arc_events 67, arc_milestones 31, sources 336, citations 36, entities 924, article_entities 1490, explanations 581, bias_incidents 0. All non-articles counts confirmed unchanged by the canary's after-count discipline — the 29 new rows are inert pending extraction (see 06D). **06C closure (2026-08-09) added 347 events / 839 claims / 898 article_claims / 413 event_articles and moved explanations 581 → 1892 (+1,311 sc-v1 rows, planned carve-out); the 12 core tables above verified zero-delta.**
+- Core-table counts as of Document 07 canary close (2026-08-08): articles 728 (was 699 pre-canary; +29 from Doc 07 canary), edges 398, story_arcs 48, nodes 737, arc_entities 57, arc_events 67, arc_milestones 31, sources 336, citations 36, entities 924, article_entities 1490, explanations 581, bias_incidents 0. All non-articles counts confirmed unchanged by the canary's after-count discipline — the 29 new rows are inert pending extraction (see 06D). **06C closure (2026-08-09) added 347 events / 839 claims / 898 article_claims / 413 event_articles and moved explanations 581 → 1892 (+1,311 sc-v1 rows, planned carve-out); the 12 core tables above verified zero-delta.** **Two manual ingest-rss invocations (2026-08-09, pre-demo; 0801Z and 0804Z runs) moved articles 728 → 736 → 744 (+16), with the associated graph-layer deltas itemized in those two runs' verifier records: nodes 737 → 800, edges 398 → 450, story_arcs 48 → 50, arc_entities 57 → 69, arc_events 67 → 75, arc_milestones 31 → 39, sources 336 → 365, citations 36 → 37, entities 924 → 1011, article_entities 1490 → 1650; bias_incidents 0 (unchanged). Current census (verified live 2026-08-10): articles 744, nodes 800, edges 450, story_arcs 50, arc_entities 69, arc_events 75, arc_milestones 39, sources 365, citations 37, entities 1011, article_entities 1650, explanations 1892, bias_incidents 0.** **Doc 07 extraction remains NOT authorized and did not run: every post-2026-08-08 movement in nodes/edges/arc-layer counts traces to the two manual ingest-rss runs above and to the 06C source-comparison run — not to Doc 07 scoped extraction. The 06D authorization status is unchanged.**
 
 ### Phase 2 — gated items (require explicit owner authorization)
 
@@ -132,7 +132,7 @@ Five open threads:
 
 No further database mutations, ingestion, cron activation, UI work, or scope expansion beyond the selected item/document without explicit owner authorization.
 
-### Completed-work checklist (as of 2026-08-08)
+### Completed-work checklist (as of 2026-08-09)
 
 - Phase 0 (01) — all six tiers verified-closed, G1 golden suite passed at closure (47/47)
 - G2 shared uncertainty vocabulary — locked, owner-countersigned 2026-07-28
@@ -145,6 +145,7 @@ No further database mutations, ingestion, cron activation, UI work, or scope exp
 - CI regression fix — CLOSED 2026-08-05 (missing dependency + poisoned mirror registry + stale workflow assumption, all three root-caused and fixed)
 - 06C Source Comparison View — CLOSED 2026-08-09: live full-corpus write verified (347 events / 839 claims / 898 article_claims / 413 event_articles / +1,311 explanations), zero-delta on other 12 core tables, owner UI check passed, key rotated; three latent write-path bugs surfaced and repaired same day (dedupe Option A, cleanup chunking, assertion_type CHECK extension)
 - 06D Document 07 Callais canary — ingestion COMPLETE 2026-08-08, 29/29 rows verified row-level and count-matched; extraction deliberately held as separate checkpoint
+- Manual pre-demo ingest-rss runs (2026-08-09, 0801Z/0804Z) — articles 728 → 744 and graph-layer deltas itemized in the two runs' verifier records; folded into the census above
 - 561 awaiting_review rows — structurally blocked on provenance-completeness backfill, not yet scoped
 - Backlog Item 2 (Silence Detection Dashboard) — not started
 - Track B (04) — Step 1 authorized to run in parallel, deployment still not confirmed
