@@ -15,6 +15,16 @@
 //   x-source-comparison-key: <SOURCE_COMPARISON_RUN_KEY>
 // and refuses to run at all if the secret is not configured.
 // Body: {"dry_run": true} computes and returns stats without writing.
+//
+// Memory fix (owner-authorized 2026-08-09, WORKER_RESOURCE_LIMIT remediation):
+// the corpus reads are PAGED in id-ordered chunks instead of one unpaginated
+// select. A single full-corpus response (728+ articles incl. body_text +
+// embedding, 1490+ article_entities) exceeded the Edge Function worker's
+// resource ceiling (HTTP 546). body_text and embedding remain selected in
+// full: the pipeline genuinely requires them (syndication body-hash +
+// thin-extraction labeling; embedding-cosine clustering). Page size defaults
+// to SOURCE_COMPARISON_PAGE_SIZE env (fallback 100, clamped 1..1000) and may
+// be overridden per-invocation via body {"page_size": N} for ceiling probes.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { runPipeline, parseEmbedding, RULE_VERSION } from './lib.js'
@@ -26,6 +36,36 @@ function json(status: number, body: unknown) {
 }
 
 const ARTICLE_COLS = 'id,outlet,title,url,summary,body_text,published_at,claims,embedding,unattributed,monoculture,is_digest'
+const ENTITY_COLS = 'article_id,entity_id'
+
+function resolvePageSize(raw: unknown): number {
+  const env = Number(Deno.env.get('SOURCE_COMPARISON_PAGE_SIZE') ?? 100)
+  const fallback = Number.isFinite(env) && env > 0 ? Math.floor(env) : 100
+  const req = Number(raw)
+  const chosen = Number.isFinite(req) && req > 0 ? Math.floor(req) : fallback
+  return Math.max(1, Math.min(chosen, 1000))
+}
+
+// Paged read over a table using a total-order sort (no row can be skipped or
+// duplicated across pages). Accumulates the full result set; per-page response
+// bodies stay bounded, which is what keeps the worker under its memory ceiling.
+async function pagedSelect(
+  supabase: ReturnType<typeof createClient>,
+  table: string,
+  cols: string,
+  orderCols: string[],
+  pageSize: number,
+): Promise<{ data: any[] | null; error: { message: string } | null }> {
+  const out: any[] = []
+  for (let from = 0; ; from += pageSize) {
+    let q = supabase.from(table).select(cols)
+    for (const c of orderCols) q = q.order(c)
+    const { data, error } = await q.range(from, from + pageSize - 1)
+    if (error) return { data: null, error }
+    out.push(...(data || []))
+    if (!data || data.length < pageSize) return { data: out, error: null }
+  }
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json(405, { error: 'POST only' })
@@ -34,8 +74,10 @@ Deno.serve(async (req: Request) => {
   if (!expected) return json(503, { error: 'SOURCE_COMPARISON_RUN_KEY not configured; writer disabled' })
   if (req.headers.get('x-source-comparison-key') !== expected) return json(401, { error: 'unauthorized' })
 
-  let dryRun = false
-  try { dryRun = !!(await req.json())?.dry_run } catch { /* empty body = write run */ }
+  let body: any = {}
+  try { body = (await req.json()) || {} } catch { /* empty body = write run */ }
+  const dryRun = !!body?.dry_run
+  const pageSize = resolvePageSize(body?.page_size)
 
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
@@ -54,15 +96,15 @@ Deno.serve(async (req: Request) => {
     minSharedEntities: 2,
   }
 
-  const { data: articleRows, error: aErr } = await supabase.from('articles').select(ARTICLE_COLS)
+  const { data: articleRows, error: aErr } = await pagedSelect(supabase, 'articles', ARTICLE_COLS, ['id'], pageSize)
   if (aErr) return json(500, { error: `articles read failed: ${aErr.message}` })
-  const { data: entityPairs, error: eErr } = await supabase.from('article_entities').select('article_id,entity_id')
+  const { data: entityPairs, error: eErr } = await pagedSelect(supabase, 'article_entities', ENTITY_COLS, ['article_id', 'entity_id'], pageSize)
   if (eErr) return json(500, { error: `article_entities read failed: ${eErr.message}` })
 
   const articles = (articleRows || []).map((a: any) => ({ ...a, embedding: parseEmbedding(a.embedding) }))
   const plan = runPipeline(articles, entityPairs || [], cfg, lexicon)
 
-  const stats = { ...plan.stats, comparisons: undefined, comparison_sample: plan.stats.comparisons.slice(0, 5) }
+  const stats = { ...plan.stats, comparisons: undefined, comparison_sample: plan.stats.comparisons.slice(0, 5), page_size: pageSize }
   if (dryRun) return json(200, { dry_run: true, rule_version: RULE_VERSION, ...stats })
 
   // Rebuild: clear own sc-v1 namespace only, in dependency order.
