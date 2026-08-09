@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadTimeline } from '../lib/supabase'
 import { EDGE_WEIGHTS } from '../graph/theme'
 import '../styles/timeline.css'
@@ -25,7 +25,11 @@ function confidenceColor(score) {
   return `hsl(${hue}, 70%, 45%)`
 }
 
-export default function TimelineView() {
+// Doc 05 pairs 1–3: TimelineView accepts cross-window callbacks and a focus
+// key. focusEventKey is the 8-hex group suffix shared by an evt-/art- mirror
+// pair (i.e. the article id's first 8 hex chars) — the same key the dedup
+// groups on, so it always lands on the canonical card.
+export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [query, setQuery] = useState('')
@@ -34,6 +38,9 @@ export default function TimelineView() {
   // Expansion is keyed by node id, so collapsed/expanded context survives
   // page changes and filtering (Tier 4 acceptance).
   const [collapsed, setCollapsed] = useState(() => new Set())
+  const [pendingFocus, setPendingFocus] = useState(null)
+  const itemRefs = useRef(new Map())
+  const focusGuard = useRef(false)
 
   useEffect(() => {
     loadTimeline().then(setData).catch((err) => setError(err.message))
@@ -41,8 +48,32 @@ export default function TimelineView() {
 
   // New search/filter criteria always land on page 1; expansion state is kept.
   useEffect(() => {
+    if (focusGuard.current) {
+      focusGuard.current = false
+      return
+    }
     setPage(0)
   }, [query, linkFilter])
+
+  // Focus request from another window: clear search/filter, jump to the page
+  // containing the event, expand it, then scroll + highlight below.
+  useEffect(() => {
+    if (!focusEventKey || !data) return
+    const idx = data.events.findIndex((e) => (e.slug ?? '').slice(-8) === focusEventKey)
+    if (idx === -1) return
+    const key = data.events[idx].id ?? data.events[idx].slug
+    focusGuard.current = true
+    setQuery('')
+    setLinkFilter('any')
+    setPage(Math.floor(idx / PAGE_SIZE))
+    setCollapsed((prev) => {
+      if (!prev.has(key)) return prev
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
+    setPendingFocus(focusEventKey)
+  }, [focusEventKey, data])
 
   const { rows, total, suppressed } = useMemo(() => {
     if (!data) return { rows: [], total: 0, suppressed: 0 }
@@ -89,6 +120,21 @@ export default function TimelineView() {
     })
     return { rows: filtered, total: allRows.length, suppressed: data.suppressed ?? 0 }
   }, [data, query, linkFilter])
+
+  // Complete a pending focus once the focused row is rendered on this page.
+  useEffect(() => {
+    if (!pendingFocus) return
+    const row = rows.find((r) => (r.evt.slug ?? '').slice(-8) === pendingFocus)
+    if (!row) return
+    const el = itemRefs.current.get(row.key)
+    if (!el) return
+    focusGuard.current = false
+    setPendingFocus(null)
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('timeline-focused')
+    const t = setTimeout(() => el.classList.remove('timeline-focused'), 4000)
+    return () => clearTimeout(t)
+  }, [pendingFocus, rows])
 
   if (error) return <div className="notice error">Failed to load timeline: {error}</div>
   if (!data) return <div className="notice">Loading timeline…</div>
@@ -159,14 +205,49 @@ export default function TimelineView() {
       <ol className="timeline">
         {pageRows.map(({ evt, key, outbound, inbound }) => {
           const isCollapsed = collapsed.has(key)
+          // Doc 05 pairs 1–2: cross-window chips. Honest degradation — each
+          // chip renders only when its join resolved (arc_id / article_id
+          // non-null) and the destination callback exists.
+          const arcTitle = evt.arc_id ? data.arcTitles?.get(evt.arc_id) : null
+          const showArc = Boolean(evt.arc_id && onOpenArc)
+          const showArticle = Boolean(evt.article_id && onOpenArticle)
           return (
-            <li key={key} className="timeline-item">
+            <li
+              key={key}
+              className="timeline-item"
+              ref={(el) => {
+                if (el) itemRefs.current.set(key, el)
+                else itemRefs.current.delete(key)
+              }}
+            >
               <div className="timeline-marker" />
               <div className="timeline-card">
                 <div className="timeline-card-head">
                   <div>
                     <div className="timeline-date">{evt.occurred_at ?? 'undated'}</div>
                     <h3>{evt.label}</h3>
+                    {(showArc || showArticle) && (
+                      <div className="timeline-xlinks">
+                        {showArc && (
+                          <button
+                            type="button"
+                            className="timeline-xlink"
+                            onClick={() => onOpenArc(evt.arc_id)}
+                          >
+                            Story arc{arcTitle ? `: ${arcTitle}` : ''} →
+                          </button>
+                        )}
+                        {showArticle && (
+                          <button
+                            type="button"
+                            className="timeline-xlink"
+                            onClick={() => onOpenArticle(evt.article_id)}
+                          >
+                            Open in News Feed →
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
