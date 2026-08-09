@@ -247,9 +247,36 @@ export async function loadSourceComparisonView() {
   if (articleIds.length > 0) {
     const { data: articleRows } = await supabase
       .from('articles')
-      .select('id, outlet, title, url, published_at, claims, unattributed, monoculture, is_digest')
+      .select('id, outlet, title, url, published_at, claims, unattributed, monoculture, is_digest, arc_id')
       .in('id', articleIds)
     articlesById = new Map((articleRows ?? []).map((a) => [a.id, a]))
+  }
+
+  // Doc 05 pair 6 (Open Decision resolved 2026-08-10): LIVE JOIN —
+  // event_articles → articles.arc_id, resolved at read time. No backfill, no
+  // migration; events.arc_id stays NULL. Events whose member articles carry
+  // no arc_id get arcLinks: [] and render no chips (honest degradation).
+  const arcIds = [...new Set([...articlesById.values()].map((a) => a.arc_id).filter(Boolean))]
+  let arcTitleById = new Map()
+  let timelineKeyByArcId = new Map()
+  if (arcIds.length > 0) {
+    const [arcRes, nodeRes] = await Promise.all([
+      supabase.from('story_arcs').select('id, title').in('id', arcIds),
+      supabase.from('nodes').select('id, slug, arc_id').eq('type', 'event').in('arc_id', arcIds),
+    ])
+    if (!arcRes.error) arcTitleById = new Map((arcRes.data ?? []).map((a) => [a.id, a.title]))
+    if (!nodeRes.error) {
+      const nodes = nodeRes.data ?? []
+      // Prefer canonical evt- slugs over art- mirrors for the timeline focus
+      // key (the 8-hex group suffix is shared, so either lands correctly).
+      for (const preferEvt of [true, false]) {
+        for (const n of nodes) {
+          if (!n.arc_id || !n.slug || timelineKeyByArcId.has(n.arc_id)) continue
+          if (preferEvt !== (n.slug.startsWith('evt-'))) continue
+          timelineKeyByArcId.set(n.arc_id, n.slug.slice(-8))
+        }
+      }
+    }
   }
 
   // Explanation objects keyed by trailing article id
@@ -285,7 +312,14 @@ export async function loadSourceComparisonView() {
       }))
       // shared facts first, then unique claims; stable within class by canonical text
       .sort((a, b) => (a.classification === b.classification ? a.canonicalText.localeCompare(b.canonicalText) : a.classification === 'shared' ? -1 : 1))
-    return buildEventView(event, memberRows, { articlesById, claimViews })
+    // Pair 6: distinct arcs across this event's member articles (live join).
+    const eventArcIds = [...new Set(memberArticles.map((a) => a.arc_id).filter(Boolean))]
+    const arcLinks = eventArcIds.map((arcId) => ({
+      arcId,
+      title: arcTitleById.get(arcId) ?? null,
+      timelineKey: timelineKeyByArcId.get(arcId) ?? null,
+    }))
+    return { ...buildEventView(event, memberRows, { articlesById, claimViews }), arcLinks }
   })
 
   return { enabled: true, events: eventViews }
