@@ -60,6 +60,7 @@ Article count discrepancy note superseded: count grew from 580 → 699 via a man
 - `pipeline_config.provenance_ui = true` — unchanged.
 - Explanation read path: implemented, integrated, live.
 - pg_cron: `mip-ingest-rss-daily` and `mip-backfill-legacy` both `active=false`.
+- Cron status (2026-08-09): both jobs remain `active=false` — confirmed unchanged by the 06C source-comparison work (dry-run/full-corpus test made zero cron mutations). Re-enabling `mip-ingest-rss-daily` is tracked as open thread (f) and requires explicit owner authorization before any `active=true` flip.
 - Core-table counts as of Document 07 canary close (2026-08-08): articles 728 (was 699 pre-canary; +29 from Doc 07 canary), edges 398, story_arcs 48, nodes 737, arc_entities 57, arc_events 67, arc_milestones 31, sources 336, citations 36, entities 924, article_entities 1490, explanations 581, bias_incidents 0. All non-articles counts confirmed unchanged by the canary's after-count discipline — the 29 new rows are inert pending extraction (see 06D).
 
 ### Phase 2 — gated items (require explicit owner authorization)
@@ -118,12 +119,13 @@ Extraction — deliberately NOT authorized. Would run as backfill-legacy's scope
 
 ### Next authorized action
 
-Four open threads:
+Six open threads:
 - (a) Source Comparison View (06C) functional closure — set `SOURCE_COMPARISON_RUN_KEY`, invoke source-comparison-run (dry-run first), then a live visual check of the populated UI matching the Chow/Wells bar. Batch 4+ holding at checkpoint pending owner direction.
 - (b) G-ALG-1 full functional verification — insert/reuse row check against production hashes using the live GRAPH_ANALYSIS_RUN_KEY. Requires the owner to invoke the function directly (not paste the key into chat) and hand K3 the resulting JSON for verification. Unchanged from 2026-08-05.
 - (c) Document 07 extraction (06D) — attach 00_INDEX + 07_DOC07_CALLAIS_CANARY as its own dedicated session/checkpoint. Authorizes backfill-legacy scoped mode against `doc07-canary-2026-08-08` only. Do not bundle with other scope.
 - (d) Phase 3 (02C) continued build — attach 00_INDEX + 02C_PHASE_3_LEGAL_POLICY for any further Phase 3 work beyond what's already shipped and live internally. Unchanged.
 - (e) Track B Step 1 — deployment status still unconfirmed; needs verification before any token values are treated as deployed.
+- (f) ingest-rss cron re-enable — `mip-ingest-rss-daily` has been `active=false` since containment; re-enabling it is its own scoped action requiring explicit owner authorization (schedule confirmation, then post-enable first-run verification against the after-count discipline). Not bundled with any other thread; `mip-backfill-legacy` stays `active=false` under Rule 13 regardless.
 
 No further database mutations, ingestion, cron activation, UI work, or scope expansion beyond the selected item/document without explicit owner authorization.
 
