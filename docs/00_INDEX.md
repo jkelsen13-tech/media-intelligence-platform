@@ -1,19 +1,12 @@
 # MIP — Index and Governing Rules
 
-> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14** as the Index amendment
-> superseding the 2026-07-26 checkpoint. All governing rules, shared vocabulary,
-> integration seams, and the execution contract are carried forward unchanged
-> unless explicitly noted below.
+> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14. Phase 3 authorization and sequencing resolution folded in 2026-08-04. Graph Analysis Layer (G-ALG) status and CI regression folded in 2026-08-05. Source Comparison View (06C) build and auto-promotion reversal folded in 2026-08-07. Document 07 cross-surface ingestion canary folded in 2026-08-08. All governing rules, shared vocabulary, integration seams, and the execution contract are carried forward unchanged unless explicitly noted below.**
 
 Always attach this document. Attach exactly one active working document with it.
 
 ## Purpose and authority
 
-*(Unchanged from the 2026-07-26 Index.)* This is the permanent constitution for the
-Media Intelligence Platform build. The Index owns current status; if another document
-disagrees with the Index, the Index wins. Working documents own requirements and
-acceptance criteria for their scope. Working-document numbers are filenames, not
-project phases.
+*(Unchanged.)* This is the permanent constitution for the Media Intelligence Platform build. The Index owns current status; if another document disagrees with the Index, the Index wins. Working documents own requirements and acceptance criteria for their scope. Working-document numbers are filenames, not project phases.
 
 ## Working documents
 
@@ -22,316 +15,131 @@ project phases.
 | 00_INDEX | Governing rules, shared vocabulary, integration seams, current checkpoint | Always attach |
 | 01_PHASE_0_REPAIR | Correctness repair and regression protection | **Closed — verified** |
 | 02A_PHASE_1_AMENDMENTS | Spec amendments only | **Closed — verified** |
-| 02B_PHASE_2_PROVENANCE | Per-assertion provenance and explanation objects | **Closed — owner sign-off 2026-07-31** (read path live with provenance_ui=true; 567 rows awaiting human review as post-closure work) |
-| 02C_PHASE_3_LEGAL_POLICY | Policy lifecycle and curated legal-case layer | Waiting |
-| 03_BACKLOG | Later features and captured ideas | Waiting |
-| 04_TRACK_B_DESIGN | Light, open public-knowledge visual system | Step 1 may run in parallel; all other steps gated |
+| 02B_PHASE_2_PROVENANCE | Per-assertion provenance and explanation objects | **Closed — owner sign-off 2026-07-31** (read path live; 561 rows structurally blocked, see below) |
+| 02C_PHASE_3_LEGAL_POLICY | Policy lifecycle and curated legal-case layer | **Internal closed beta LIVE since 2026-08-05. Public release blocked pending existing gate.** |
+| 03_BACKLOG | Later features and captured ideas | Item 1 (Source Comparison View) — Batches 1–3 complete, functional closure pending (see 06C). Item 2 (Silence Detection Dashboard) — not started. |
+| 04_TRACK_B_DESIGN | Light, open public-knowledge visual system | Step 1 authorized to run in parallel — deployment status still unconfirmed |
+| 07_DOC07_CALLAIS_CANARY | Cross-surface ingestion test corpus (Louisiana v. Callais) | **Canary ingestion COMPLETE 2026-08-08 (see 06D below). Extraction NOT authorized — separate checkpoint.** |
 | MIP_MASTER_PLAN | Consolidated owner reference | Archive, not an execution prompt |
 
 ## Governing rules
 
-*(Unchanged: rules 1–12 carry forward verbatim — Phase 0 priority; one active scope
-per run; combined shared-screen work; verify actual content; diagnose→fix→adversarial
-gate pipeline; byte-verify every push; no success by absence; no silent connector
-loops; failed calls may have side effects; every positive control is temporary; do
-not advance while a gate is pending; byte and database state outrank progress
-narration.)*
+*(Unchanged: rules 1–14 carry forward verbatim — Phase 0 priority; one active scope per run; combined shared-screen work; verify actual content; diagnose→fix→adversarial gate pipeline; byte-verify every push; no success by absence; no silent connector loops; failed calls may have side effects; every positive control is temporary; do not advance while a gate is pending; byte and database state outrank progress narration; legacy write-path caution (Rule 13); Index reconciliation discipline (Rule 14).)*
 
 ## Shared uncertainty vocabulary
 
-*(Unchanged. Locked under G2 — see `docs/G2_DECISION_LOG.md` and
-`docs/UNCERTAINTY_VOCABULARY.md`, owner-countersigned 2026-07-28. Six dimensions:
-source reliability, evidence strength, authentication, relationship type, review
-status, remaining uncertainty. Missing evidence is not contradicting evidence.)*
+*(Unchanged. Locked under G2 — owner-countersigned 2026-07-28. Six dimensions: source reliability, evidence strength, authentication, relationship type, review status, remaining uncertainty. Missing evidence is not contradicting evidence.)*
 
 ---
 
 ## Authoritative current checkpoint
 
-Checkpoint supplied by the owner: **2026-07-29** (supersedes 2026-07-26 ET / 2026-07-27 database date).
-Data checkpoint advanced to **2026-08-03 UTC** by the owner-directed manual catch-up ingestion
-(gap 2026-07-30 22:47 UTC → 2026-08-03 18:56 UTC; see "Catch-up ingestion (manual, gap period)" below).
-Crons were NOT re-enabled.
+Checkpoint supplied by the owner: **2026-08-08** (supersedes 2026-08-05 checkpoint). Source Comparison View functional status and auto-promotion reversal added 2026-08-07. Document 07 canary completion added 2026-08-08.
 
 ### Phase 0 — verified-closed
 
-All six items verified, including Tier 3 gate round 3 (independent adversarial gate
-against the r5-amended r4 constraint — passed), Item 4 (timeline UX/dedup),
-Item 5 (state/interaction bugs), and Item 6 (duplicate Iran actor node —
-migration `20260728015537_tier6_iran_actor_dedup`; backups
-`nodes_tier6_iran_backup_20260728`, `edges_tier6_iran_backup_20260728`).
-Live constraint: `public.edges.edges_causal_evidence_guard` (r4 form + r5 amid fix),
-`convalidated=true`. Golden regression suite G1: **47/47 PASS**.
+*(Unchanged. All six items verified. G1 golden suite: 47/47 PASS at time of Phase 0 closure — historical figure only; do not assume still true without a fresh run.)*
 
 ### G2 — locked
 
-Shared uncertainty vocabulary locked and owner-countersigned 2026-07-28
-(`docs/G2_DECISION_LOG.md`, `docs/UNCERTAINTY_VOCABULARY.md`,
-`docs/UNCERTAINTY_LEGACY_MAPPING.md`, fixture `tests/golden/fixtures/uncertainty_vocabulary.json`).
+*(Unchanged. Shared uncertainty vocabulary locked and owner-countersigned 2026-07-28.)*
 
 ### Phase 1 (02A) — verified-closed
 
-Closure record: `docs/PHASE_1_CLOSURE_RECORD.md` (closure commit `e3d28ad5`,
-2026-07-28). Amendment A (no composite legal alignment percentage; six independent
-dimensions) — APPROVED. Amendment B (Sky Verification → Probabilistic Location
-Corroboration) — APPROVED. Spec HEAD `54b32f0c`, byte-verified, 10-file change set.
-No production behavior change; golden suite 47/47.
+*(Unchanged. Closure commit `e3d28ad5`, 2026-07-28.)*
 
 ### Phase 2 (02B) — CLOSED (owner sign-off 2026-07-31)
 
-Completed steps:
-- Schema migration `20260728142816_explanations_schema` (canonical explanation object;
-  unique partial index `explanations_one_current_per_assertion`; CHECK-constrained
-  enum vocabulary).
-- D3 evidence capture: migration `20260728145132_evidence_capture_columns`; ingest-rss
-  v22 deployed (7 scoped evidence-capture hunks; r5 guard inputs unchanged; HEAD
-  `c23bb71a` byte-verified). Applies only to ingestion after 2026-07-28.
-- **D2 = 3a sample backfill (2026-07-29): 15 explanation rows — 5 edges,
-  5 arc assignments, 5 classifications, `rule_version='d2-3a-sample-backfill-r1'`,
-  machine / awaiting_review, explicit missing states, idempotent (verified re-run = 0
-  inserts). Owner-accepted as a bounded owner-review artifact only.**
-  Full scope, field mappings, enum vocabulary, and verification evidence:
-  `verifier/v1/D2_SAMPLE_SCOPE_AND_RULES.md` and `verifier/runs/2026-07-29_*.md`.
-- **Full D2 explanations backfill (owner-authorized 2026-07-29): complete and
-  verified — 579 explanation rows, 0 duplicate current assertion_ids, all
-  machine / awaiting_review with explicit missing states.**
-- **D4/D5 database enforcement (2026-07-29): migration
-  `20260806_d4_d5_enforcement` — publication-guard trigger on
-  `public.explanations` (D4 layer 1), `public.source_change_events` audit table,
-  and `mark_source_change` propagation function (D5). Applied; fixtures passed;
-  no production data change. Migration-timestamp reconciliation completed.**
-- **Read-path eligibility layer (2026-07-29): `src/lib/explanationEligibility.js`
-  (D4 layer 2 predicate, commit `cdfe8ec1`) and integration read path
-  `src/lib/explanationReadPath.js` (commit `0eb526ed`), each byte-verified.
-  Test suite 63/63; build green.**
-- **Read-path enablement (owner-authorized and verified 2026-07-29):
-  `provenance_ui` flipped false → true (only mutation). Post-enable smoke tests
-  passed 14/14 through the real read path against the live database. Owner
-  reviewed the live site with `provenance_ui=true` and accepted the behavior.
-  No rollback required. All 579 explanations remain excluded pending human
-  review: 543 rows have state=insufficient_evidence, 36 have state=ok, all 579
-  have review_status=awaiting_review, 0 are published, and all 579 remain
-  blocked by an explicit `missing:` falsification condition (corrected
-  2026-07-29; previously misreported as "36 under_review").**
-  Evidence: `verifier/runs/2026-07-29_flag_enable_run1.md`,
-  `verifier/runs/2026-07-29_read_path_integration_run1.md`,
-  `verifier/runs/2026-07-29_scope_reconciliation_0eb526ed.md`.
-- **D4/D5 enforcement erratum and gap record (2026-07-30):** read-only verification
-  confirmed D4 Layer 1 (trigger `explanations_publication_guard`, enabled) and D5
-  (`mark_source_change` + `source_change_events`, 0 invocations) are live; D4 Layer 2
-  read-path exclusion confirmed in code; counts re-verified identical pre/post.
-  Both recorded gaps are now CLOSED (see the two bullets below). See
-  `docs/PASS2_CLOSURE_ERRATUM_2026-07-30.md`.
-- **D4 rejection-audit (2026-07-30): CLOSED.** Migration
-  `20260730030709 d4_rejection_audit` — `publication_rejection_audit` table and
-  `publish_explanation(uuid, text)` SECURITY DEFINER wrapper; fixtures proved audit
-  persistence after rejected publish attempts. Repo commit `8a0b080a`, byte-verified.
-- **D5 automatic source-side trigger (2026-07-30): CLOSED.** Migration
-  `20260730150925 d5_article_source_trigger` — `articles.source_status` marking
-  fields (active/corrected/withdrawn, plus changed-at and note columns) and a
-  BEFORE UPDATE trigger that fires only on transitions into corrected/withdrawn and
-  delegates to `mark_source_change`. Owner decision Q1-a: explanations whose
-  review_status is withdrawn are skipped from mutation (never requeued) but are
-  recorded in the audit payload (linked / mutated / skipped-withdrawn ids and
-  counts). 11/11 acceptance fixtures passed, including withdrawn-row preservation,
-  no-auto-republish composition with the D4 guard, atomicity, and zero-residue
-  cleanup. Repo commit `c2e9cc1d`, byte-verified. New pre-migration backup
-  `articles_pre_d5_backup_20260730` (572 rows) retained — do not drop.
-- **CI repair (2026-07-30):** commit `6838e7f6` — golden vocabulary-drift false
-  positive (a Pass 2 fixture identifier read as a vocabulary level token) fixed by
-  minimal documentation rewording; golden suite 63/63 locally; GitHub Actions green
-  at HEAD.
-- **Phase 2 final acceptance fixtures (owner-authorized 2026-07-31, Item 6): ALL
-  FOUR PASS.**
-  1. Missing-provenance block: fixture row (state=insufficient_evidence, no
-     supporting_passage / falsification_condition) rejected by the live
-     `explanations_publication_guard` trigger on both UPDATE-to-published and
-     INSERT-as-published paths (exact D4 exception). Zero-count cleanup proven.
-  2. Corrected-source propagation (D5 end-to-end): ordinary UPDATE of a fixture
-     article to source_status='corrected' fired the live automatic
-     `articles_source_status_d5_propagate` trigger (no manual mark_source_change
-     call); linked explanation moved to awaiting_review / source_corrected with
-     correction-history entry, control untouched, `source_change_events` audit row
-     recorded actor='system:auto-trigger' (linked=1, mutated=1, skipped=0).
-     Fixture rows and audit record deleted; zero-count cleanup proven
-     (581 explanations / 580 articles / 0 events restored).
-  3. Accessibility alternative: did not exist; BUILT — `src/graph/EdgeList.jsx`
-     (keyboard/screen-reader relationship table mirroring canvas filters, opening
-     the same EdgeEvidence dialog) + `src/graph/edge-list.css` + App.jsx toggle
-     wiring. HEAD `360f0484`, byte-verified (index.css restored byte-exact to
-     pre-run original after a same-day self-corrected placeholder-push incident);
-     clean npm install + build PASS. Website version 79c1bd1.
-  4. Feature-flag rollback test (live flip, owner-authorized): pre-check
-     confirmed both crons active=false and no autonomous edge-function
-     invocation path; provenance_ui flipped true -> false -> true (~2 min
-     window). While disabled: explanations counts identical (581/579/42/0
-     published) — legacy read posture restored (read path skips fetch when
-     flag != true), zero provenance data loss; flag safely restored to true.
-  Evidence: `verifier/runs/2026-07-31_item6_fixtures_1_to_3.md`,
-  `verifier/runs/2026-07-31_item6_fixture4_rollback_test.md`.
-  The manual 5/5/5 review was already CLOSED by Pass 2 (2026-07-30) and was not
-  re-run.
+*(Unchanged core build. See reversal below for the one live-state change.)*
 
-Current flags and runtime state:
-- `pipeline_config.provenance_ui = true` — **owner-authorized 2026-07-29, verified,
-  live-site review accepted.** Rollback on record: set value back to `false`.
-- `pipeline_config.auto_promotion` — record of the 2026-08-03 Part A pass
-  (threshold, rule, rows_promoted=8). `pipeline_config.auto_verified_revert` —
-  revert switch with documented no-data-loss revert SQL.
-- Explanation read path: implemented, integrated, and live; serves only
-  presentation-eligible explanations (currently none — 0 published rows).
-- pg_cron: `mip-ingest-rss-daily` and `mip-backfill-legacy` both `active=false`;
-  active crons = 0.
-- Core-table counts at checkpoint: articles 699, edges 398
-  (320 actor / 77 sequence / 1 constrained_by / 0 causal), story_arcs 48,
-  nodes 737, arc_entities 57; explanations 581 total / 579 current.
-  (Counts updated 2026-08-03 UTC after the manual catch-up ingestion below;
-  the 2026-08-03 reconciliation that established articles=580 is retained under
-  "Housekeeping and owner decisions — 2026-08-03".)
-  Pass 2 closure checkpoint (owner-accepted 2026-07-30): state ok=42,
-  insufficient_evidence=533, source_unavailable=4; review_status reviewed=10,
-  withdrawn=2, awaiting_review=567; published=0; duplicate current
-  assertion_ids=0; backups `explanations_pass2_backup_20260730` (579 rows),
-  `edges_pass2_a2_backup_20260730` (1 row), and
-  `articles_pre_d5_backup_20260730` (572 rows) retained — do not drop.
-  Convention: the withdrawn Pass 2 row (assertion
-  `edge:53c4b62b-f10c-4fdb-86fc-7d5d06a40bb3`) retains state=source_unavailable
-  (source_unavailable=4 is correct, not 3).
+**Post-closure update — REVERSED 2026-08-07.** The 2026-08-03 auto-promotion pass (8 of 579 explanation rows promoted to `auto_verified` at evidence_strength ≥ 0.75) was reversed on 2026-08-07 on the owner's explicit direction. All 8 rows demoted back to `awaiting_review`. Current live state: **0 rows auto_verified.** Manual review is still not the chosen path either. Reversal rationale was not recorded in the 2026-08-07 session — carry forward from the 2026-08-06 session record if the specific rationale is needed later.
 
-### Housekeeping and owner decisions — 2026-08-03
+Article count discrepancy note superseded: count grew from 580 → 699 via a manual backfill the owner ran directly (erratum, not an unexplained discrepancy — the earlier "cause UNKNOWN" note is resolved).
 
-Index reconciliation (documentation correction only; no data mutation). The
-"Core-table counts at checkpoint" line above misrecorded articles as 572; live
-verification on 2026-08-03 (fresh count, not assumed) confirms **articles = 580**.
-Delta = +8 rows, all with `fetched_at` in hour 2026-07-30 22:00 UTC. The previously
-suspected cause (migration `20260729075130 review_batch_20260729_checkpoint`,
-applied 2026-07-29 07:51 UTC) is **NOT confirmed** — the 8 rows did not exist at
-migration time. Actual trigger: **UNKNOWN** (both pg_crons remain `active=false`;
-no ingestion was authorized after 2026-07-28).
-
-- **Decision A — Phase 3 (Legal) sequencing (owner, 2026-08-03).** Per Working
-  Document 03's deferred sequencing decision: Legal/Policy (02C) remains fully
-  deferred — not started, not scoped further — until the owner is ready to pursue
-  public launch and has engaged independent legal review. Source Comparison View
-  and Silence Detection Dashboard (backlog items 1 and 2) are promoted ahead of
-  Legal and may be scoped as working documents once selected. This resolves the
-  "deferred owner decision" note in 03_BACKLOG in favor of option 2 (public
-  comparison tools move earlier; Legal remains internal/deferred).
-- **Decision B — Phase 2 human-review approach (owner, 2026-08-03).** Per 02B's
-  Phase 2 final acceptance, the owner has decided against manual one-by-one review
-  of the 567 awaiting_review explanation rows. In its place: a lightweight,
-  non-calibrated auto-promotion pass (02B-ADD Part A) plus a community-flagging
-  feature deferred until an account pipeline exists (02B-ADD Part B). Full manual
-  review is explicitly out of scope going forward; this is a permanent process
-  change, not a one-time exception.
-
-**02B-ADD Part A auto-promotion pass (owner-authorized 2026-08-03): EXECUTED and
-verified.** Rule applied: `evidence_strength >= 0.75` read as the existing stored
-per-assertion value `story_arcs.category_confidence` (the only per-assertion 0–1
-evidence-strength value in the model; G2 legacy mapping row 29) AND the underlying
-arc confirmed live at promotion time. Single reviewed batch, not a background job.
-- Migration `auto_verified_status_and_promotion_flag`: `auto_verified` added to the
-  `review_status` CHECK as a distinct value (never conflated with `reviewed`);
-  pre-mutation backup `explanations_pre_auto_verified_backup_20260803` (8 rows);
-  pipeline_config keys `auto_promotion` (pass record) and `auto_verified_revert`
-  (revert switch + documented no-data-loss revert SQL).
-- **8 classification rows promoted** awaiting_review → auto_verified (audit entry
-  appended to each row's correction_history). 0 rows published; D4 publication
-  guard trigger and function definition byte-identical pre/post; duplicate current
-  assertion_ids = 0.
-- Band verification (owner challenge): join integrity 40/40 classification rows
-  (source_ids[1] == assertion arc); full pool distribution 0.95×3, 0.80×2, 0.75×3
-  (promoted), 0.60×4, 0.45×11, 0.30×1, null×8 — nearest miss 0.60, so 8 is the
-  complete eligible set, not a filtering artifact. Edge/arc_assignment pools
-  contribute zero: their only state=ok rows (6) are already human-reviewed; the
-  529 awaiting insufficient_evidence rows are a provenance-completeness problem,
-  unreachable by any confidence threshold.
-- Counts after pass: review_status awaiting_review=561, auto_verified=8,
-  reviewed=10, withdrawn=2, published=0 (total 581 / 579 current).
-- UI: Review status panel (`src/panels/ReviewStatusPanel.jsx`, flag-gated read
-  path only) renders `auto_verified` ("Auto-verified — system confidence
-  threshold (not human-reviewed)", system tone) visually distinct from `reviewed`
-  ("Reviewed — human confirmed", human tone); badge vocabulary exported from
-  `src/lib/explanationEligibility.js`. Test suite 67/67 (4 new pins); build green.
-  Repo commits `fea1f9be`, `ff336bc0`, `4e555926` (last is a same-day
-  self-corrected transcription fix, caught by byte-verification); all five files
-  byte-verified against local hash-object. Website version c689247.
-- Sample for owner spot-check: all 8 promoted rows (assertion IDs +
-  category_confidence + live-arc check) in the run evidence bundle
-  (`verifier/runs/2026-08-03_*.md` in the housekeeping handoff bundle).
-
-### Catch-up ingestion (manual, gap period) — 2026-08-03 UTC
-
-Owner-directed catch-up ingestion covering the gap since the crons were paused.
-**This was a manual, observed set of runs of the deployed ingest-rss function
-(v24) — NOT a resumed daily cron. Both crons remain `active=false`.**
-- Coverage: 2026-07-30 22:47 UTC (confirmed last ingestion, from
-  max(articles.fetched_at) — not assumed) through 2026-08-03 18:56 UTC.
-- Method: 18 sequential manual invocations of ingest-rss via net.http_post
-  (identical call to the cron command), each observed; run 18 returned
-  ingested=0 (feeds exhausted; skippedExisting=111).
-- Result: +119 articles (580 → 699), +8 story_arcs (40 → 48),
-  +26 edges (372 → 398; +10 sequence, +16 actor, 0 causal, 0 constrained_by),
-  +34 nodes (703 → 737), +8 arc_entities (49 → 57). Explanations unchanged
-  (581 / 579 current; 0 auto-promotions from this run).
-- Verification (all PASS): preflight matched the Index (crons off, baseline
-  counts, Tier 3 guard `edges_causal_evidence_guard` live in r4+r5 form,
-  ingest-rss v24 ≥ v22 with D3 evidence capture); G1 golden suite 67/67;
-  Tier 6 duplicate check 0 duplicate actor labels, 0 duplicate arc titles;
-  0 HTML artifacts; monitors within thresholds (unattached 73.5% < 85,
-  arc_max 36 < 72, fallback titles 0, unsupported causal 0);
-  explanations internally consistent (561 awaiting + 10 reviewed +
-  8 auto_verified + 2 withdrawn = 581; states 42/533/6 = 581).
-- Evidence: `verifier/v1/BASELINE.md`, `verifier/runs/2026-08-04_ingest_run*.md`,
-  `verifier/runs/2026-08-04_post_ingest_verification.md` (catch-up handoff bundle).
-- **Deviation noted:** newly ingested assertions did NOT receive explanation
-  rows. The D3 evidence-capture path (arc_assignment_evidence,
-  metadata.evidence_passage) ran and captured, but no deployed mechanism
-  auto-creates explanation rows for new assertions (the 581 existing rows came
-  from the bounded D2 backfill). Whether to backfill explanations for the new
-  assertions is an owner decision; nothing was auto-promoted.
-- **Residual gap:** the CNN feed (rss.cnn.com) was unreachable in all 6
-  attempts (TLS handshake eof from the edge runtime); CNN gap-period items are
-  not ingested. Any fix (feed URL or function change) is out of scope here and
-  awaits owner direction.
-- **Open observations (non-blocking):** two weak-entity bridge clusters from
-  this run — "Nolan Smith — criminal prosecution" includes an unrelated
-  Netflix-host article, and "West Ham — misconduct case" includes an unrelated
-  BBC-presenter article. Both produced sequence-only edges (no causal claims);
-  the rules ran as designed (hub-entity filter is computed pre-run). Flagged
-  for owner review; no thresholds changed.
+**Current flags and runtime state (updated 2026-08-08 post-canary):**
+- `pipeline_config.provenance_ui = true` — unchanged.
+- Explanation read path: implemented, integrated, live.
+- pg_cron: `mip-ingest-rss-daily` and `mip-backfill-legacy` both `active=false`.
+- Core-table counts as of Document 07 canary close (2026-08-08): articles 728 (was 699 pre-canary; +29 from Doc 07 canary), edges 398, story_arcs 48, nodes 737, arc_entities 57, arc_events 67, arc_milestones 31, sources 336, citations 36, entities 924, article_entities 1490, explanations 581, bias_incidents 0. All non-articles counts confirmed unchanged by the canary's after-count discipline — the 29 new rows are inert pending extraction (see 06D).
 
 ### Phase 2 — gated items (require explicit owner authorization)
 
-1. ~~Phase 2 final acceptance fixtures~~ — CLOSED 2026-07-31: all four remaining
-   fixtures PASS (missing-provenance block, corrected-source propagation,
-   accessibility alternative, feature-flag rollback test); the manual 5/5/5
-   review closed earlier via Pass 2 (2026-07-30). OWNER SIGN-OFF GIVEN
-   2026-07-31: Phase 2 is formally CLOSED.
-2. ~~Human review of the 567 awaiting_review explanation rows~~ — SUPERSEDED
-   2026-08-03 by Decision B (auto-promotion pass per 02B-ADD Part A replaces
-   manual one-by-one review; permanent process change). Part A pass EXECUTED
-   2026-08-03 — see the housekeeping entry above.
-3. Open observations (non-blocking): 40 of 209 distinct explanation source_ids
-   resolve to no live source row (orphaned references; content retained in
-   archived_sources) — provenance-hygiene item; backup-table RLS posture decision
-   deferred by the owner (do not drop or secure backups yet).
-4. Phase 3 (02C) legal/policy work — not started; sequencing resolved 2026-08-03
-   by Decision A (remains fully deferred until public-launch readiness and
-   independent legal review; Source Comparison View and Silence Detection
-   Dashboard promoted ahead of Legal).
+1. Phase 2 final acceptance fixtures — CLOSED 2026-07-31.
+2. Human review of the 567 awaiting_review explanation rows — SUPERSEDED 2026-08-03, then that supersession itself REVERSED 2026-08-07 (see above). Current live state: 0 rows auto-promoted; manual review still not chosen. 561 rows remain structurally blocked pending a future provenance-completeness backfill (not yet scoped).
+3. Open observations (non-blocking): unchanged — 40 of 209 distinct explanation source_ids resolve to no live source row; backup-table RLS posture decision still deferred.
+4. Phase 3 (02C) legal/policy work — RESOLVED 2026-08-04 (unchanged).
+
+### 02C Phase 3 — internal beta, LIVE
+
+*(Unchanged from 2026-08-05. `phase3_beta=true`, both fixtures verified live, `phase3_public` confirmed false. Public release remains blocked pending the existing public-release gate — independent legal review, privacy/minor-protection review, owner signoff.)*
+
+### 06A — Extraction microservice Step 0
+
+*(Unchanged — COMPLETE 2026-08-04, deployed and verified.)*
+
+### 06B — Graph Analysis Layer (G-ALG) and CI regression
+
+*(Unchanged from 2026-08-05. CI regression CLOSED, both Golden regression suite and Deploy to GitHub Pages green on `b8a14a59`, byte-verified. G-ALG-0 and G-ALG-1 shipped and CI-confirmed. G-ALG-1's full functional verification — insert/reuse row check against production hashes using the live GRAPH_ANALYSIS_RUN_KEY — remains incomplete. Still requires the owner to invoke the function directly and hand K3 the resulting JSON. Not the same thing as CI passing.)*
+
+### 06C — Backlog Item 1: Source Comparison View
+
+Batches 1 (schema), 2 (pipeline), and 3 (UI) all complete and CI-verified as of 2026-08-07. Six new tables, seven pipeline_config keys, additive-only migration (74→80 tables). Deterministic-only clustering/extraction pipeline: 12/12 golden tests, 114/114 full suite. `d08f8c06` CI question (three consecutive red runs) diagnosed as GitHub runner starvation, not a real failure — confirmed clear on re-run (~20s).
+
+Not yet functionally closed:
+1. `SOURCE_COMPARISON_RUN_KEY` still needs to be set in Supabase and source-comparison-run invoked (dry-run first) to populate the pipeline tables — currently empty, live UI shows the honest "no comparison events yet" empty state.
+2. A live visual/manual check of the populated UI (syndication collapse, thin-extraction chip, omission-vs-coverage_unknown styling) has not happened — Chow and Wells (Phase 3 fixtures) both got this check before being called closed; Batch 3 hasn't yet.
+3. Batch 4+ (if any further Source Comparison scope exists beyond initial build) awaits owner direction — current instruction on record is "holding at checkpoint."
+
+### 06D — Document 07: Callais Cross-Surface Ingestion Canary — NEW SECTION, 2026-08-08
+
+Not previously tracked in the Index (Document 07 postdates the 2026-08-05 version). Cross-surface ingestion test using real coverage of the Louisiana v. Callais Supreme Court ruling (April 29, 2026) and downstream redistricting effects, capped at 300 articles shared across all tracks.
+
+Infrastructure (completed same session):
+- Migration `add_pre_ruling_tag_columns_to_articles` applied: `is_pre_ruling` + `different_causal_chain`, both boolean not null default false, zero backfill writes to existing 699 rows. Byte-hashed, rollback documented pre-apply, verified live in information_schema.
+- batch-intake v2 deployed (commit `c5b39e69`) — schema accepts both flags; byte-verified remote vs. local; redeployed as version 3, ACTIVE, independently read back and matching.
+- Canary manifest: 29 rows finalized — 8 pre-ruling / 21 post-ruling, 14 news_wire / 16 advocacy_legal. Every URL confirmed. A livestream excluded as non-ingestible (not counted in the 29). Two additional approving sources (PILF, HEP/ALEC) added via a manifest-only balance pass, explicitly not a standing universe change. Date floor extended to 2025-10-14 (oral reargument day). `BATCH_INTAKE_RUN_KEY` set directly in Supabase by the owner, value never shared in chat — confirmed only via the 503→401 gate flip. Rotation recommended since the raw curl command (with key placeholder) did pass through chat text; the key value itself never appeared in any artifact.
+
+Ingestion — COMPLETE 2026-08-08:
+- Attempt 1 (full 25-item payload, i.e. non-holdback rows): hit WORKER_RESOURCE_LIMIT mid-loop (sequential embedding computation). 13 rows had already committed (all 8 PRE + 5 post) before the crash — confirmed via read-only check before any retry. Recovery via `allow_append: true` on the same run tag, two batches of 6: 13 → 19 → 25. Zero invalid/duplicate/error rows.
+- Lesson recorded and binding for future manifests: batch-intake's sequential embedding loop has a practical ceiling of ~13 articles per invocation. Chunk all future manifests at ≤10 per call.
+- 4 holdbacks (AL-07, AL-08, NW-03, AL-10) held pending owner review of the 25-row results — reviewed and authorized. Fresh live-table pre-check confirmed 0 of 4 present before insert. Inserted as one chunk of 4 (`allow_append: true`, same tag). 200, inserted: 4, zero errors.
+
+Verification (full row-level, not aggregate-only, both passes):
+- 29/29 rows present; outlet, published_at, flags cross-checked field-by-field against the manifest payload — zero mismatches.
+- 8 pre-ruling rows: is_pre_ruling=true AND different_causal_chain=true, all 8. 21 post-ruling rows: both false, all 21. Zero flag leakage either direction — including specifically checked on the 4 holdbacks, which sit adjacent to the tagged PRE rows.
+- 29/29 have embeddings and body_text — the mid-crash partial write left no half-formed rows.
+- After-count vs. pre-canary baseline: articles 699→728 (+29) ✓; tagged 0→29 (single run tag `doc07-canary-2026-08-08`) ✓; is_pre_ruling=true exactly 8 ✓; different_causal_chain=true exactly 8 ✓. All downstream counts unchanged: story_arcs 48, nodes 737, edges 398, sources 336, citations 36, entities 924, article_entities 1490, arc_entities 57, arc_events 67, arc_milestones 31, explanations 581, bias_incidents 0.
+
+Disclosures on record: 4 rows carry headline-derived summaries (NW-08, NW-09, PRE-NW-04, PRE-AL-02 — retrieval failures, disclosed); one mid-May placeholder date resolved to 2026-05-15; outlet reference table gained new resolve-or-create rows (PILF, HEP/ALEC, Common Cause, CLC, WAFB, NOLA, etc.) — designed ingest-rss behavior, not a baseline deviation.
+
+Current live state: All 29 rows are RAW/INERT. They are visible in the News feed (default "All" view queries articles directly, no arc/extraction filter) as bare articles — outlet chip, date, headline, summary, full-text search. Expanding one shows "None extracted," "No citations extracted," no arc badge. Invisible everywhere else — Arcs, Graph, Timeline, node panels all read story_arcs / nodes / edges / citations, confirmed untouched by the after-count. Live DB check: 0 of 29 have arc_id, entities_extracted_at, claims, or citations.
+
+Extraction — deliberately NOT authorized. Would run as backfill-legacy's scoped mode (`?run=doc07-canary-2026-08-08`): entity extraction → claims/citation extraction → Tier-1 cosine arc assignment (existing-arc attachment or new-arc origination, with hub-entity exclusion / min-shared-entity / similarity floor / anti-snowball gates). This is the step that would move nodes/edges/sources/citations/entities/arc_* counts and make the Callais material appear in Arcs/Graph/Timeline. Explicitly held as its own separate checkpoint/session, not bundled into ingestion. Caution on record: scoped mode is the safe path; the `?reset=1` path wipes the entire arc layer and is not part of any proposal.
 
 ### Next authorized action
 
-Phase 2 formally CLOSED by owner sign-off 2026-07-31. Housekeeping run of
-2026-08-03 complete (Index reconciliation, Decisions A/B recorded, 02B-ADD Part A
-executed). Next scope awaits owner selection among:
-(a) owner spot-check/acceptance of the 8 auto-verified rows (sample in the
-    housekeeping evidence bundle) and any revert decision via
-    `pipeline_config.auto_verified_revert`;
-(b) one of the three needs-source-first rows (row identifiers per
-    02B_PHASE_2_PROVENANCE);
-(c) scoping Source Comparison View or Silence Detection Dashboard as a working
-    document (promoted ahead of Legal per Decision A).
-No further database mutations, ingestion, cron activation, UI work, or Phase 3
-work without explicit owner authorization.
+Four open threads:
+- (a) Source Comparison View (06C) functional closure — set `SOURCE_COMPARISON_RUN_KEY`, invoke source-comparison-run (dry-run first), then a live visual check of the populated UI matching the Chow/Wells bar. Batch 4+ holding at checkpoint pending owner direction.
+- (b) G-ALG-1 full functional verification — insert/reuse row check against production hashes using the live GRAPH_ANALYSIS_RUN_KEY. Requires the owner to invoke the function directly (not paste the key into chat) and hand K3 the resulting JSON for verification. Unchanged from 2026-08-05.
+- (c) Document 07 extraction (06D) — attach 00_INDEX + 07_DOC07_CALLAIS_CANARY as its own dedicated session/checkpoint. Authorizes backfill-legacy scoped mode against `doc07-canary-2026-08-08` only. Do not bundle with other scope.
+- (d) Phase 3 (02C) continued build — attach 00_INDEX + 02C_PHASE_3_LEGAL_POLICY for any further Phase 3 work beyond what's already shipped and live internally. Unchanged.
+- (e) Track B Step 1 — deployment status still unconfirmed; needs verification before any token values are treated as deployed.
+
+No further database mutations, ingestion, cron activation, UI work, or scope expansion beyond the selected item/document without explicit owner authorization.
+
+### Completed-work checklist (as of 2026-08-08)
+
+- Phase 0 (01) — all six tiers verified-closed, G1 golden suite passed at closure (47/47)
+- G2 shared uncertainty vocabulary — locked, owner-countersigned 2026-07-28
+- Phase 1 (02A) — spec amendments approved, closure commit `e3d28ad5`
+- Phase 2 (02B) — provenance/explanation object built, owner sign-off 2026-07-31
+- Phase 2 post-closure — auto-promotion executed 2026-08-03, then reversed 2026-08-07 (0 rows currently auto_verified)
+- 06A — Cloud Run extraction microservice Step 0, deployed and verified
+- 02C Phase 3 — internal beta authorized, read path + beta UI shipped, CI-confirmed green, LIVE 2026-08-05
+- G-ALG-0 / G-ALG-1 — shipped, CI-confirmed green as of `b8a14a59`; functional verification (insert/reuse check) still pending owner action
+- CI regression fix — CLOSED 2026-08-05 (missing dependency + poisoned mirror registry + stale workflow assumption, all three root-caused and fixed)
+- 06C Source Comparison View — Batches 1–3 code-complete and CI-verified 2026-08-07; functional closure (key set, pipeline invoked, UI visually checked) still pending
+- 06D Document 07 Callais canary — ingestion COMPLETE 2026-08-08, 29/29 rows verified row-level and count-matched; extraction deliberately held as separate checkpoint
+- 561 awaiting_review rows — structurally blocked on provenance-completeness backfill, not yet scoped
+- Backlog Item 2 (Silence Detection Dashboard) — not started
+- Track B (04) — Step 1 authorized to run in parallel, deployment still not confirmed
