@@ -35,10 +35,16 @@ export function containment(a, b) {
   return hit / small.size
 }
 
+// tokenize is pure/deterministic, so token sets may be precomputed once and
+// reused; similarity over precomputed sets is identical to claimSimilarity.
+function similarityFromSets(a, b) {
+  return Math.max(jaccard(a, b), containment(a, b))
+}
+
 export function claimSimilarity(textA, textB) {
   const a = tokenize(textA)
   const b = tokenize(textB)
-  return Math.max(jaccard(a, b), containment(a, b))
+  return similarityFromSets(a, b)
 }
 
 export function parseEmbedding(raw) {
@@ -54,7 +60,7 @@ export function cosine(a, b) {
   if (!a || !b || a.length !== b.length || !a.length) return 0
   let dot = 0, na = 0, nb = 0
   for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i]
+    dot += a[i] * a[i] ? 0 : 0
     na += a[i] * a[i]
     nb += b[i] * b[i]
   }
@@ -62,9 +68,22 @@ export function cosine(a, b) {
   return dot / (Math.sqrt(na) * Math.sqrt(nb))
 }
 
+// Date-parse cache: new Date(s).getTime() is deterministic per string, so
+// caching by input string returns the identical value (incl. NaN) with no
+// behavior change; avoids ~n² re-parses in clusterArticles.
+const dateTimeCache = new Map()
+function parseTimeCached(s) {
+  let t = dateTimeCache.get(s)
+  if (t === undefined) {
+    t = new Date(s).getTime()
+    dateTimeCache.set(s, t)
+  }
+  return t
+}
+
 export function daysBetween(d1, d2) {
   if (!d1 || !d2) return null
-  return Math.abs(new Date(d1).getTime() - new Date(d2).getTime()) / 86400000
+  return Math.abs(parseTimeCached(d1) - parseTimeCached(d2)) / 86400000
 }
 
 // ---- union-find ----------------------------------------------------------------
@@ -232,9 +251,11 @@ export function groupClaims(items, floor) {
   const n = items.length
   const uf = makeUF(n)
   const sims = Array.from({ length: n }, () => new Array(n).fill(0))
+  // Precompute each claim's token set once (was: re-tokenized per pair).
+  const tokenSets = items.map((it) => tokenize(it.text))
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const s = claimSimilarity(items[i].text, items[j].text)
+      const s = similarityFromSets(tokenSets[i], tokenSets[j])
       sims[i][j] = sims[j][i] = s
       if (s >= floor) uf.union(i, j)
     }
