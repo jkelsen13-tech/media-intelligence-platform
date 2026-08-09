@@ -66,7 +66,7 @@ test('round trip: graphToRows preserves ids and whitelisted attributes', () => {
   assert.equal(byId['evt-alpha'].confidence, 65)
   for (const e of edges) {
     for (const key of Object.keys(e)) {
-      assert.ok(['id', 'source', 'target', ...EDGE_ATTRIBUTES].includes(key), `unexpected edge attribute ${key}`)
+      assert.ok(['id', 'source_id', 'target_id', ...EDGE_ATTRIBUTES].includes(key), `unexpected edge attribute ${key}`)
     }
   }
 })

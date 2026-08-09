@@ -16,7 +16,7 @@
 import Graph from 'graphology'
 
 export const NODE_ATTRIBUTES = Object.freeze(['id', 'slug', 'label', 'type', 'arc_id', 'confidence', 'occurred_at'])
-export const EDGE_ATTRIBUTES = Object.freeze(['id', 'source', 'target', 'type', 'signal_source', 'doc_strength', 'reliability', 'similarity'])
+export const EDGE_ATTRIBUTES = Object.freeze(['id', 'source_id', 'target_id', 'type', 'signal_source', 'doc_strength', 'reliability', 'similarity'])
 
 function pick(row, keys) {
   const out = {}
@@ -30,7 +30,7 @@ function pick(row, keys) {
  * Build a Graphology DirectedGraph from node and edge rows.
  *
  * @param {Array<object>} nodeRows - rows with at least an `id`.
- * @param {Array<object>} edgeRows - rows with `source` and `target` node ids.
+ * @param {Array<object>} edgeRows - rows with `source_id` and `target_id` node ids.
  * @returns {{ graph: Graph, droppedEdges: Array<object> }}
  *   droppedEdges lists edges referencing unknown endpoints (they are excluded
  *   from the model, never silently re-pointed) so callers can audit them.
@@ -52,11 +52,11 @@ export function buildGraphModel(nodeRows, edgeRows) {
   }
   const droppedEdges = []
   for (const row of edgeRows ?? []) {
-    if (row == null || row.source == null || row.target == null) continue
-    const source = String(row.source)
-    const target = String(row.target)
+    if (row == null || row.source_id == null || row.target_id == null) continue
+    const source = String(row.source_id)
+    const target = String(row.target_id)
     if (!graph.hasNode(source) || !graph.hasNode(target)) {
-      droppedEdges.push({ id: row.id ?? null, source, target, reason: 'unknown-endpoint' })
+      droppedEdges.push({ id: row.id ?? null, source_id: source, target_id: target, reason: 'unknown-endpoint' })
       continue
     }
     const key = row.id != null ? String(row.id) : undefined
@@ -75,6 +75,6 @@ export function buildGraphModel(nodeRows, edgeRows) {
  */
 export function graphToRows(graph) {
   const nodes = graph.mapNodes((id, attrs) => ({ id, ...attrs }))
-  const edges = graph.mapEdges((key, attrs, source, target) => ({ id: key, source, target, ...attrs }))
+  const edges = graph.mapEdges((key, attrs, source, target) => ({ id: key, source_id: source, target_id: target, ...attrs }))
   return { nodes, edges }
 }

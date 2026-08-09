@@ -97,8 +97,8 @@ test('canonical rows: sorted stably and key-ordered at every depth', () => {
   }
   const edges = canonicalEdgeRows(fx.edges)
   for (let i = 1; i < edges.length; i++) {
-    const prev = `${edges[i - 1].source}${edges[i - 1].target}${edges[i - 1].id ?? ''}`
-    const cur = `${edges[i].source}${edges[i].target}${edges[i].id ?? ''}`
+    const prev = `${edges[i - 1].source_id}${edges[i - 1].target_id}${edges[i - 1].id ?? ''}`
+    const cur = `${edges[i].source_id}${edges[i].target_id}${edges[i].id ?? ''}`
     assert.ok(prev.localeCompare(cur) <= 0, 'edge rows not stably sorted')
   }
 })

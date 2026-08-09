@@ -12,11 +12,11 @@
 // the stable contract shipped in G-ALG-0 and must never change:
 //   - rows reduced to whitelisted model attributes;
 //   - object keys sorted lexicographically at every depth;
-//   - rows sorted by id (nodes) and by (source, target, id) (edges);
+//   - rows sorted by id (nodes) and by (source_id, target_id, id) (edges);
 //   - undefined values dropped, null preserved.
 
 export const NODE_ATTRIBUTES = Object.freeze(['id', 'slug', 'label', 'type', 'arc_id', 'confidence', 'occurred_at'])
-export const EDGE_ATTRIBUTES = Object.freeze(['id', 'source', 'target', 'type', 'signal_source', 'doc_strength', 'reliability', 'similarity'])
+export const EDGE_ATTRIBUTES = Object.freeze(['id', 'source_id', 'target_id', 'type', 'signal_source', 'doc_strength', 'reliability', 'similarity'])
 
 export const LAYOUT_ALGORITHM = 'phyllotaxis-seed'
 export const LAYOUT_ALGORITHM_VERSION = '1.0.0'
@@ -55,9 +55,9 @@ export function canonicalEdgeRows(edgeRows) {
     .map((r) => pickDefined(r, EDGE_ATTRIBUTES))
     .map(canonicalize)
     .sort((a, b) => {
-      const s = String(a.source).localeCompare(String(b.source))
+      const s = String(a.source_id).localeCompare(String(b.source_id))
       if (s !== 0) return s
-      const t = String(a.target).localeCompare(String(b.target))
+      const t = String(a.target_id).localeCompare(String(b.target_id))
       if (t !== 0) return t
       return String(a.id ?? '').localeCompare(String(b.id ?? ''))
     })

@@ -12,7 +12,7 @@
 //   - rows reduced to their whitelisted model attributes
 //     (src/analysis/graphModel.js NODE_ATTRIBUTES / EDGE_ATTRIBUTES);
 //   - object keys sorted lexicographically at every depth;
-//   - rows sorted by id (nodes) and by (source, target, id) (edges);
+//   - rows sorted by id (nodes) and by (source_id, target_id, id) (edges);
 //   - undefined values dropped, null preserved, numbers via JSON.stringify.
 //
 // Uses node:crypto (tests + any future Node-side writer). Browser consumers
@@ -49,15 +49,15 @@ export function canonicalNodeRows(nodeRows) {
     .sort((a, b) => String(a.id).localeCompare(String(b.id)))
 }
 
-/** Canonical edge rows: whitelisted attributes, sorted by (source, target, id). */
+/** Canonical edge rows: whitelisted attributes, sorted by (source_id, target_id, id). */
 export function canonicalEdgeRows(edgeRows) {
   return (edgeRows ?? [])
     .map((r) => pickDefined(r, EDGE_ATTRIBUTES))
     .map(canonicalize)
     .sort((a, b) => {
-      const s = String(a.source).localeCompare(String(b.source))
+      const s = String(a.source_id).localeCompare(String(b.source_id))
       if (s !== 0) return s
-      const t = String(a.target).localeCompare(String(b.target))
+      const t = String(a.target_id).localeCompare(String(b.target_id))
       if (t !== 0) return t
       return String(a.id ?? '').localeCompare(String(b.id ?? ''))
     })
