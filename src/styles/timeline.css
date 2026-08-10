@@ -203,3 +203,108 @@
     height: 44px;
   }
 }
+
+/* 04-ADD Step 3 Addendum — Arc-Grouped Timeline (additive; flat view styles
+   above are untouched). Accent-removal rule: every semantic marker here is
+   labeled TEXT (Start/End/Ongoing/Status/Category/UNCLASSIFIED), never
+   color-only meaning. */
+
+.timeline-arc-section {
+  margin: 1.5rem 0 2rem;
+  padding: 0 0 0.5rem;
+  border-top: 2px solid var(--border, #374151);
+}
+
+.timeline-arc-header h3 {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 1.15rem;
+}
+
+.timeline-arc-title {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent, #60a5fa);
+  cursor: pointer;
+  text-align: left;
+}
+
+.timeline-arc-title:hover {
+  text-decoration: underline;
+}
+
+.timeline-arc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem;
+  align-items: center;
+}
+
+/* Text-badge chips: meaning is carried by the words themselves, legible
+   with all accent color removed (Track B accent-removal test). */
+.timeline-badge-text {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border, #4b5563);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text, #e5e7eb);
+  background: transparent;
+}
+
+.timeline-unclassified .timeline-arc-header h3::after {
+  content: '';
+}
+
+.timeline-unclassified-note {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted, #9ca3af);
+  max-width: 60ch;
+}
+
+.timeline-range-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.timeline-range-filters input,
+.timeline-range-filters select {
+  background: var(--panel, #111827);
+  color: var(--text, #e5e7eb);
+  border: 1px solid var(--border, #374151);
+  border-radius: 6px;
+  padding: 0.3rem 0.45rem;
+  font: inherit;
+}
+
+.timeline-count-error {
+  color: #f87171;
+}
+
+@media (max-width: 720px) {
+  .timeline-range-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .timeline-range-filters input,
+  .timeline-range-filters select {
+    min-height: 44px;
+  }
+}
+
+/* 04-ADD: flat/grouped timeline mode toggle (flag-gated; rendered by
+   App.jsx on the timeline tab, where this stylesheet is always loaded). */
+.timeline-mode-toggle {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem 0;
+}
