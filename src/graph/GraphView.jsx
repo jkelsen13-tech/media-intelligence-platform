@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import cytoscape from 'cytoscape'
 import fcose from 'cytoscape-fcose'
 import { graphStylesheet } from './styles'
 import PanJoystick from './PanJoystick'
 import { seedPositions } from '../analysis/layoutSeed'
+import { splitByConnectivity, placeDisconnectedBand } from './bandPlacement'
 
 cytoscape.use(fcose)
 
@@ -39,7 +40,7 @@ function edgeSim(edge) {
 // cross-arc edges are held long so arcs separate into clusters.
 function idealEdgeLength(edge) {
   const sim = edgeSim(edge)
-  return sameArc(edge) ? 70 + (1 - sim) * 40 : 260
+  return sameArc(edge) ? 70 + (1 - sim) * 40 : 320
 }
 
 // Strong springs inside an arc, weak springs across arcs. Cross-arc
@@ -61,14 +62,14 @@ function fcoseOptions({ firstRun, positions }) {
     ...(positions ? { positions } : {}),
     animate: true,
     animationDuration: firstRun ? 800 : 600,
-    nodeRepulsion: () => 8000,
+    nodeRepulsion: () => 12000,
     idealEdgeLength,
     edgeElasticity,
     gravity: 0.25,
     numIter: firstRun ? 2500 : 1200,
     packComponents: true,
     fit: firstRun,
-    padding: 60,
+    padding: 80,
   }
 }
 
@@ -158,9 +159,20 @@ export default function GraphView({
 }) {
   const containerRef = useRef(null)
   const gridRef = useRef(null)
+  const bandLabelRef = useRef(null)
   const cyRef = useRef(null)
 
   useEffect(() => {
+    // Track B Step 2: zero-edge (fully disconnected) nodes are NOT part of
+    // the fcose element set — they would otherwise be component-packed into
+    // the connected cluster and read as noise. fcose lays out the connected
+    // nodes only; singletons are then placed deterministically in a
+    // peripheral band (positional grouping only, no fabricated edges).
+    const { connected, disconnected } = splitByConnectivity(nodes, edges)
+    const runBand = disconnected.length > 0 && connected.length > 0
+    const connectedIds = new Set(connected.map((n) => String(n.id ?? n.slug)))
+    const bandIds = disconnected.map((n) => ({ id: String(n.id ?? n.slug), arc_id: n.arc_id }))
+
     const cy = cytoscape({
       container: containerRef.current,
       style: graphStylesheet,
@@ -172,12 +184,16 @@ export default function GraphView({
           data: { ...e, inferred: e.claimed_by === 'MIP_inferred' },
         })),
       },
-      layout: fcoseOptions({
-        firstRun: true,
-        positions: deterministicLayoutRequested()
-          ? seedPositions(nodes.map((n) => String(n.id ?? n.slug)))
-          : undefined,
-      }),
+      // With a band, the constructor layout is a no-op preset; fcose runs
+      // manually on the connected collection below.
+      layout: runBand
+        ? { name: 'preset' }
+        : fcoseOptions({
+            firstRun: true,
+            positions: deterministicLayoutRequested()
+              ? seedPositions(nodes.map((n) => String(n.id ?? n.slug)))
+              : undefined,
+          }),
       minZoom: 0.2,
       maxZoom: 3,
       // Tier 5: cytoscape never sees wheel events (they are intercepted in
@@ -218,6 +234,86 @@ export default function GraphView({
       })
     }
     graphContainer.addEventListener('wheel', onWheelZoom, { passive: false, capture: true })
+
+    // --- Track B Step 2: fcose on connected nodes; singleton band after ---
+    // The band-placement layoutstop handler is registered BEFORE the
+    // declutter section's captureRest handler, so rest positions are
+    // captured only after band positions are set (never mid-flight).
+    const updateBandLabel = () => {
+      const el = bandLabelRef.current
+      if (!el) return
+      if (!runBand) {
+        el.style.display = 'none'
+        return
+      }
+      // Anchor the label above the band's top-left node, in rendered px.
+      let minX = Infinity
+      let minY = Infinity
+      cy.nodes().forEach((n) => {
+        if (connectedIds.has(n.id())) return
+        const p = n.position()
+        if (p.x < minX) minX = p.x
+        if (p.y < minY) minY = p.y
+      })
+      if (!Number.isFinite(minX)) {
+        el.style.display = 'none'
+        return
+      }
+      const zoom = cy.zoom()
+      const pan = cy.pan()
+      el.style.display = 'block'
+      el.style.transform = `translate(${minX * zoom + pan.x}px, ${minY * zoom + pan.y - 34}px)`
+    }
+
+    if (runBand) {
+      const connEles = cy
+        .nodes()
+        .filter((n) => connectedIds.has(n.id()))
+        .union(cy.edges())
+      // fit:false here — the layout's own end-of-run fit would only cover
+      // connEles and would override the full fit (cluster + band) that the
+      // layoutstop handler performs after band placement.
+      const connOpts = {
+        ...fcoseOptions({
+          firstRun: true,
+          positions: deterministicLayoutRequested()
+            ? seedPositions(connected.map((n) => String(n.id ?? n.slug)))
+            : undefined,
+        }),
+        fit: false,
+      }
+      cy.one('layoutstop', () => {
+        const bb = cy
+          .nodes()
+          .filter((n) => connectedIds.has(n.id()))
+          .boundingBox()
+        const aspect = cy.width() / Math.max(1, cy.height())
+        // Cap the band's span so the full graph (cluster + gap + band)
+        // still fits when the fit-zoom clamps at minZoom. Landscape caps
+        // band height; portrait caps band width.
+        const minZoom = cy.minZoom()
+        const maxRows = Math.floor(
+          (cy.height() / minZoom - (bb.y2 - bb.y1) - 220) / 48,
+        )
+        const maxCols = Math.floor(
+          (cy.width() / minZoom - (bb.x2 - bb.x1) - 220) / 48,
+        )
+        const placed = placeDisconnectedBand(bandIds, {
+          clusterBox: { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2, w: bb.w, h: bb.h },
+          aspect,
+          maxRows,
+          maxCols,
+        })
+        placed.forEach((p, id) => {
+          const node = cy.getElementById(id)
+          if (node.nonempty()) node.position(p)
+        })
+        updateBandLabel()
+        cy.fit(undefined, 80)
+      })
+      connEles.layout(connOpts).run()
+    }
+    cy.on('zoom pan resize', updateBandLabel)
 
     // --- C3: grid layer, synced to viewport changes ---
     const gridCanvas = gridRef.current
@@ -404,8 +500,17 @@ export default function GraphView({
     // Drag perturbs, never pins: when a node is released, reheat the
     // simulation from current positions so the graph settles again.
     // Nodes are never locked (no node.lock(), no autolock).
+    // Band singletons are excluded from reheats the same way they are
+    // excluded from the first layout (they are not in connEles), so a
+    // drag can never scatter the band.
     cy.on('dragfree', 'node', () => {
-      cy.layout(fcoseOptions({ firstRun: false })).run()
+      const eles = runBand
+        ? cy
+            .nodes()
+            .filter((n) => connectedIds.has(n.id()))
+            .union(cy.edges())
+        : cy.elements()
+      eles.layout(fcoseOptions({ firstRun: false })).run()
     })
 
     // §4.4: the article panel shrinks the canvas container (flex), so the
@@ -464,7 +569,7 @@ export default function GraphView({
     const timer = setTimeout(() => {
       cy.resize()
       cy.animate(
-        { fit: { eles: cy.elements(), padding: 60 } },
+        { fit: { eles: cy.elements(), padding: 80 } },
         { duration: prefersReducedMotion() ? 0 : 300, easing: 'ease-out' },
       )
     }, 60)
@@ -481,15 +586,21 @@ export default function GraphView({
     const center = { x: width / 2, y: height / 2 }
     if (e.key === '+' || e.key === '=') {
       e.preventDefault()
-      cy.zoom({ level: Math.min(cy.maxZoom(), cy.zoom() * 1.2), renderedPosition: center })
+      cy.zoom({ level: Math.min(cy.maxZoom(), Math.max(cy.minZoom(), cy.zoom() * 1.2)), renderedPosition: center })
     } else if (e.key === '-' || e.key === '_') {
       e.preventDefault()
       cy.zoom({ level: Math.max(cy.minZoom(), cy.zoom() / 1.2), renderedPosition: center })
     } else if (e.key === '0') {
       e.preventDefault()
-      cy.fit(undefined, 60)
+      cy.fit(undefined, 80)
     }
   }
+
+  // Count for the band label text (the effect owns actual placement).
+  const disconnectedCount = useMemo(
+    () => splitByConnectivity(nodes, edges).disconnected.length,
+    [nodes, edges],
+  )
 
   return (
     <div className="graph-canvas-wrap">
@@ -502,6 +613,14 @@ export default function GraphView({
         aria-label="Knowledge graph canvas. Plus and minus keys zoom, zero fits the graph."
         onKeyDown={onGraphKeyDown}
       />
+      <div
+        ref={bandLabelRef}
+        className="graph-band-label"
+        style={{ display: 'none' }}
+        aria-hidden="true"
+      >
+        No documented connections ({disconnectedCount})
+      </div>
       <PanJoystick cyRef={cyRef} dimmed={joystickDimmed} />
     </div>
   )
