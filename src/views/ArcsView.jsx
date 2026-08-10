@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadArcs, loadArcDetail, loadArcArticles } from '../lib/supabase'
+import { filterArcs } from '../lib/listFilters'
 
 // Story Arcs (concept doc §2.5): persistent longitudinal tracking through a
 // story's full consequence arc. Arc panel = status indicator, milestone
@@ -154,6 +155,18 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
   // Mobile (<1024px): the list is full-width and selecting an arc pushes a
   // full-screen detail view. Desktop keeps the split-pane and ignores this.
   const [pushed, setPushed] = useState(false)
+  // Sidebar search (2026-08-10): same pattern as the News Feed search bar —
+  // 350ms debounce, trimmed query, client-side substring filter over the
+  // already-loaded arc rows (title + category). No data refetch.
+  const [arcQuery, setArcQuery] = useState('')
+  const [debouncedArcQuery, setDebouncedArcQuery] = useState('')
+  const arcDebounceRef = useRef(null)
+
+  useEffect(() => {
+    clearTimeout(arcDebounceRef.current)
+    arcDebounceRef.current = setTimeout(() => setDebouncedArcQuery(arcQuery.trim()), 350)
+    return () => clearTimeout(arcDebounceRef.current)
+  }, [arcQuery])
 
   useEffect(() => {
     loadArcs()
@@ -177,6 +190,14 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
   const selected = useMemo(
     () => arcs?.find((a) => a.slug === selectedSlug) ?? null,
     [arcs, selectedSlug],
+  )
+
+  // Filter affects only which rows the sidebar renders — selection and the
+  // detail panel keep working against the full arc list, so a selected arc
+  // is never unmounted by narrowing the search.
+  const visibleArcs = useMemo(
+    () => (arcs ? filterArcs(arcs, debouncedArcQuery, categoryLabel) : []),
+    [arcs, debouncedArcQuery],
   )
 
   useEffect(() => {
@@ -224,7 +245,18 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
           Longitudinal tracking — stories followed through their full consequence arc, not their
           coverage arc.
         </p>
-        {arcs.map((arc) => {
+        <input
+          className="news-search"
+          type="search"
+          placeholder="Search arcs by title or category…"
+          value={arcQuery}
+          onChange={(e) => setArcQuery(e.target.value)}
+          aria-label="Search story arcs"
+        />
+        {visibleArcs.length === 0 && (
+          <p className="arcs-sub">No arcs match “{debouncedArcQuery}”.</p>
+        )}
+        {visibleArcs.map((arc) => {
           // Derived status is the real signal; fall back to the stored
           // column only for data shapes that predate derivation (demo data
           // without it). No derivable status => no dot.
