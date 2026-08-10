@@ -73,6 +73,24 @@
       "expectEdge": "causal",
       "expectSignalSource": "citation",
       "expectLabel": "cited development in arc"
+    },
+    {
+      "name": "causal_no_shared_entity",
+      "text": "The port closed as a result of the Houthis attack on shipping.",
+      "sharedEntities": [],
+      "rootTitle": null,
+      "expectEdge": null,
+      "note": "explicit causal language WITHOUT a shared resolved entity: shipped causalEvidence returns null (refs loop finds nothing), no edge created — the E2 gate-round-3 control; the pre-repair harness wrongly returned the phrase when refs was empty"
+    },
+    {
+      "name": "causal_entity_outside_window",
+      "text": "Zimbabwe markets rallied weeks ago in Harare. Trading continued normally across the region with volumes steady. Trading continued normally across the region with volumes steady. Trading continued normally across the region with volumes steady. Trading continued normally across the region with volumes steady. The port closed as a result of the Houthis attack on shipping.",
+      "sharedEntities": [
+        "Zimbabwe"
+      ],
+      "rootTitle": null,
+      "expectEdge": null,
+      "note": "shared entity present in text but OUTSIDE the ±150-char window around the causal phrase — shipped returns null"
     }
   ],
   "guardCases": [

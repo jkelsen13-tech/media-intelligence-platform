@@ -143,6 +143,20 @@ test('behavioral: phrases NOT in the deployed alternation stay admitted (no over
   }
 })
 
+test('shipped causalEvidence returns NULL when no qualifying ref (E2 gate-round-3 control)', () => {
+  // 2026-08-10: the pre-repair harness returned the causal phrase whenever
+  // refs was empty — the exact inverse of shipped. Marker: shipped iterates
+  // refs and falls through to `return null`; it has no `refs.length > 0`
+  // conditional pass-through.
+  const start = ingest.indexOf('function causalEvidence')
+  assert.ok(start > 0, 'causalEvidence not found in index.ts')
+  const body = ingest.slice(start, start + 900)
+  assert.ok(body.includes('for (const ref of refs)'), 'refs loop missing from shipped causalEvidence')
+  assert.ok(!body.includes('refs.length > 0'), 'harness bug pattern (refs.length > 0 pass-through) present in shipped causalEvidence')
+  const afterLoop = body.slice(body.indexOf('for (const ref of refs)'))
+  assert.ok(afterLoop.includes('return null'), 'causalEvidence no longer falls through to return null after the refs loop')
+})
+
 test('app timelineDedup module still exports the canonical rule', () => {
   assert.ok(dedupSrc.includes('export function canonicalizeTimelineEvents'))
   assert.ok(dedupSrc.includes('export function remapTimelineEdges'))
