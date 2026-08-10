@@ -175,7 +175,7 @@ export function buildEventView(event, memberRows, ctx) {
       const times = articles.filter((a) => a.outlet === outlet).map((a) => a.published_at).filter(Boolean).sort()
       return { outlet, firstPublishedAt: times[0] ?? null }
     })
-    .sort((a, b) => String(a.firstPublishedAt ?? ''').localeCompare(String(b.firstPublishedAt ?? ''')))
+    .sort((a, b) => String(a.firstPublishedAt ?? '\uFFFF').localeCompare(String(b.firstPublishedAt ?? '\uFFFF')))
   const first = timing.find((t) => t.firstPublishedAt) ?? null
   const timingView = timing.map((t) => ({
     ...t,
