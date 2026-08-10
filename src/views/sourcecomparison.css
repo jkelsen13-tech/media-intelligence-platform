@@ -276,3 +276,9 @@
   border-radius: 4px;
   transition: outline-color 0.3s ease;
 }
+
+/* Event title search (2026-08-10): reuses .news-search styling, adds
+   view-local margin so the field breathes between banner and cards. */
+.sc-search {
+  margin: 0 0 4px;
+}

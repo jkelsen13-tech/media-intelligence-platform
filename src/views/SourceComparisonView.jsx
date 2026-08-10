@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadSourceComparisonView, R_LEVEL_NAMES, E_LEVEL_NAMES, OUTLET_RELIABILITY } from '../lib/sourceComparisonReadPath.js'
+import { filterEventsByTitle } from '../lib/listFilters.js'
 import './sourcecomparison.css'
 
 // Source Comparison (03_BACKLOG Item 1) — beta view behind
@@ -225,6 +226,18 @@ export default function SourceComparisonView({ onOpenArticle, onOpenArc, onOpenT
   const [view, setView] = useState(null)
   const [error, setError] = useState(null)
   const eventRefs = useRef(new Map())
+  // Event title search (2026-08-10): same pattern as the News Feed search
+  // bar — 350ms debounce, trimmed query, client-side substring filter over
+  // the loaded event list. No refetch; no other card logic touched.
+  const [eventQuery, setEventQuery] = useState('')
+  const [debouncedEventQuery, setDebouncedEventQuery] = useState('')
+  const eventDebounceRef = useRef(null)
+
+  useEffect(() => {
+    clearTimeout(eventDebounceRef.current)
+    eventDebounceRef.current = setTimeout(() => setDebouncedEventQuery(eventQuery.trim()), 350)
+    return () => clearTimeout(eventDebounceRef.current)
+  }, [eventQuery])
 
   useEffect(() => {
     let cancelled = false
@@ -233,6 +246,11 @@ export default function SourceComparisonView({ onOpenArticle, onOpenArc, onOpenT
       .catch((e) => { if (!cancelled) setError(e) })
     return () => { cancelled = true }
   }, [])
+
+  const visibleEvents = useMemo(
+    () => (view?.events ? filterEventsByTitle(view.events, debouncedEventQuery) : []),
+    [view, debouncedEventQuery],
+  )
 
   // Cross-window focus (Doc 05 pair 5): once events render, scroll to the
   // requested comparison event and highlight it briefly.
@@ -278,7 +296,22 @@ export default function SourceComparisonView({ onOpenArticle, onOpenArc, onOpenT
           Events appear here after the source-comparison-run function is invoked.
         </p>
       ) : (
-        view.events.map((event) => (
+        <>
+          <input
+            className="news-search sc-search"
+            type="search"
+            placeholder="Search comparison events by title…"
+            value={eventQuery}
+            onChange={(e) => setEventQuery(e.target.value)}
+            aria-label="Search comparison events"
+          />
+          {visibleEvents.length === 0 ? (
+            <p className="sc-empty">
+              No events match “{debouncedEventQuery}”. Clear the search to see all{' '}
+              {view.events.length} comparison events.
+            </p>
+          ) : (
+            visibleEvents.map((event) => (
           <EventCard
             key={event.id}
             event={event}
@@ -291,7 +324,9 @@ export default function SourceComparisonView({ onOpenArticle, onOpenArc, onOpenT
               else eventRefs.current.delete(event.id)
             }}
           />
-        ))
+            ))
+          )}
+        </>
       )}
     </div>
   )
