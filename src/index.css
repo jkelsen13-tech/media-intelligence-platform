@@ -1464,6 +1464,11 @@ a.ap-source-headline:hover {
   margin-bottom: 16px;
 }
 
+/* Sidebar arc search (2026-08-10): reuses .news-search styling. */
+.arcs-list .news-search {
+  margin-bottom: 12px;
+}
+
 .arc-list-item {
   display: flex;
   flex-direction: column;
@@ -2484,4 +2489,3 @@ body {
   letter-spacing: 1px;
   color: var(--text-muted);
 }
-
