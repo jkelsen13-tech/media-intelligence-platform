@@ -1,5 +1,5 @@
 {
-  "description": "G1 golden set — relationships. Golden causal and sequence relationships plus negative relationships that must never be recreated. Edges are evaluated two ways: (a) the pipeline three-way branch (explicit causal+shared entity => causal; temporal-only => sequence; citation-primary => causal, weak citation => sequence), and (b) the live r5 edges_causal_evidence_guard semantics. Includes hub-entity hard cases.",
+  "description": "G1 golden set — relationships. Golden causal and sequence relationships plus negative relationships that must never be recreated. Edges are evaluated two ways: (a) the pipeline three-way branch (explicit causal+shared entity => causal; temporal-only => sequence; citation-primary => causal, weak citation => sequence), and (b) the live r6 edges_causal_evidence_guard semantics (r5/r4 verdicts kept as history). Includes hub-entity hard cases.",
   "pipelineCases": [
     {
       "name": "explicit_causal_shared_entity",
@@ -230,7 +230,8 @@
       },
       "expectR5": true,
       "expectR4": true,
-      "note": "deployed guard does NOT list 'in the (days|weeks|months) ...' — admitted live; pre-repair harness REJECTED it (false-fail)"
+      "note": "deployed guard does NOT list 'in the (days|weeks|months) ...' — admitted live; pre-repair harness REJECTED it (false-fail); r6 unchanged ('in the ...' lead still matches no branch — documented non-scope)",
+      "expectR6": true
     },
     {
       "name": "pos_weeks_after",
@@ -242,7 +243,21 @@
       },
       "expectR5": true,
       "expectR4": true,
-      "note": "'weeks after'/'months after' are NOT in the deployed alternation (only days?/hours?) — admitted live; pre-repair harness rejected (false-fail)"
+      "note": "'weeks after'/'months after' were NOT in the r4/r5 alternation (admitted live until r6; gate-round-3 probes 22/23 proved the gap). r6 CLOSES it: rejected live. pre-repair harness rejected (false-fail vs r5, correct vs r6)",
+      "expectR6": false
+    },
+    {
+      "name": "neg_months_after_lead",
+      "edge": {
+        "type": "causal",
+        "signal_source": "causal_language",
+        "label": "causal: months after the decision, maps were redrawn",
+        "evidence": "months after the decision, maps were redrawn"
+      },
+      "expectR5": true,
+      "expectR4": true,
+      "expectR6": false,
+      "note": "gate-round-3 probe 23: ADMITTED under r4/r5 (the gap), REJECTED under r6 ('months?\\s+after' branch)"
     },
     {
       "name": "pos_one_day_after_numeric_lead",
@@ -254,7 +269,8 @@
       },
       "expectR5": true,
       "expectR4": true,
-      "note": "anchored regex: normalized evidence begins with '1', not the phrase — admitted by BOTH deployed and mirrored forms (documented boundary)"
+      "note": "anchored regex: normalized evidence begins with '1', not the phrase — admitted by BOTH deployed and mirrored forms (documented boundary); r6 unchanged",
+      "expectR6": true
     }
   ],
   "knownBugVariants": [

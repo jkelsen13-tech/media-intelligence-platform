@@ -1,8 +1,8 @@
 // G1 harness — JS port of the causal/sequence semantics, transcribed from
 // ingest-rss/index.ts @ 445503ee (TEMPORAL_RE, CAUSAL_RE, causalEvidence
 // with the shared-entity proximity window, the three-way attachToArc
-// branch) plus the live edges_causal_evidence_guard CHECK semantics in both
-// the r4 (buggy) and r5 (repaired) forms.
+// branch) plus the live edges_causal_evidence_guard CHECK semantics in
+// the r4 (buggy), r5, and r6 (live) forms.
 //
 // 2026-08-10 repair (incident session, owner-authorized): TEMPORAL_LEAD
 // resynced WORD-FOR-WORD to the deployed constraint text (migration
@@ -81,19 +81,25 @@ export function decideEdge({ causal, temporal, hasCitation = false, citationPrim
 //   after(wards?)? | following | amid(st)?/amidst? | in\s+the\s+wake\s+of
 //   | on\s+the\s+back\s+of | in\s+the\s+aftermath\s+of | later
 //   | subsequently | days?\s+after | hours?\s+after
+// r6 (live since 2026-08-10, owner-authorized): identical to r5 PLUS two
+// trailing branches 'weeks?\s+after|months?\s+after' — closes the
+// weeks/months-after lead gap found by gate-round-3 probes 22/23.
 // Exported as strings so the drift guard can compare the harness against
 // the checked-in fixture across the FULL phrase space, not one marker.
 export const R5_TEMPORAL_ALTERNATION =
   'after(wards?)?|following|amid(st)?|in\\s+the\\s+wake\\s+of|on\\s+the\\s+back\\s+of|in\\s+the\\s+aftermath\\s+of|later|subsequently|days?\\s+after|hours?\\s+after'
 export const R4_TEMPORAL_ALTERNATION =
   'after(wards?)?|following|amidst?|in\\s+the\\s+wake\\s+of|on\\s+the\\s+back\\s+of|in\\s+the\\s+aftermath\\s+of|later|subsequently|days?\\s+after|hours?\\s+after'
+export const R6_TEMPORAL_ALTERNATION =
+  'after(wards?)?|following|amid(st)?|in\\s+the\\s+wake\\s+of|on\\s+the\\s+back\\s+of|in\\s+the\\s+aftermath\\s+of|later|subsequently|days?\\s+after|hours?\\s+after|weeks?\\s+after|months?\\s+after'
 
 const TEMPORAL_LEAD = {
   r4: new RegExp(`^(${R4_TEMPORAL_ALTERNATION})(\\s|$)`),
   r5: new RegExp(`^(${R5_TEMPORAL_ALTERNATION})(\\s|$)`),
+  r6: new RegExp(`^(${R6_TEMPORAL_ALTERNATION})(\\s|$)`),
 }
 
-export function guardAllows(edge, guardVersion = 'r5') {
+export function guardAllows(edge, guardVersion = 'r6') {
   if (edge.type !== 'causal') return true
   if (!['causal_language', 'citation'].includes(edge.signal_source ?? '')) return false
   const re = TEMPORAL_LEAD[guardVersion]

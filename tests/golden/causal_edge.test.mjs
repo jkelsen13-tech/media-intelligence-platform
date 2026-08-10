@@ -1,5 +1,5 @@
 // G1 — causal-edge golden suite: the pipeline three-way branch plus the
-// live r5 guard semantics. Mutation proof: the r4 'amidst?' guard admits
+// live r6 guard semantics (r5/r4 kept as history). Mutation proof: the r4 'amidst?' guard admits
 // bare-'amid' evidence — the exact gate-round-3 finding.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -27,14 +27,29 @@ test('pipeline branch classifies golden relationships correctly', () => {
     if (c.expectTemporal) assert.match(edge.label, new RegExp(c.expectTemporal, 'i'), `${c.name}: temporal label`)
     if (c.expectSignalSource) assert.equal(edge.signal_source, c.expectSignalSource, `${c.name}: signal_source`)
     if (c.expectLabel) assert.equal(edge.label, c.expectLabel, `${c.name}: label`)
-    // every pipeline-produced edge must pass the live r5 guard:
-    assert.ok(guardAllows(edge, 'r5'), `${c.name}: pipeline edge fails r5 guard`)
+    // every pipeline-produced edge must pass the live r6 guard:
+    assert.ok(guardAllows(edge, 'r6'), `${c.name}: pipeline edge fails r6 guard`)
   }
 })
 
 test('r5 guard: golden causal passes, negatives rejected', () => {
   for (const c of fx.guardCases) {
     assert.equal(guardAllows(c.edge, 'r5'), c.expectR5, `${c.name}: r5 verdict wrong`)
+  }
+})
+
+test('r6 guard (live): full guardCase sweep incl. weeks/months-after closure', () => {
+  // Added 2026-08-10 with the r6 apply. Cases without an explicit expectR6
+  // are invariant across r5->r6 (the diff is only the two new branches).
+  for (const c of fx.guardCases) {
+    const expected = c.expectR6 ?? c.expectR5
+    assert.equal(guardAllows(c.edge, 'r6'), expected, `${c.name}: r6 verdict wrong`)
+  }
+  // mutation proof, same pattern as the r4 bug: the r5 form ADMITS the two
+  // leads r6 exists to reject (gate-round-3 probes 22/23).
+  for (const name of ['pos_weeks_after', 'neg_months_after_lead']) {
+    const c = fx.guardCases.find((x) => x.name === name)
+    assert.ok(guardAllows(c.edge, 'r5') && !guardAllows(c.edge, 'r6'), `${name}: r5->r6 closure proof broken`)
   }
 })
 

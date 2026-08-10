@@ -15,7 +15,7 @@ npm test            # node --test tests/  (no npm install required)
 - `fixtures/` — versioned golden data: correctly classified articles/arcs,
   canonical actors (incl. hub-entity hard cases Trump/China/Iran/AI), golden
   causal + sequence relationships, and **negative relationships that must
-  never be recreated**. `r5_constraint.sql` is the live production constraint
+  never be recreated**. `r6_constraint.sql` is the live production constraint (r5 kept as history)
   captured verbatim (pg_get_constraintdef, regenerated 2026-08-10 after the
   prior synthetic version was found stale in the incident session).
 - `harness/` — JS ports of the shipped pipeline logic (transcribed from
