@@ -18,3 +18,14 @@ Details: `v2/search-filters.md`. Run log: `runs/2026-08-10-part2-search-filters.
 Differs from prior version: adds search/filter verification; no grouping or
 schema changes (read-path UI only). B(b) SC category filter skipped per owner —
 `sc_events` has no category-equivalent field.
+
+## v3 (created 2026-08-10)
+Measures: Track B Step 2 Knowledge Graph band — owner-required BEFORE/AFTER
+pair (label-box collision count, bounding-box area per node) via headless
+fcose harness (`v3/measure-layout.mjs`), unit suite 157 green, live
+production checks of the four care points (drag-reheat exclusion,
+deterministic seed mode, restPositions-after-placement, portrait
+adaptation), byte-verified pushes, CI at HEAD 9db34829.
+Details: `v3/graph-band.md`. Run log: `runs/2026-08-10-trackb-step2-graph-band.md`.
+Differs from prior version: first graph-layout verification; adds headless
+fcose metrics harness. No schema changes; rendering only.
