@@ -46,3 +46,13 @@ test('mutation proof: r4 guard admits bare-amid evidence (gate-round-3 bug)', ()
   // relationship the repair removed is allowed back in:
   assert.ok(guardAllows(c.edge, 'r4') && !guardAllows(c.edge, 'r5'))
 })
+
+test('deployed r4 parity: phrase-space guardCases match r4 verdicts too', () => {
+  // Added 2026-08-10: the pre-repair mirror diverged from the DEPLOYED r4
+  // alternation as well (not just r5). Every guardCase that carries an
+  // expectR4 verdict must hold under the deployed r4 form.
+  for (const c of fx.guardCases) {
+    if (c.expectR4 === undefined || c.name === 'neg_amid_evidence_r4_bug') continue
+    assert.equal(guardAllows(c.edge, 'r4'), c.expectR4, `${c.name}: r4 verdict wrong`)
+  }
+})

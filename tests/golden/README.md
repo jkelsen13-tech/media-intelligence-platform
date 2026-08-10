@@ -16,7 +16,8 @@ npm test            # node --test tests/  (no npm install required)
   canonical actors (incl. hub-entity hard cases Trump/China/Iran/AI), golden
   causal + sequence relationships, and **negative relationships that must
   never be recreated**. `r5_constraint.sql` is the live production constraint
-  captured verbatim (2026-07-28).
+  captured verbatim (pg_get_constraintdef, regenerated 2026-08-10 after the
+  prior synthetic version was found stale in the incident session).
 - `harness/` — JS ports of the shipped pipeline logic (transcribed from
   `supabase/functions/ingest-rss/index.ts @ 445503ee`) with switchable
   **known-bug variants** for mutation proof. Frontend rules are imported

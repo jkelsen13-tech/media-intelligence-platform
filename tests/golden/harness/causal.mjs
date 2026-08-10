@@ -3,6 +3,16 @@
 // with the shared-entity proximity window, the three-way attachToArc
 // branch) plus the live edges_causal_evidence_guard CHECK semantics in both
 // the r4 (buggy) and r5 (repaired) forms.
+//
+// 2026-08-10 repair (incident session, owner-authorized): TEMPORAL_LEAD
+// resynced WORD-FOR-WORD to the deployed constraint text (migration
+// 20260802_tier3_causal_edge_guard.sql r4 / 20260803_tier3_causal_edge_guard_r5_amid_fix.sql
+// r5, live-verified via pg_get_constraintdef 2026-08-10). The previous
+// mirror carried a parallel alternation that was never deployed — missing
+// 'on the back of' / 'in the aftermath of', extra 'in the (days|weeks|months)
+// ...' / 'weeks after' / 'months after', plural-only 'hours after|days after'.
+// The r4 variant's DELIBERATE bug ('amidst?' missing bare 'amid') is kept;
+// only its phrase list was corrected (transcription fix, not a variant edit).
 
 export const TEMPORAL_RE =
   /\b(after|following|amid|in the wake of|on the back of|days? after|hours? after)\b/i
@@ -53,19 +63,40 @@ export function decideEdge({ causal, temporal, hasCitation = false, citationPrim
 //   signal_source IN ('causal_language','citation')
 //   normalized evidence must NOT lead with a temporal pattern
 //   normalized label (after stripping leading 'causal:') likewise
-// r4 temporal alternation contained 'amidst?' (matches 'amids'/'amidst',
-// missing bare 'amid'); r5 uses 'amid(st)?' — the gate-round-3 fix.
+// Normalization (deployed, both arms): regexp_replace '[^a-zA-Z0-9]+' off
+// both ends, then lower(); label arm first strips /^\s*causal:\s*/i.
+// Match is anchored with terminator (\s|$) — PG ARE treats '\b' as
+// backspace, never use it here.
+// Deployed temporal alternation (identical in r4 and r5 EXCEPT the amid
+// branch — r4's 'amidst?' binds '?' to the final 't', missing bare 'amid';
+// r5's 'amid(st)?' closes it, the gate-round-3 fix):
+//   after(wards?)? | following | amid(st)?/amidst? | in\s+the\s+wake\s+of
+//   | on\s+the\s+back\s+of | in\s+the\s+aftermath\s+of | later
+//   | subsequently | days?\s+after | hours?\s+after
+// Exported as strings so the drift guard can compare the harness against
+// the checked-in fixture across the FULL phrase space, not one marker.
+export const R5_TEMPORAL_ALTERNATION =
+  'after(wards?)?|following|amid(st)?|in\\s+the\\s+wake\\s+of|on\\s+the\\s+back\\s+of|in\\s+the\\s+aftermath\\s+of|later|subsequently|days?\\s+after|hours?\\s+after'
+export const R4_TEMPORAL_ALTERNATION =
+  'after(wards?)?|following|amidst?|in\\s+the\\s+wake\\s+of|on\\s+the\\s+back\\s+of|in\\s+the\\s+aftermath\\s+of|later|subsequently|days?\\s+after|hours?\\s+after'
+
 const TEMPORAL_LEAD = {
-  r4: /^\s*(after(wards?)?|following|in the (days|weeks|months) (after|since|following)|in the wake of|amidst?|hours after|days after|weeks after|months after|later|subsequently)\b/i,
-  r5: /^\s*(after(wards?)?|following|in the (days|weeks|months) (after|since|following)|in the wake of|amid(st)?|hours after|days after|weeks after|months after|later|subsequently)\b/i,
+  r4: new RegExp(`^(${R4_TEMPORAL_ALTERNATION})(\\s|$)`),
+  r5: new RegExp(`^(${R5_TEMPORAL_ALTERNATION})(\\s|$)`),
 }
 
 export function guardAllows(edge, guardVersion = 'r5') {
   if (edge.type !== 'causal') return true
   if (!['causal_language', 'citation'].includes(edge.signal_source ?? '')) return false
   const re = TEMPORAL_LEAD[guardVersion]
-  const normEvidence = (edge.evidence ?? '').replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '')
-  const normLabel = (edge.label ?? '').replace(/^\s*causal:\s*/i, '').replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '')
+  // Deployed normalization: trim non-alphanumerics off both ends, lowercase.
+  const normEvidence = (edge.evidence ?? '')
+    .replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '')
+    .toLowerCase()
+  const normLabel = (edge.label ?? '')
+    .replace(/^\s*causal:\s*/i, '')
+    .replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '')
+    .toLowerCase()
   if (re.test(normEvidence)) return false
   if (re.test(normLabel)) return false
   return true
