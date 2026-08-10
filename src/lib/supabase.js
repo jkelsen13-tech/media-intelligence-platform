@@ -6,16 +6,45 @@ import {
   demoArcs,
   demoMilestones,
   demoArcEvents,
-} from '../data/demoData'
-import { canonicalizeTimelineEvents, remapTimelineEdges } from './timelineDedup'
+} from '../data/demoData.js'
+import { canonicalizeTimelineEvents, remapTimelineEdges } from './timelineDedup.js'
 
 // Env vars are used when present (local dev). The hardcoded fallbacks let the
 // static GitHub Pages build reach the live project — the anon key is a
 // publishable key and all tables are protected by read-only RLS policies.
-const url = import.meta.env.VITE_SUPABASE_URL ?? 'https://niejaejtbxgakyrsntxm.supabase.co'
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? 'sb_publishable_rlHzgeDjVuw9kO3cqcVa-g_ZavxEY7V'
+const url = import.meta.env?.VITE_SUPABASE_URL ?? 'https://niejaejtbxgakyrsntxm.supabase.co'
+const anonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY ?? 'sb_publishable_rlHzgeDjVuw9kO3cqcVa-g_ZavxEY7V'
 
-export const supabase = url && anonKey ? createClient(url, anonKey) : null
+// Client construction can fail outside the browser (e.g. Node test runs
+// without a WebSocket implementation); fall back to the demo-data path.
+function makeClient() {
+  if (!url || !anonKey) return null
+  try {
+    return createClient(url, anonKey)
+  } catch {
+    return null
+  }
+}
+
+export const supabase = makeClient()
+
+// Doc 13: PostgREST silently truncates any unpaginated select at 1000 rows.
+// Keyset-paginate a table by its unique `id` column until a short page
+// returns. Keyset (cursor) is preferred over offset because ingest writes
+// concurrently — offsets can skip/duplicate rows as inserts shift pages.
+async function keysetAll(client, table, cols, { filter = (q) => q, pageSize = 1000 } = {}) {
+  const out = []
+  let last = null
+  for (;;) {
+    let q = filter(client.from(table).select(cols)).order('id', { ascending: true })
+    if (last !== null) q = q.gt('id', last)
+    const { data, error } = await q.limit(pageSize)
+    if (error) return { data: null, error }
+    out.push(...(data ?? []))
+    if (!data || data.length < pageSize) return { data: out, error: null }
+    last = data[data.length - 1].id
+  }
+}
 
 // PostgREST .or() filters break on commas/parens/quotes in user input.
 function sanitizeSearch(q) {
@@ -25,8 +54,9 @@ function sanitizeSearch(q) {
 // Loads the graph from Supabase when configured, otherwise returns the
 // bundled demo dataset. Both paths return { nodes, edges, source } in the
 // shape GraphView expects.
-export async function loadGraph() {
-  if (!supabase) {
+export async function loadGraph({ supabaseClient } = {}) {
+  const client = supabaseClient ?? supabase
+  if (!client) {
     return { nodes: demoNodes, edges: demoEdges, source: 'demo' }
   }
 
@@ -37,15 +67,13 @@ export async function loadGraph() {
   const EDGE_EVIDENCE =
     ', signal_source, doc_strength, claimed_by, stance, disputed_by, alternative_causes, counterfactual_test, reliability, metadata'
 
-  const nodesReq = supabase
-    .from('nodes')
-    .select('id, slug, label, type, description, confidence, summary, occurred_at, arc_id')
+  // Doc 13 site 2: both reads keyset-paginate past the 1000-row ceiling.
   let [nodesRes, edgesRes] = await Promise.all([
-    nodesReq,
-    supabase.from('edges').select(EDGE_BASE + EDGE_EVIDENCE),
+    keysetAll(client, 'nodes', 'id, slug, label, type, description, confidence, summary, occurred_at, arc_id'),
+    keysetAll(client, 'edges', EDGE_BASE + EDGE_EVIDENCE),
   ])
   if (edgesRes.error) {
-    edgesRes = await supabase.from('edges').select(EDGE_BASE)
+    edgesRes = await keysetAll(client, 'edges', EDGE_BASE)
   }
 
   if (nodesRes.error) throw nodesRes.error
