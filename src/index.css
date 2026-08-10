@@ -2489,3 +2489,16 @@ body {
   letter-spacing: 1px;
   color: var(--text-muted);
 }
+
+/* Track B Step 2 (2026-08-10): label for the disconnected-node band.
+   Plain text documentation — no box, so it can't read as a container. */
+.graph-band-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  pointer-events: none;
+  font-size: 12px;
+  color: var(--text-secondary, #9ca3af);
+  letter-spacing: 0.02em;
+}
