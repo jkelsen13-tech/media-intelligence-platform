@@ -16,6 +16,8 @@ import assert from 'node:assert/strict'
 import {
   keysetAll,
   computeCheckpoint,
+  planWrites,
+  buildLayoutPayload,
   NODE_ATTRIBUTES,
   EDGE_ATTRIBUTES,
 } from '../../supabase/functions/graph-analysis-run/lib.js'
@@ -70,6 +72,95 @@ async function readGraph(db) {
   assert.equal(eErr, null)
   return { nodeRows, edgeRows }
 }
+
+// --- Stateful emulation of the two derived tables (insert/reuse proof) -----
+// Extends fakePostgrest with insert() on graph_checkpoints /
+// graph_layout_versions so the FULL handler decision flow of index.ts runs
+// under node:test: read (paginated) → computeCheckpoint → planWrites →
+// insert-or-reuse. Mirrors index.ts lines 57-90 exactly.
+function statefulPostgrest(tables) {
+  const store = {
+    ...tables,
+    graph_checkpoints: [],
+    graph_layout_versions: [],
+  }
+  let cpSeq = 0
+  let lvSeq = 0
+  const base = fakePostgrest(store)
+  return {
+    from(table) {
+      const q = base.from(table)
+      q.insert = (row) => {
+        if (table === 'graph_checkpoints') store.graph_checkpoints.push({ id: `cp-${++cpSeq}`, ...row })
+        else if (table === 'graph_layout_versions') store.graph_layout_versions.push({ id: `lv-${++lvSeq}`, ...row })
+        else throw new Error(`unexpected insert into ${table}`)
+        const inserted = table === 'graph_checkpoints' ? store.graph_checkpoints.at(-1) : store.graph_layout_versions.at(-1)
+        return {
+          select: () => ({ single: () => Promise.resolve({ data: { id: inserted.id }, error: null }) }),
+        }
+      }
+      return q
+    },
+    _store: store,
+  }
+}
+
+// The index.ts handler flow, verbatim in structure (Deno.serve shell removed).
+async function handlerPass(db) {
+  const { data: nodeRows, error: nodeErr } = await keysetAll(db, 'nodes', NODE_ATTRIBUTES.join(','))
+  assert.equal(nodeErr, null)
+  const { data: edgeRows, error: edgeErr } = await keysetAll(db, 'edges', EDGE_ATTRIBUTES.join(','))
+  assert.equal(edgeErr, null)
+  const checkpoint = await computeCheckpoint(nodeRows, edgeRows)
+  const { data: existingCheckpoints } = await db.from('graph_checkpoints').select('id, nodes_hash, edges_hash')
+  const { data: existingLayouts } = await db.from('graph_layout_versions').select('id, checkpoint_id, algorithm, algorithm_version, config, seed')
+  const plan = planWrites(checkpoint, existingCheckpoints, existingLayouts)
+  let checkpointId = plan.checkpointId
+  if (plan.checkpointAction === 'insert') {
+    const { data } = await db.from('graph_checkpoints').insert(checkpoint).select('id').single()
+    checkpointId = data.id
+  }
+  let layoutId = plan.layoutId
+  if (plan.layoutAction === 'insert') {
+    const { data } = await db.from('graph_layout_versions').insert({ ...buildLayoutPayload(nodeRows, { supersedes: plan.supersedes }), checkpoint_id: checkpointId }).select('id').single()
+    layoutId = data.id
+  }
+  return { ...plan, checkpointId, layoutId, checkpoint }
+}
+
+test('insert/reuse two-call pattern (G-ALG-1 verification) re-proven at scale against the paginated read', async () => {
+  const db = statefulPostgrest(buildTables())
+
+  // Call 1: nothing stored → insert both.
+  const r1 = await handlerPass(db)
+  assert.equal(r1.checkpointAction, 'insert')
+  assert.equal(r1.layoutAction, 'insert')
+  assert.equal(db._store.graph_checkpoints.length, 1)
+  assert.equal(db._store.graph_layout_versions.length, 1)
+
+  // Call 2 (unchanged graph): the same two-call pattern as G-ALG-1's original
+  // verification — both rows REUSED, never duplicated, at >1000-row scale.
+  const r2 = await handlerPass(db)
+  assert.equal(r2.checkpointAction, 'reuse')
+  assert.equal(r2.layoutAction, 'reuse')
+  assert.equal(r2.checkpointId, r1.checkpointId)
+  assert.equal(r2.layoutId, r1.layoutId)
+  assert.equal(db._store.graph_checkpoints.length, 1, 'duplicate checkpoint inserted')
+  assert.equal(db._store.graph_layout_versions.length, 1, 'duplicate layout inserted')
+
+  // Call 3: mutate ONLY the node at position 1001 (first row beyond the old
+  // cap) → hash drift → fresh checkpoint. Proves the insert/reuse identity
+  // is computed over the COMPLETE set, not a truncated prefix.
+  const mutated = buildTables()
+  mutated.nodes.find((r) => r.id === `n-${pad(1001)}`).label = 'MUTATED at position 1001'
+  const db3 = statefulPostgrest(mutated)
+  db3._store.graph_checkpoints.push(...db._store.graph_checkpoints)
+  db3._store.graph_layout_versions.push(...db._store.graph_layout_versions)
+  const r3 = await handlerPass(db3)
+  assert.equal(r3.checkpointAction, 'insert', 'drift at position 1001 did not produce a new checkpoint')
+  assert.notEqual(r3.checkpoint.nodes_hash, r1.checkpoint.nodes_hash)
+  assert.equal(r3.checkpoint.node_count, N_NODES)
+})
 
 test('control: the fake PostgREST really does cap naive selects at 1000', async () => {
   const db = fakePostgrest(buildTables())
