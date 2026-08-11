@@ -1644,7 +1644,10 @@ async function actorsPass(supabase: any, report: any, deadline: number) {
   }
   report.actorNodes = actorNodeByEntity.size
 
-  const { data: evNodes } = await supabase.from('nodes').select('id, slug').eq('type', 'event')
+  const { data: evNodes, error: evNodesErr } = await keysetAll(supabase, 'nodes', 'id, slug', {
+    filter: (q: any) => q.eq('type', 'event'),
+  })
+  if (evNodesErr) throw evNodesErr
   const nodeById8 = new Map<string, string>()
   for (const n of evNodes ?? []) {
     const m = String(n.slug).match(/-([0-9a-f]{8})$/)
@@ -1694,7 +1697,10 @@ async function actorsPass(supabase: any, report: any, deadline: number) {
 // Step 8 additive pass: tag existing event nodes from their article text.
 async function topicsPass(supabase: any, cfg: any, report: any, deadline: number) {
   const floor = Number(cfg.topic_confidence_floor ?? 0.4)
-  const { data: evNodes } = await supabase.from('nodes').select('id, slug').eq('type', 'event')
+  const { data: evNodes, error: evNodesErr } = await keysetAll(supabase, 'nodes', 'id, slug', {
+    filter: (q: any) => q.eq('type', 'event'),
+  })
+  if (evNodesErr) throw evNodesErr
   const nodeById8 = new Map<string, string>()
   for (const n of evNodes ?? []) {
     const m = String(n.slug).match(/-([0-9a-f]{8})$/)
