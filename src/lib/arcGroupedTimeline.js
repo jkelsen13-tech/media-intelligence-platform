@@ -261,8 +261,10 @@ export async function loadTimelineGroupedBetaFlag() {
 
 // Load everything the grouped view needs. Composes the same queries the flat
 // timeline and Arcs view already run; the flat view's loader is untouched.
-export async function loadArcGroupedTimeline() {
-  const { supabase, deriveArcStatus } = await getClient()
+export async function loadArcGroupedTimeline({ supabaseClient } = {}) {
+  const mod = await getClient()
+  const supabase = supabaseClient ?? mod.supabase
+  const { deriveArcStatus, keysetAll, resortRows } = mod
   const { canonicalizeTimelineEvents, remapTimelineEdges } = await import('./timelineDedup.js')
 
   if (!supabase) {
@@ -283,21 +285,25 @@ export async function loadArcGroupedTimeline() {
     }
   }
 
+  // Doc 13 site 4: identical read set to the flat timeline loader — both
+  // keyset-paginate past the 1000-row ceiling so the two views can never
+  // disagree on node/edge counts; display order re-applied client-side.
   const [nodesRes, edgesRes, labelsRes, articlesRes, arcsRes, arcEventsRes, milestonesRes, cfgRes] =
     await Promise.all([
-      supabase
-        .from('nodes')
-        .select('id, slug, label, description, confidence, summary, occurred_at, arc_id')
-        .eq('type', 'event')
-        .order('occurred_at', { ascending: true, nullsFirst: false }),
-      supabase.from('edges').select('id, source_id, target_id, type, weight, label').in('type', ['causal', 'sequence']),
-      supabase.from('nodes').select('id, slug, label'),
+      keysetAll(supabase, 'nodes', 'id, slug, label, description, confidence, summary, occurred_at, arc_id', {
+        filter: (q) => q.eq('type', 'event'),
+      }).then((r) => (r.data ? { ...r, data: resortRows(r.data, 'occurred_at', { ascending: true, nullsFirst: false }) } : r)),
+      keysetAll(supabase, 'edges', 'id, source_id, target_id, type, weight, label', {
+        filter: (q) => q.in('type', ['causal', 'sequence']),
+      }),
+      keysetAll(supabase, 'nodes', 'id, slug, label'),
       // id + arc_id: article derivation (26 events) and News Feed chip join.
-      supabase.from('articles').select('id, arc_id'),
-      supabase.from('story_arcs').select('id, title, category, started_at'),
+      keysetAll(supabase, 'articles', 'id, arc_id'),
+      keysetAll(supabase, 'story_arcs', 'id, title, category, started_at'),
       // End date + status derive from real signals (loadArcs() pattern).
-      supabase.from('arc_events').select('arc_id, occurred_at'),
-      supabase.from('arc_milestones').select('arc_id, status'),
+      // id included: the keyset cursor reads it back off the returned rows.
+      keysetAll(supabase, 'arc_events', 'id, arc_id, occurred_at'),
+      keysetAll(supabase, 'arc_milestones', 'id, arc_id, status'),
       supabase.from('pipeline_config').select('value').eq('key', 'status_dormant_days').maybeSingle(),
     ])
   for (const r of [nodesRes, edgesRes, labelsRes, articlesRes, arcsRes, arcEventsRes, milestonesRes]) {

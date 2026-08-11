@@ -32,7 +32,9 @@ export const supabase = makeClient()
 // Keyset-paginate a table by its unique `id` column until a short page
 // returns. Keyset (cursor) is preferred over offset because ingest writes
 // concurrently — offsets can skip/duplicate rows as inserts shift pages.
-async function keysetAll(client, table, cols, { filter = (q) => q, pageSize = 1000 } = {}) {
+// NOTE: `cols` MUST include `id` — the cursor reads it back off the returned
+// rows, so a cols list without it silently breaks paging on full tables.
+export async function keysetAll(client, table, cols, { filter = (q) => q, pageSize = 1000 } = {}) {
   const out = []
   let last = null
   for (;;) {
@@ -44,6 +46,58 @@ async function keysetAll(client, table, cols, { filter = (q) => q, pageSize = 10
     if (!data || data.length < pageSize) return { data: out, error: null }
     last = data[data.length - 1].id
   }
+}
+
+// Composite-key variant for tables with no `id` column (node_topics PK is
+// (node_id, topic_id)). Same guarantees as keysetAll — every row present for
+// the duration of the read is returned exactly once, and concurrent inserts
+// cannot shift pages the way offset pagination allows. The cursor advances on
+// the leading key via .gte(); the handful of overlap rows at the cursor value
+// (one node carries at most a dozen topics) is dropped client-side, which
+// keeps the filter simple enough for PostgREST's .or() grammar to stay out
+// of it. Termination: even if a whole page overlaps the cursor, the cursor
+// still advances to the page tail, so the loop always makes progress.
+// NOTE: `cols` MUST include every column in `keyCols` — the cursor reads
+// them back off the returned rows.
+export async function keysetAllComposite(client, table, cols, { keyCols, filter = (q) => q, pageSize = 1000 } = {}) {
+  const out = []
+  let cursor = null
+  for (;;) {
+    let q = filter(client.from(table).select(cols))
+    for (const c of keyCols) q = q.order(c, { ascending: true })
+    if (cursor !== null) q = q.gte(keyCols[0], cursor[0])
+    const { data, error } = await q.limit(pageSize)
+    if (error) return { data: null, error }
+    let page = data ?? []
+    if (cursor !== null) {
+      page = page.filter(
+        (r) =>
+          String(r[keyCols[0]]) > String(cursor[0]) ||
+          (String(r[keyCols[0]]) === String(cursor[0]) && String(r[keyCols[1]]) > String(cursor[1])),
+      )
+    }
+    out.push(...page)
+    if (!data || data.length < pageSize) return { data: out, error: null }
+    const tail = data[data.length - 1]
+    cursor = keyCols.map((c) => tail[c])
+  }
+}
+
+// keysetAll pages in id order. Where the original unpaginated read carried a
+// server-side ORDER BY, re-apply it client-side over the COMPLETE set so the
+// result is byte-identical to what PostgREST would have returned. PostgREST
+// defaults: ascending => nulls last, descending => nulls first (unless
+// nullsFirst is set explicitly).
+export function resortRows(rows, col, { ascending = true, nullsFirst = !ascending } = {}) {
+  const key = (r) => (r[col] === null || r[col] === undefined ? null : String(r[col]))
+  return [...rows].sort((a, b) => {
+    const ka = key(a)
+    const kb = key(b)
+    if (ka === null && kb === null) return 0
+    if (ka === null) return nullsFirst ? -1 : 1
+    if (kb === null) return nullsFirst ? 1 : -1
+    return (ka < kb ? -1 : ka > kb ? 1 : 0) * (ascending ? 1 : -1)
+  })
 }
 
 // PostgREST .or() filters break on commas/parens/quotes in user input.
@@ -151,12 +205,17 @@ export async function loadPolicyDetail(policyNodeId) {
 // Step 8 (§5): topic taxonomy. The `topics` / `node_topics` tables may not
 // exist yet — feature-detect them and return null so the UI can hide the
 // Topics affordance instead of breaking.
-export async function loadTopics() {
-  if (!supabase) return null
+export async function loadTopics({ supabaseClient } = {}) {
+  const client = supabaseClient ?? supabase
+  if (!client) return null
   try {
     const [topicsRes, nodeTopicsRes] = await Promise.all([
-      supabase.from('topics').select('id, slug, name, parent_id'),
-      supabase.from('node_topics').select('node_id, topic_id, confidence'),
+      // topics is the FIXED, code-defined topic tree (bounded by nature);
+      // node_topics grows one row per node x topic and must paginate. It has
+      // NO id column — PK is (node_id, topic_id) — so it pages by the
+      // composite key, not keysetAll's id cursor.
+      client.from('topics').select('id, slug, name, parent_id'),
+      keysetAllComposite(client, 'node_topics', 'node_id, topic_id, confidence', { keyCols: ['node_id', 'topic_id'] }),
     ])
     if (topicsRes.error || nodeTopicsRes.error) return null
     return { topics: topicsRes.data ?? [], nodeTopics: nodeTopicsRes.data ?? [] }
@@ -282,8 +341,9 @@ export function deriveArcStatus(events, milestones, dormantDays = 14) {
 }
 
 // All story arcs, newest activity first, with derived status attached.
-export async function loadArcs() {
-  if (!supabase) {
+export async function loadArcs({ supabaseClient } = {}) {
+  const client = supabaseClient ?? supabase
+  if (!client) {
     return demoArcs.map((a) => ({
       ...a,
       derived_status: deriveArcStatus(
@@ -293,13 +353,16 @@ export async function loadArcs() {
     }))
   }
   const [arcsRes, eventsRes, milestonesRes, cfgRes] = await Promise.all([
-    supabase
-      .from('story_arcs')
-      .select('id, slug, title, category, category_confidence, category_evidence, status, root_node_id, coverage_gap, summary, started_at, last_update_at')
-      .order('last_update_at', { ascending: false }),
-    supabase.from('arc_events').select('arc_id, occurred_at'),
-    supabase.from('arc_milestones').select('arc_id, status'),
-    supabase.from('pipeline_config').select('value').eq('key', 'status_dormant_days').maybeSingle(),
+    // Doc 13: all three arc tables keyset-paginate past the 1000-row ceiling;
+    // the story_arcs display order (last_update_at desc, PostgREST default
+    // nulls-first) is re-applied client-side over the complete set. id is
+    // included in every cols list: the keyset cursor reads it back off the
+    // returned rows, so a cols list without it silently breaks paging.
+    keysetAll(client, 'story_arcs', 'id, slug, title, category, category_confidence, category_evidence, status, root_node_id, coverage_gap, summary, started_at, last_update_at')
+      .then((r) => (r.data ? { ...r, data: resortRows(r.data, 'last_update_at', { ascending: false }) } : r)),
+    keysetAll(client, 'arc_events', 'id, arc_id, occurred_at'),
+    keysetAll(client, 'arc_milestones', 'id, arc_id, status'),
+    client.from('pipeline_config').select('value').eq('key', 'status_dormant_days').maybeSingle(),
   ])
   if (arcsRes.error) throw arcsRes.error
   if (eventsRes.error) throw eventsRes.error
@@ -431,8 +494,9 @@ export async function loadArticleComparisonEvents(articleId) {
 // them. `labels` covers ALL node types so edges that point at non-event nodes
 // (institutions, anomalies, documents) resolve to a label, not a raw uuid.
 // Dedup: Tier 4 deterministic evt-/art- mirror rule — see lib/timelineDedup.js.
-export async function loadTimeline() {
-  if (!supabase) {
+export async function loadTimeline({ supabaseClient } = {}) {
+  const client = supabaseClient ?? supabase
+  if (!client) {
     const demoEvents = demoNodes.filter((n) => n.type === 'event')
     const { events, canonicalOf, suppressed } = canonicalizeTimelineEvents(demoEvents)
     return {
@@ -447,21 +511,24 @@ export async function loadTimeline() {
       labels: demoNodes.map((n) => ({ id: n.id ?? n.slug, slug: n.slug, label: n.label })),
     }
   }
+  // Doc 13 site 3: all five timeline reads keyset-paginate past the 1000-row
+  // ceiling; the event-node display order (occurred_at asc, nulls last) is
+  // re-applied client-side over the complete set.
   const [nodesRes, edgesRes, labelsRes, articlesRes, arcsRes] = await Promise.all([
-    supabase
-      .from('nodes')
-      .select('id, slug, label, description, confidence, summary, occurred_at, arc_id')
-      .eq('type', 'event')
-      .order('occurred_at', { ascending: true, nullsFirst: false }),
+    keysetAll(client, 'nodes', 'id, slug, label, description, confidence, summary, occurred_at, arc_id', {
+      filter: (q) => q.eq('type', 'event'),
+    }).then((r) => (r.data ? { ...r, data: resortRows(r.data, 'occurred_at', { ascending: true, nullsFirst: false }) } : r)),
     // Causal AND sequential relations — the UI must preserve the distinction
     // (Tier 4 acceptance: "preserve causal versus sequential labels").
-    supabase.from('edges').select('id, source_id, target_id, type, weight, label').in('type', ['causal', 'sequence']),
-    supabase.from('nodes').select('id, slug, label'),
+    keysetAll(client, 'edges', 'id, source_id, target_id, type, weight, label', {
+      filter: (q) => q.in('type', ['causal', 'sequence']),
+    }),
+    keysetAll(client, 'nodes', 'id, slug, label'),
     // Doc 05 pairs 2/3: art- slug 8-hex suffix = article id 8-hex prefix
     // (verified 361/361 live). Ids only — the map is built in JS below.
-    supabase.from('articles').select('id'),
+    keysetAll(client, 'articles', 'id'),
     // Doc 05 pair 1: arc titles for event nodes that carry arc_id.
-    supabase.from('story_arcs').select('id, title'),
+    keysetAll(client, 'story_arcs', 'id, title'),
   ])
   if (nodesRes.error) throw nodesRes.error
   if (edgesRes.error) throw edgesRes.error
@@ -502,12 +569,14 @@ export async function loadTimeline() {
 // ---------- News Feed ----------
 
 // Distinct outlet names present in the article stream (for filter chips).
-export async function loadOutlets() {
-  if (!supabase) return []
-  const { data, error } = await supabase
-    .from('articles')
-    .select('outlet')
-    .not('outlet', 'is', null)
+export async function loadOutlets({ supabaseClient } = {}) {
+  const client = supabaseClient ?? supabase
+  if (!client) return []
+  // Doc 13: the outlet filter list read keyset-paginates past the 1000-row
+  // ceiling; dedupe/sort happen client-side below, unchanged.
+  const { data, error } = await keysetAll(client, 'articles', 'id, outlet', {
+    filter: (q) => q.not('outlet', 'is', null),
+  })
   if (error) throw error
   const names = [...new Set(data.map((r) => r.outlet))]
   names.sort()
