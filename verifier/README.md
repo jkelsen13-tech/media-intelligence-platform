@@ -29,3 +29,13 @@ adaptation), byte-verified pushes, CI at HEAD 9db34829.
 Details: `v3/graph-band.md`. Run log: `runs/2026-08-10-trackb-step2-graph-band.md`.
 Differs from prior version: first graph-layout verification; adds headless
 fcose metrics harness. No schema changes; rendering only.
+## v4 (created 2026-08-11)
+Measures: Doc 13 scaling/pagination ceiling — every unpaginated .select()
+that can exceed PostgREST's silent 1000-row cap. Criteria: limited read-path
+change only (no algorithm/schema/UI); fixture-seeded >1000 proof with named
+rows beyond position 1000 present; zero-count cleanup for temporary fixtures;
+full npm test green in /tmp copy; one commit per site, byte-verified push.
+Details: `v4/doc13-pagination.md`. Run log: `runs/2026-08-11-doc13-per-site.md`.
+Differs from prior version: first backend/Edge-Function verification; adds
+plain-ESM shared-helper pattern (Deno edge + node:test parity) and keyset
+composite-PK pagination proof.
