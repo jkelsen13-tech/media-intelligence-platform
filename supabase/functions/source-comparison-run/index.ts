@@ -27,7 +27,7 @@
 // be overridden per-invocation via body {"page_size": N} for ceiling probes.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { runPipeline, parseEmbedding, RULE_VERSION } from './lib.js'
+import { runPipeline, parseEmbedding, RULE_VERSION, pagedSelect } from './lib.js'
 import lexicon from './loadedLanguageLexicon.json' with { type: 'json' }
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
@@ -44,27 +44,6 @@ function resolvePageSize(raw: unknown): number {
   const req = Number(raw)
   const chosen = Number.isFinite(req) && req > 0 ? Math.floor(req) : fallback
   return Math.max(1, Math.min(chosen, 1000))
-}
-
-// Paged read over a table using a total-order sort (no row can be skipped or
-// duplicated across pages). Accumulates the full result set; per-page response
-// bodies stay bounded, which is what keeps the worker under its memory ceiling.
-async function pagedSelect(
-  supabase: ReturnType<typeof createClient>,
-  table: string,
-  cols: string,
-  orderCols: string[],
-  pageSize: number,
-): Promise<{ data: any[] | null; error: { message: string } | null }> {
-  const out: any[] = []
-  for (let from = 0; ; from += pageSize) {
-    let q = supabase.from(table).select(cols)
-    for (const c of orderCols) q = q.order(c)
-    const { data, error } = await q.range(from, from + pageSize - 1)
-    if (error) return { data: null, error }
-    out.push(...(data || []))
-    if (!data || data.length < pageSize) return { data: out, error: null }
-  }
 }
 
 // --- dedupe begin ---
@@ -185,7 +164,13 @@ Deno.serve(async (req: Request) => {
     return null
   }
   {
-    const eventIds = (await supabase.from('events').select('id').eq('rule_version', RULE_VERSION)).data?.map((r: any) => r.id) || []
+    // Doc 13: paginate the rebuild cleanup read — a >1000-event rebuild would
+    // silently truncate the deletion set and leave orphan rows behind.
+    const { data: eventIdRows, error: evErr } = await pagedSelect(supabase, 'events', 'id', ['id'], 1000, (q) =>
+      q.eq('rule_version', RULE_VERSION),
+    )
+    if (evErr) return json(500, { error: `events cleanup lookup failed: ${evErr.message}` })
+    const eventIds = eventIdRows?.map((r: any) => r.id) || []
     if (eventIds.length) {
       let r = await deleteInChunks('event_articles', 'event_id', eventIds, 'event_articles')
       if (r) return r

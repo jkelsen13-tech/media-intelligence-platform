@@ -470,3 +470,17 @@ export function runPipeline(articles, entityPairs, cfg, lexicon) {
   }
   return plan
 }
+
+// Doc 13 site 9: shared paged read with an optional caller filter. Plain ESM
+// JavaScript so the same file runs in the Deno edge runtime and node:test.
+export async function pagedSelect(supabase, table, cols, orderCols, pageSize, filter = (q) => q) {
+  const out = []
+  for (let from = 0; ; from += pageSize) {
+    let q = filter(supabase.from(table).select(cols))
+    for (const c of orderCols) q = q.order(c)
+    const { data, error } = await q.range(from, from + pageSize - 1)
+    if (error) return { data: null, error }
+    out.push(...(data || []))
+    if (!data || data.length < pageSize) return { data: out, error: null }
+  }
+}
