@@ -1,6 +1,6 @@
 # MIP — Index and Governing Rules
 
-> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14. Phase 3 authorization and sequencing resolution folded in 2026-08-04. Graph Analysis Layer (G-ALG) status and CI regression folded in 2026-08-05. Source Comparison View (06C) build and auto-promotion reversal folded in 2026-08-07. Document 07 cross-surface ingestion canary folded in 2026-08-08. 06C functional closure (live full-corpus write, three surfaced write-path repairs, key rotation) folded in 2026-08-09. Manual pre-demo ingest-rss runs (0801Z/0804Z) folded in 2026-08-09; core-table census verified live 2026-08-10. r5 live-form correction, golden-fixture staleness finding, and accepted known drift folded in 2026-08-10. Tier 3 gate round 3 closure — r6 guard live, weeks/months-after gap closed and regression-locked, Tier 3 marked VERIFIED by the owner — folded in 2026-08-10. All governing rules, shared vocabulary, integration seams, and the execution contract are carried forward unchanged unless explicitly noted below.**
+> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14. Phase 3 authorization and sequencing resolution folded in 2026-08-04. Graph Analysis Layer (G-ALG) status and CI regression folded in 2026-08-05. Source Comparison View (06C) build and auto-promotion reversal folded in 2026-08-07. Document 07 cross-surface ingestion canary folded in 2026-08-08. 06C functional closure (live full-corpus write, three surfaced write-path repairs, key rotation) folded in 2026-08-09. Manual pre-demo ingest-rss runs (0801Z/0804Z) folded in 2026-08-09; core-table census verified live 2026-08-10. r5 live-form correction, golden-fixture staleness finding, and accepted known drift folded in 2026-08-10. Tier 3 gate round 3 closure — r6 guard live, weeks/months-after gap closed and regression-locked, Tier 3 marked VERIFIED by the owner — folded in 2026-08-10. Doc 13 (scaling/pagination ceiling) closure and post-close live census folded in 2026-08-12, together with reconciliation of three stale working-document status fields (04 addendum Step 3, 05, 07 — see table). All governing rules, shared vocabulary, integration seams, and the execution contract are carried forward unchanged unless explicitly noted below.**
 
 Always attach this document. Attach exactly one active working document with it.
 
@@ -19,7 +19,10 @@ Always attach this document. Attach exactly one active working document with it.
 | 02C_PHASE_3_LEGAL_POLICY | Policy lifecycle and curated legal-case layer | **Internal closed beta LIVE since 2026-08-05. Public release blocked pending existing gate.** |
 | 03_BACKLOG | Later features and captured ideas | Item 1 (Source Comparison View) — **CLOSED 2026-08-09** (see 06C). Item 2 (Silence Detection Dashboard) — not started. |
 | 04_TRACK_B_DESIGN | Light, open public-knowledge visual system | Step 1 authorized to run in parallel — deployment status still unconfirmed |
-| 07_DOC07_CALLAIS_CANARY | Cross-surface ingestion test corpus (Louisiana v. Callais) | **Canary ingestion COMPLETE 2026-08-08 (see 06D below). Extraction NOT authorized — separate checkpoint.** |
+| 04_ADDENDUM_STEP3_ARC_GROUPED_TIMELINE | Arc-grouped timeline view (Step 3) | **CLOSED 2026-08-10 — shipped and verified** (hard count 362 canonical events exactly-once; unit suite green; CI green). Corrects a stale "Not started" carried in a prior audit. |
+| 05_CROSS_WINDOW_NAVIGATION | Cross-window navigation | **Shipped — CLOSED** (owner-confirmed 2026-08-12). Corrects a stale "Not started" carried in a prior audit. |
+| 07_DOC07_CALLAIS_CANARY | Cross-surface ingestion test corpus (Louisiana v. Callais) | **Canary ingestion COMPLETE 2026-08-08 (see 06D below). Extraction NOT authorized — separate checkpoint.** (Status already correct here — ingestion complete, extraction held; supersedes any stale "Not started" in a prior audit.) |
+| 13_SCALING_PAGINATION_CEILING | PostgREST 1000-row silent truncation — paginate every unpaginated select | **CLOSED 2026-08-12** — all nine sites fixed, regression tests banked, CI green; final commit `8d6f8ef` (see Doc 13 closure below). |
 | MIP_MASTER_PLAN | Consolidated owner reference | Archive, not an execution prompt |
 
 ## Governing rules
@@ -131,6 +134,21 @@ Current live state: All 29 rows are RAW/INERT. They are visible in the News feed
 
 Extraction — deliberately NOT authorized. Would run as backfill-legacy's scoped mode (`?run=doc07-canary-2026-08-08`): entity extraction → claims/citation extraction → Tier-1 cosine arc assignment (existing-arc attachment or new-arc origination, with hub-entity exclusion / min-shared-entity / similarity floor / anti-snowball gates). This is the step that would move nodes/edges/sources/citations/entities/arc_* counts and make the Callais material appear in Arcs/Graph/Timeline. Explicitly held as its own separate checkpoint/session, not bundled into ingestion. Caution on record: scoped mode is the safe path; the `?reset=1` path wipes the entire arc layer and is not part of any proposal.
 
+### Doc 13 — Scaling/Pagination Ceiling — CLOSED 2026-08-12
+
+Every unpaginated `.select()` that could exceed PostgREST's silent 1000-row cap now paginates (keyset by `id`, composite-key keyset for `node_topics`, offset pagination for the source-comparison cleanup read). Read-path changes only — no algorithm, schema, or UI changes. One commit per site, each byte-verified after push; acceptance bar per site: fixture-seeded past-1000 proof with named rows beyond position 1000 present in the result, zero-count cleanup proof for temporary fixtures, full suite green.
+
+Site ledger (all live on main):
+- Sites 1, 2, 3, 5 (frontend loaders: node_topics composite-PK, loadGraph, loadTimeline five reads, loadOutlets) and site 4 (arc-grouped timeline, seven reads) — commit `4ca5b0f`; regression-proven in `tests/frontendPagination13.test.mjs` / `tests/arcGroupedTimelinePagination.test.mjs` (named deep rows `nd-001001`/`nd-001300`, `n-001001`/`n-001300`, outlet existing only at position 1500; flat/grouped views agree on deep rows).
+- ingest-rss keyset helper (`lib.js` plain-ESM `keysetAll`) — commit `69cc315`, blob `bd87b63b…`.
+- Site 6 (backfill-legacy actorsPass/topicsPass event-node reads) — commit `f331960`, blob `db6bc28…`; suite 187/187 at push.
+- Site 9 (source-comparison-run rebuild cleanup event-id read; shared `pagedSelect`) — commit `9c38262`, blobs `18d8d64…`/`eef9c44…`; suite 190/190.
+- Sites 7–8 (ingest-rss nodes label dedupe; citations full keyset read then client-side sort/slice to the stated most-recent 2000 — `.limit(2000)` was already silently capped at 1000) — commit `98dfb6e`, blob `00b2cc1…`; suite 194/194.
+- Five Doc 13 test files — commit `9642aae`, all five blobs byte-verified; full suite 204/204.
+- Final commit (verifier v4 criteria + append-only run log): `8d6f8ef`; both CI workflows (Golden regression suite, Deploy to GitHub Pages) green on it. Verifier records: `verifier/v4/doc13-pagination.md`, `verifier/runs/2026-08-11-doc13-per-site.md`.
+
+Post-close core-table census (read live 2026-08-12, read-only publishable key): **entities 963, nodes 750, edges 411, articles 752** — zero-delta vs the 2026-08-10 20:03 UTC census, as expected: sites 6–9 are read-path-only and mutate no row counts, and both cron jobs remain `active=false`.
+
 ### Next authorized action
 
 Four open threads:
@@ -156,6 +174,9 @@ No further database mutations, ingestion, cron activation, UI work, or scope exp
 - 06C Source Comparison View — CLOSED 2026-08-09: live full-corpus write verified (347 events / 839 claims / 898 article_claims / 413 event_articles / +1,311 explanations), zero-delta on other 12 core tables, owner UI check passed, key rotated; three latent write-path bugs surfaced and repaired same day (dedupe Option A, cleanup chunking, assertion_type CHECK extension)
 - 06D Document 07 Callais canary — ingestion COMPLETE 2026-08-08, 29/29 rows verified row-level and count-matched; extraction deliberately held as separate checkpoint
 - Manual pre-demo ingest-rss runs (2026-08-09, 0801Z/0804Z) — articles 728 → 744 and graph-layer deltas itemized in the two runs' verifier records; folded into the census above
+- 04_ADDENDUM_STEP3_ARC_GROUPED_TIMELINE — CLOSED 2026-08-10 (shipped, verified; corrects stale "Not started")
+- 05_CROSS_WINDOW_NAVIGATION — shipped, CLOSED (owner-confirmed 2026-08-12; corrects stale "Not started")
+- 13_SCALING_PAGINATION_CEILING — CLOSED 2026-08-12, all nine sites + tests banked per-site, final commit `8d6f8ef`, CI green, post-close census entities 963 / nodes 750 / edges 411 / articles 752
 - 561 awaiting_review rows — structurally blocked on provenance-completeness backfill, not yet scoped
 - Backlog Item 2 (Silence Detection Dashboard) — not started
 - Track B (04) — Step 1 authorized to run in parallel, deployment still not confirmed

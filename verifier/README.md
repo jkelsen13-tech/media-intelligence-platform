@@ -29,6 +29,7 @@ adaptation), byte-verified pushes, CI at HEAD 9db34829.
 Details: `v3/graph-band.md`. Run log: `runs/2026-08-10-trackb-step2-graph-band.md`.
 Differs from prior version: first graph-layout verification; adds headless
 fcose metrics harness. No schema changes; rendering only.
+
 ## v4 (created 2026-08-11)
 Measures: Doc 13 scaling/pagination ceiling — every unpaginated .select()
 that can exceed PostgREST's silent 1000-row cap. Criteria: limited read-path
@@ -39,3 +40,13 @@ Details: `v4/doc13-pagination.md`. Run log: `runs/2026-08-11-doc13-per-site.md`.
 Differs from prior version: first backend/Edge-Function verification; adds
 plain-ESM shared-helper pattern (Deno edge + node:test parity) and keyset
 composite-PK pagination proof.
+
+## v5 (created 2026-08-12)
+Measures: 00_INDEX Doc 13 checkpoint closure — CLOSED status + nine-site
+ledger + final commit 8d6f8ef, FRESH post-close live census (entities/nodes/
+edges/articles), reconciliation of three stale working-document status fields
+(04 addendum Step 3, 05, 07), session git-token destruction proof, and
+byte-verified push. Details: `v5/index-doc13-checkpoint.md`. Run log:
+`runs/2026-08-12-index-doc13-closure.md`.
+Differs from prior version: doc/checkpoint verification rather than code
+behavior; first criterion set that includes credential-destruction proof.
