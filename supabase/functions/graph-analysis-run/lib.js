@@ -18,6 +18,27 @@
 export const NODE_ATTRIBUTES = Object.freeze(['id', 'slug', 'label', 'type', 'arc_id', 'confidence', 'occurred_at'])
 export const EDGE_ATTRIBUTES = Object.freeze(['id', 'source_id', 'target_id', 'type', 'signal_source', 'doc_strength', 'reliability', 'similarity'])
 
+// Doc 13 site 3: PostgREST silently truncates any unpaginated select at 1000
+// rows — and the checkpoint hash is computed JS-side over whatever the read
+// returned, so a truncated read would mint a hash describing a PARTIAL graph.
+// Keyset-paginate by the unique `id` column until a short page returns.
+// Keyset (cursor) is preferred over offset because ingest writes
+// concurrently — offsets can skip/duplicate rows as inserts shift pages.
+// Lives in lib.js (runtime-portable) so node:test pins the read path itself.
+export async function keysetAll(client, table, cols, { pageSize = 1000 } = {}) {
+  const out = []
+  let last = null
+  for (;;) {
+    let q = client.from(table).select(cols).order('id', { ascending: true })
+    if (last !== null) q = q.gt('id', last)
+    const { data, error } = await q.limit(pageSize)
+    if (error) return { data: null, error }
+    out.push(...(data ?? []))
+    if (!data || data.length < pageSize) return { data: out, error: null }
+    last = data[data.length - 1].id
+  }
+}
+
 export const LAYOUT_ALGORITHM = 'phyllotaxis-seed'
 export const LAYOUT_ALGORITHM_VERSION = '1.0.0'
 export const LAYOUT_SEED = 'fnv1a-32'

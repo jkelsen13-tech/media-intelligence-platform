@@ -18,6 +18,7 @@ import {
   computeCheckpoint,
   planWrites,
   buildLayoutPayload,
+  keysetAll,
   NODE_ATTRIBUTES,
   EDGE_ATTRIBUTES,
 } from './lib.js'
@@ -43,13 +44,11 @@ Deno.serve(async (req: Request) => {
   )
 
   // Read-only snapshot of the live graph (whitelisted columns only).
-  const { data: nodeRows, error: nodeErr } = await supabase
-    .from('nodes')
-    .select(NODE_ATTRIBUTES.join(','))
+  // Doc 13 site 3: keyset-paginated — an unpaginated read silently caps at
+  // 1000 rows and the JS-side hash below would then describe a partial graph.
+  const { data: nodeRows, error: nodeErr } = await keysetAll(supabase, 'nodes', NODE_ATTRIBUTES.join(','))
   if (nodeErr) return json(500, { error: `nodes read failed: ${nodeErr.message}` })
-  const { data: edgeRows, error: edgeErr } = await supabase
-    .from('edges')
-    .select(EDGE_ATTRIBUTES.join(','))
+  const { data: edgeRows, error: edgeErr } = await keysetAll(supabase, 'edges', EDGE_ATTRIBUTES.join(','))
   if (edgeErr) return json(500, { error: `edges read failed: ${edgeErr.message}` })
 
   const checkpoint = await computeCheckpoint(nodeRows, edgeRows)
