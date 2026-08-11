@@ -29,7 +29,6 @@ adaptation), byte-verified pushes, CI at HEAD 9db34829.
 Details: `v3/graph-band.md`. Run log: `runs/2026-08-10-trackb-step2-graph-band.md`.
 Differs from prior version: first graph-layout verification; adds headless
 fcose metrics harness. No schema changes; rendering only.
-
 ## v4 (created 2026-08-11)
 Measures: Doc 13 scaling/pagination ceiling — every unpaginated .select()
 that can exceed PostgREST's silent 1000-row cap. Criteria: limited read-path
