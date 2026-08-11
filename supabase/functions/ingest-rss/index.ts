@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { keysetAll } from './lib.js'
 
 // ---------------------------------------------------------------------------
 // MIP Build Directive v2 — Steps 1-4.
@@ -1663,7 +1664,8 @@ Deno.serve(async (req: Request) => {
     .eq('enabled', true)
   if (srcErr) throw srcErr
 
-  const { data: nodeRows } = await supabase.from('nodes').select('id, label')
+  // Doc 13: keyset-paginate past the 1000-row ceiling (nodes grow with ingest).
+  const { data: nodeRows } = await keysetAll(supabase, 'nodes', 'id, label')
   const nodeLabels = (nodeRows ?? [])
     .filter((n: any) => n.label && n.label.length >= 5)
     .sort((a: any, b: any) => b.label.length - a.label.length)
@@ -1956,11 +1958,16 @@ Deno.serve(async (req: Request) => {
     .eq('status', 'active')
 
   // ---------- Phase 3: monoculture flags (unchanged) ----------
-  const { data: citRows2 } = await supabase
-    .from('citations')
-    .select('cited_entity, article_id')
-    .order('created_at', { ascending: false })
-    .limit(2000)
+  // Doc 13: the stated intent was "most recent 2000 citations" — but PostgREST
+  // silently caps ANY response at 1000 rows, so .limit(2000) was already
+  // truncated. Keyset-paginate the full set, then re-apply created_at desc
+  // client-side and take the intended 2000.
+  // id included: the keyset cursor reads it back off the returned rows.
+  const { data: citAll, error: citErr } = await keysetAll(supabase, 'citations', 'id, cited_entity, article_id, created_at')
+  if (citErr) throw citErr
+  const citRows2 = (citAll ?? [])
+    .sort((a: any, b: any) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+    .slice(0, 2000)
   const byEntity = new Map<string, string[]>()
   for (const c of citRows2 ?? []) {
     const key = c.cited_entity.toLowerCase()
