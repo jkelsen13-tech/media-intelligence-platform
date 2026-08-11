@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { keysetAll } from './lib.js'
 
 // ---------------------------------------------------------------------------
 // ⚠️  WARNING (Phase 0 arc-membership fix): the ?reset=1 path WIPES the entire
@@ -1631,10 +1632,9 @@ async function attachStep(supabase: any, cfg: any, report: any, runTag: string |
 // for the CURRENT graph. Idempotent. Event<->article linkage via the id
 // prefix embedded in event-node slugs ('art-...-<id8>').
 async function actorsPass(supabase: any, report: any, deadline: number) {
-  const { data: ents, error } = await supabase
-    .from('entities')
-    .select('id, canonical_name, entity_type')
-    .in('entity_type', ['person', 'organization', 'institution'])
+  const { data: ents, error } = await keysetAll(supabase, 'entities', 'id, canonical_name, entity_type', {
+    filter: (q: any) => q.in('entity_type', ['person', 'organization', 'institution']),
+  })
   if (error) throw error
   const actorNodeByEntity = new Map<string, string>()
   for (const e of ents ?? []) {
