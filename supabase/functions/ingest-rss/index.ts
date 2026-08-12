@@ -872,8 +872,8 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   ],
   unclassified: [
     { key: 'gen_response', title: 'Official response issued', confirm: /\b(respond\w+|statement|comment\w+|reaction)\b/i },
-    { key: 'gen_development', title: 'Further developments reported', confirm: /\b(develop\w+|update\w+|continu\w+|latest)\b/i },
-    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w+|criticis\w+|criticiz\w+|praise\w+|backlash|condemn\w+)\b/i },
+    { key: 'gen_development', title: 'Further developments reported', confirm: /\b(develop\w+|update\w*|continu\w+|latest)\b/i },
+    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w+|criticis\w+|criticiz\w+|praise|backlash|condemn\w+)\b/i },
   ],
 }
 
@@ -1167,50 +1167,27 @@ interface AttachContext {
 }
 
 async function attachToArc(supabase: any, art: any, arc: any, ctx: AttachContext) {
-  // Phase 2 (02B) evidence capture: persist assignment provenance (F5 fix).
-  await supabase.from('articles').update({
-    arc_id: arc.id,
-    arc_assignment_evidence: {
+  // 15A: atomic attach (migration 20260813_atomic_arc_attach). Membership
+  // write, member-count derivation, and the running-centroid fold happen in
+  // ONE SQL transaction, computed from the current stored value inside it.
+  // Duplicate attach is an idempotent no-op ('already_attached'). Deliberate
+  // failure-contract change: a centroid failure now rolls back the membership
+  // too — the article stays unattached and retryable instead of landing with
+  // a stale centroid (the old try/catch silently allowed that).
+  const { error: attachErr } = await supabase.rpc('attach_article_to_arc', {
+    p_article_id: art.id,
+    p_arc_id: arc.id,
+    p_embedding: ctx.embedding && ctx.embedding.length > 0 ? `[${ctx.embedding.join(',')}]` : null,
+    // Phase 2 (02B) evidence capture: persist assignment provenance (F5 fix).
+    p_evidence: {
       similarity: ctx.similarity,
       shared_entity_ids: ctx.sharedEntityIds,
       shared_entity_names: ctx.sharedEntities,
       rule_version: 'arc_assign@20260724+gte-small(threshold=0.88)',
       assigned_at: new Date().toISOString(),
     },
-  }).eq('id', art.id)
-
-  // Phase 0 fix: arc embeddings were set once from the seed article and never
-  // updated, so similarity checks compared against a stale (sometimes wrong)
-  // vector. Maintain a RUNNING CENTROID over member embeddings instead.
-  if (ctx.embedding && ctx.embedding.length > 0) {
-    try {
-      const { data: fresh } = await supabase
-        .from('story_arcs')
-        .select('embedding')
-        .eq('id', arc.id)
-        .single()
-      const { count } = await supabase
-        .from('articles')
-        .select('id', { count: 'exact', head: true })
-        .eq('arc_id', arc.id)
-        .not('embedding', 'is', null)
-      const m = count ?? 1 // members with embeddings, INCLUDING the one just attached
-      const old = parseVec(fresh?.embedding)
-      const n = ctx.embedding.length
-      const next: number[] = new Array(n)
-      for (let i = 0; i < n; i++) {
-        const prev = old && old.length === n && m > 1 ? old[i] * (m - 1) : 0
-        next[i] = (prev + ctx.embedding[i]) / m
-      }
-      await supabase
-        .from('story_arcs')
-        .update({ embedding: `[${next.join(',')}]` })
-        .eq('id', arc.id)
-      arc.embedding = next
-    } catch {
-      // centroid refresh is best-effort; attachment itself must not fail
-    }
-  }
+  })
+  if (attachErr) throw attachErr
 
   const slug = `art-${slugify(art.title).slice(0, 40)}-${String(art.id).slice(0, 8)}`
   const { data: node } = await supabase
@@ -2007,7 +1984,7 @@ Deno.serve(async (req: Request) => {
       .order('published_at', { ascending: false })
       .limit(AUTHOR_MAX_PRIOR)
     const count = arts?.length ?? 0
-    await supabase.from('authors').update({ article_count: count }).eq('author_id', author.id)
+    await supabase.from('authors').update({ article_count: count }).eq('id', author.id)
     if (count < AUTHOR_MIN) continue
 
     let substantive = 0, framing = 0
@@ -2036,7 +2013,7 @@ Deno.serve(async (req: Request) => {
     await supabase
       .from('authors')
       .update({ framing_profile: profile, confidence, last_computed: new Date().toISOString() })
-      .eq('author_id', author.id)
+      .eq('id', author.id)
     await supabase.from('author_profile_queue').update({ processed_at: new Date().toISOString() }).eq('author_id', author.id)
     report.authorsProfiled++
   }
