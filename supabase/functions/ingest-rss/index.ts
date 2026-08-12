@@ -872,8 +872,8 @@ const MILESTONE_TEMPLATES: Record<string, MilestoneTemplate[]> = {
   ],
   unclassified: [
     { key: 'gen_response', title: 'Official response issued', confirm: /\b(respond\w+|statement|comment\w+|reaction)\b/i },
-    { key: 'gen_development', title: 'Further developments reported', confirm: /\b(develop\w+|update\w*|continu\w+|latest)\b/i },
-    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w+|criticis\w+|criticiz\w+|praise|backlash|condemn\w+)\b/i },
+    { key: 'gen_development', title: 'Further developments reported', confirm: /\b(develop\w+|update\w+|continu\w+|latest)\b/i },
+    { key: 'gen_reaction', title: 'Stakeholder reaction emerges', confirm: /\b(react\w+|criticis\w+|criticiz\w+|praise\w+|backlash|condemn\w+)\b/i },
   ],
 }
 
@@ -1984,7 +1984,7 @@ Deno.serve(async (req: Request) => {
       .order('published_at', { ascending: false })
       .limit(AUTHOR_MAX_PRIOR)
     const count = arts?.length ?? 0
-    await supabase.from('authors').update({ article_count: count }).eq('id', author.id)
+    await supabase.from('authors').update({ article_count: count }).eq('author_id', author.id)
     if (count < AUTHOR_MIN) continue
 
     let substantive = 0, framing = 0
@@ -2013,7 +2013,7 @@ Deno.serve(async (req: Request) => {
     await supabase
       .from('authors')
       .update({ framing_profile: profile, confidence, last_computed: new Date().toISOString() })
-      .eq('id', author.id)
+      .eq('author_id', author.id)
     await supabase.from('author_profile_queue').update({ processed_at: new Date().toISOString() }).eq('author_id', author.id)
     report.authorsProfiled++
   }
