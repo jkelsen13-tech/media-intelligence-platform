@@ -49,3 +49,13 @@ byte-verified push. Details: `v5/index-doc13-checkpoint.md`. Run log:
 `runs/2026-08-12-index-doc13-closure.md`.
 Differs from prior version: doc/checkpoint verification rather than code
 behavior; first criterion set that includes credential-destruction proof.
+
+## v6 (created 2026-08-12)
+Measures: Doc 15A atomic centroid + idempotent attach — four required tests
+run before-state-first against the live DB with scratch fixtures (race loss
+reproduced: 0.045 vs 0.06; double-count reproduced: 0.035 vs 0.03; orphan
+reproduced), RPC after-state all exact; cleanup zero-delta census; static
+drift-guard test (tests/atomicAttach15A.test.mjs) guarding both callers;
+inherited re-parenting limitation documented (owner instruction). Details:
+`v6/doc15a-atomic-attach.md`. Run log: `runs/2026-08-12-doc15a-atomic-attach.md`.
+Differs from prior version: first concurrency/atomicity verification.
