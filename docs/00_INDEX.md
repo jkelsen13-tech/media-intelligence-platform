@@ -25,6 +25,7 @@ Always attach this document. Attach exactly one active working document with it.
 | 13_SCALING_PAGINATION_CEILING | PostgREST 1000-row silent truncation — paginate every unpaginated select | **CLOSED 2026-08-12** — all nine sites fixed, regression tests banked, CI green; final commit `8d6f8ef` (see Doc 13 closure below). |
 | 15A_ATOMIC_CENTROID_IDEMPOTENT_ATTACH | attachToArc lost-update race + duplicate-attach double-count — atomic in-SQL attach | **CLOSED 2026-08-12** — migration `20260813_atomic_arc_attach` live, both callers on `attach_article_to_arc` RPC, four before/after tests passed, CI green; final commit `85ad23e` (see Doc 15A closure below). |
 | 08_PROJECT2025_TRACKER | Project 2025 Tracker, Track 1: DOJ Civil Rights Division enforcement posture (Mandate for Leadership Ch. 17) | **STAGE D CLOSED 2026-08-12** — six-goal canary written and owner-approved at review; goals #1/#6 unwritten by design; Stage E NOT authorized (see Doc 08 closure below). |
+| 16_ACCOUNT_PIPELINE | Account pipeline (renumbered 2026-08-12 per Rule 14: formerly 05_ACCOUNT_PIPELINE — 05 retained by 05_CROSS_WINDOW_NAVIGATION, CLOSED and already folded) | Not started — renumbering only; no implementation authorized |
 | MIP_MASTER_PLAN | Consolidated owner reference | Archive, not an execution prompt |
 
 ## Governing rules
