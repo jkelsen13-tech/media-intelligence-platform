@@ -931,7 +931,7 @@ const TOPIC_RULES: Array<{ slug: string; weight: number; re: RegExp }> = [
   { slug: 'labor-economy', weight: 0.45, re: /\b(inflation|tariff\w*|trade (deal|war|dispute)|recession|budget|gdp|interest rate\w*|federal reserve|jobs report|wages?|strike\w*|union\w*)\b/i },
   { slug: 'labor-economy', weight: 0.3, re: /\b(econom\w+|markets?|stocks?|shares)\b/i },
   { slug: 'public-health', weight: 0.45, re: /\b(hospital\w*|vaccin\w*|pandemic|disease|virus|cdc\b|who\b|public health|medical)\b/i },
-  { slug: 'civil-liberties', weight: 0.45, re: /\b(civil libert\w+|free speech|privacy|protest\w*|dissent|censorship|surveillance|press freedom)\b/i },
+  { slug: 'civil-liberties', weight: 0.45, re: /\b(civil libert\w+|free speech|privacy|protest\w+|dissent|censorship|surveillance|press freedom)\b/i },
 ]
 
 function tagTopics(text: string, floor: number): Array<{ slug: string; confidence: number }> {
@@ -983,39 +983,22 @@ interface AttachContext {
 }
 
 async function attachToArc(supabase: any, art: any, arc: any, ctx: AttachContext) {
-  await supabase.from('articles').update({ arc_id: arc.id }).eq('id', art.id)
-
-  // Phase 0 fix: maintain a RUNNING CENTROID over member embeddings instead
-  // of leaving the arc embedding frozen at its seed (mirrors ingest-rss).
-  if (ctx.embedding && ctx.embedding.length > 0) {
-    try {
-      const { data: fresh } = await supabase
-        .from('story_arcs')
-        .select('embedding')
-        .eq('id', arc.id)
-        .single()
-      const { count } = await supabase
-        .from('articles')
-        .select('id', { count: 'exact', head: true })
-        .eq('arc_id', arc.id)
-        .not('embedding', 'is', null)
-      const m = count ?? 1 // members with embeddings, INCLUDING the one just attached
-      const old = parseVec(fresh?.embedding)
-      const n = ctx.embedding.length
-      const next: number[] = new Array(n)
-      for (let i = 0; i < n; i++) {
-        const prev = old && old.length === n && m > 1 ? old[i] * (m - 1) : 0
-        next[i] = (prev + ctx.embedding[i]) / m
-      }
-      await supabase
-        .from('story_arcs')
-        .update({ embedding: `[${next.join(',')}]` })
-        .eq('id', arc.id)
-      arc.embedding = next
-    } catch {
-      // centroid refresh is best-effort; attachment itself must not fail
-    }
-  }
+  // 15A: atomic attach (migration 20260813_atomic_arc_attach). Membership
+  // write, member-count derivation, and the running-centroid fold happen in
+  // ONE SQL transaction, computed from the current stored value inside it.
+  // Duplicate attach is an idempotent no-op ('already_attached'). Deliberate
+  // failure-contract change: a centroid failure now rolls back the membership
+  // too — the article stays unattached and retryable instead of landing with
+  // a stale centroid (the old try/catch silently allowed that).
+  // p_evidence null => existing arc_assignment_evidence is preserved
+  // (backfill never wrote it).
+  const { error: attachErr } = await supabase.rpc('attach_article_to_arc', {
+    p_article_id: art.id,
+    p_arc_id: arc.id,
+    p_embedding: ctx.embedding && ctx.embedding.length > 0 ? `[${ctx.embedding.join(',')}]` : null,
+    p_evidence: null,
+  })
+  if (attachErr) throw attachErr
 
   const slug = `art-${slugify(art.title).slice(0, 40)}-${String(art.id).slice(0, 8)}`
   const { data: node } = await supabase
