@@ -1,6 +1,6 @@
 # MIP — Index and Governing Rules
 
-> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14. Phase 3 authorization and sequencing resolution folded in 2026-08-04. Graph Analysis Layer (G-ALG) status and CI regression folded in 2026-08-05. Source Comparison View (06C) build and auto-promotion reversal folded in 2026-08-07. Document 07 cross-surface ingestion canary folded in 2026-08-08. 06C functional closure (live full-corpus write, three surfaced write-path repairs, key rotation) folded in 2026-08-09. Manual pre-demo ingest-rss runs (0801Z/0804Z) folded in 2026-08-09; core-table census verified live 2026-08-10. r5 live-form correction, golden-fixture staleness finding, and accepted known drift folded in 2026-08-10. Tier 3 gate round 3 closure — r6 guard live, weeks/months-after gap closed and regression-locked, Tier 3 marked VERIFIED by the owner — folded in 2026-08-10. Doc 13 (scaling/pagination ceiling) closure and post-close live census folded in 2026-08-12, together with reconciliation of three stale working-document status fields (04 addendum Step 3, 05, 07 — see table). All governing rules, shared vocabulary, integration seams, and the execution contract are carried forward unchanged unless explicitly noted below.**
+> **Authoritative. Adopted by the owner 2026-07-29; fixture-run results folded in 2026-07-31 per Rule 14. Phase 3 authorization and sequencing resolution folded in 2026-08-04. Graph Analysis Layer (G-ALG) status and CI regression folded in 2026-08-05. Source Comparison View (06C) build and auto-promotion reversal folded in 2026-08-07. Document 07 cross-surface ingestion canary folded in 2026-08-08. 06C functional closure (live full-corpus write, three surfaced write-path repairs, key rotation) folded in 2026-08-09. Manual pre-demo ingest-rss runs (0801Z/0804Z) folded in 2026-08-09; core-table census verified live 2026-08-10. r5 live-form correction, golden-fixture staleness finding, and accepted known drift folded in 2026-08-10. Tier 3 gate round 3 closure — r6 guard live, weeks/months-after gap closed and regression-locked, Tier 3 marked VERIFIED by the owner — folded in 2026-08-10. Doc 13 (scaling/pagination ceiling) closure and post-close live census folded in 2026-08-12, together with reconciliation of three stale working-document status fields (04 addendum Step 3, 05, 07 — see table). Doc 15A (atomic centroid and idempotent attach) closure folded in 2026-08-12 — write-path correctness fix, zero-delta census. All governing rules, shared vocabulary, integration seams, and the execution contract are carried forward unchanged unless explicitly noted below.**
 
 Always attach this document. Attach exactly one active working document with it.
 
@@ -23,6 +23,7 @@ Always attach this document. Attach exactly one active working document with it.
 | 05_CROSS_WINDOW_NAVIGATION | Cross-window navigation | **Shipped — CLOSED** (owner-confirmed 2026-08-12). Corrects a stale "Not started" carried in a prior audit. |
 | 07_DOC07_CALLAIS_CANARY | Cross-surface ingestion test corpus (Louisiana v. Callais) | **Canary ingestion COMPLETE 2026-08-08 (see 06D below). Extraction NOT authorized — separate checkpoint.** (Status already correct here — ingestion complete, extraction held; supersedes any stale "Not started" in a prior audit.) |
 | 13_SCALING_PAGINATION_CEILING | PostgREST 1000-row silent truncation — paginate every unpaginated select | **CLOSED 2026-08-12** — all nine sites fixed, regression tests banked, CI green; final commit `8d6f8ef` (see Doc 13 closure below). |
+| 15A_ATOMIC_CENTROID_IDEMPOTENT_ATTACH | attachToArc lost-update race + duplicate-attach double-count — atomic in-SQL attach | **CLOSED 2026-08-12** — migration `20260813_atomic_arc_attach` live, both callers on `attach_article_to_arc` RPC, four before/after tests passed, CI green; final commit `85ad23e` (see Doc 15A closure below). |
 | MIP_MASTER_PLAN | Consolidated owner reference | Archive, not an execution prompt |
 
 ## Governing rules
@@ -149,6 +150,20 @@ Site ledger (all live on main):
 
 Post-close core-table census (read live 2026-08-12, read-only publishable key): **entities 963, nodes 750, edges 411, articles 752** — zero-delta vs the 2026-08-10 20:03 UTC census, as expected: sites 6–9 are read-path-only and mutate no row counts, and both cron jobs remain `active=false`.
 
+### Doc 15A — Atomic Centroid and Idempotent Attach — CLOSED 2026-08-12
+
+Correctness fix, not an optimization. The defect: `attachToArc` read the arc centroid, computed the running centroid in JS, and wrote it back — a lost-update race under concurrent attach, plus a double-count when the same article attached twice. The fix: migration `20260813_atomic_arc_attach` (applied live 2026-08-12) adds `attach_article_to_arc(uuid, uuid, vector, jsonb)` — membership write, in-transaction member-count derivation, and the centroid fold in ONE SQL statement sequence, serialized on arc-row `FOR UPDATE`, idempotent via article-row `FOR UPDATE` + `already_attached` no-op (float8[] text round-trip for the fold; pgvector cannot subscript, 42804). Deliberate, owner-approved failure-contract change: a centroid failure now rolls back the membership too (retryable), replacing the silent try/catch. Both `attachToArc` callers (ingest-rss, backfill-legacy) switched to the RPC; arc-selection logic untouched (0.78 cosine floor, two-informative-entity rule, hub filtering exactly as-is).
+
+Four required tests, before-state first then after-state, live DB (`verifier/runs/2026-08-12-doc15a-atomic-attach.md`):
+- T1 concurrent distinct attaches: BEFORE lost A's contribution (0.045 written vs correct 0.06) — premise proven; AFTER serialized, centroid exactly 0.06, delta 0.
+- T2 concurrent duplicate attach: AFTER second call returned `already_attached`, centroid unchanged, exactly one membership.
+- T3 sequential duplicate attach: BEFORE re-fold double-counted (0.035 vs correct 0.03); AFTER idempotent no-op, 0.03 held.
+- T4 partial failure: BEFORE orphaned state reproduced (membership landed, centroid stale); AFTER forced intra-function failure rolled the membership write back — neither direction orphaned.
+
+Push ledger (all blobs byte-verified after push): migration + test file + verifier v6 records — commit `4decac7`; ingest-rss caller switch (one byte-exact re-push after verify caught 3 transcription errors) — verified blob `660fbe64…`; backfill-legacy caller switch (one byte-exact re-push after verify caught a 1-char transcription error) — commit `85ad23e`. Unit suite 212/212 (204 baseline + 8 new drift-guard tests in `tests/atomicAttach15A.test.mjs`). Both CI workflows (Golden regression suite, Deploy to GitHub Pages) green on final commit `85ad23e`.
+
+Post-close census (read live 2026-08-12): **articles 752, story_arcs 49, attached 189** — zero-delta vs the pre-run census, as expected: this is a write-path correctness fix, not a data change; all scratch fixtures deleted, and both cron jobs remain `active=false`. Recorded, not fixed (owner-directed): if an article ever moves from Arc A to Arc B, Arc A keeps a stale contribution indefinitely — inherited, out-of-scope limitation, noted in the verifier record.
+
 ### Next authorized action
 
 Four open threads:
@@ -177,6 +192,7 @@ No further database mutations, ingestion, cron activation, UI work, or scope exp
 - 04_ADDENDUM_STEP3_ARC_GROUPED_TIMELINE — CLOSED 2026-08-10 (shipped, verified; corrects stale "Not started")
 - 05_CROSS_WINDOW_NAVIGATION — shipped, CLOSED (owner-confirmed 2026-08-12; corrects stale "Not started")
 - 13_SCALING_PAGINATION_CEILING — CLOSED 2026-08-12, all nine sites + tests banked per-site, final commit `8d6f8ef`, CI green, post-close census entities 963 / nodes 750 / edges 411 / articles 752
+- 15A_ATOMIC_CENTROID_IDEMPOTENT_ATTACH — CLOSED 2026-08-12, migration `20260813_atomic_arc_attach` + both callers on RPC, four before/after tests passed (race loss, duplicate double-count, orphan state all reproduced before; all exact after), final commit `85ad23e`, CI green, zero-delta census articles 752 / story_arcs 49 / attached 189
 - 561 awaiting_review rows — structurally blocked on provenance-completeness backfill, not yet scoped
 - Backlog Item 2 (Silence Detection Dashboard) — not started
 - Track B (04) — Step 1 authorized to run in parallel, deployment still not confirmed
