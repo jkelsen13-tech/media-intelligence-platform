@@ -83,7 +83,7 @@ Article count discrepancy note superseded: count grew from 580 → 699 via a man
 
 1. Phase 2 final acceptance fixtures — CLOSED 2026-07-31.
 2. Human review of the 567 awaiting_review explanation rows — SUPERSEDED 2026-08-03, then that supersession itself REVERSED 2026-08-07 (see above). Current live state: 0 rows auto-promoted; manual review still not chosen. 561 rows remain structurally blocked pending a future provenance-completeness backfill (not yet scoped).
-3. Open observations (non-blocking): unchanged — 40 of 209 distinct explanation source_ids resolve to no live source row; backup-table RLS posture decision still deferred.
+3. Open observations (non-blocking): unchanged — 40 of 209 distinct explanation source_ids resolve to no live source row. **Backup-table RLS posture — VERIFIED CLOSED 2026-08-12** (was: decision deferred). Basis: owner-run live query 2026-08-12 — all 84 public-schema tables, including all backup tables, `rls_enabled=true`; backup tables correctly carry 0 policies (deny-all default, working as intended). Independently re-verified same day via pg_class/pg_policies: 90/90 public tables RLS-enabled, 42 backup/audit tables 0-policy (count difference vs the owner query is relkind scope only, posture identical).
 4. Phase 3 (02C) legal/policy work — RESOLVED 2026-08-04 (unchanged).
 
 ### 02C Phase 3 — internal beta, LIVE
