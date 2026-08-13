@@ -18,6 +18,8 @@ import SourceComparisonView from './views/SourceComparisonView'
 import { loadPhase3BetaFlag } from './lib/phase3ReadPath'
 import { loadSourceComparisonBetaFlag } from './lib/sourceComparisonReadPath'
 import { loadGraph, loadTopics } from './lib/supabase'
+import AccountPanel from './panels/AccountPanel'
+import { loadAccountUiFlag } from './lib/auth'
 
 const VIEWS = [
   { key: 'news', label: 'News Feed', shortLabel: 'News' },
@@ -141,6 +143,11 @@ export default function App() {
   // is true, and the flat view's code path is unchanged either way.
   const [timelineGroupedBeta, setTimelineGroupedBeta] = useState(false)
   const [timelineMode, setTimelineMode] = useState('flat')
+  // 05_ACCOUNT_PIPELINE: account UI flag. Same withhold posture: false
+  // until pipeline_config.account_ui === true; rollback = flip flag false,
+  // the entry point disappears without touching accounts or data.
+  const [accountUi, setAccountUi] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
   // Cross-view focus: clicking an arc/article/node link in one view opens
   // the target in its own view.
   const [focusArc, setFocusArc] = useState(null)
@@ -168,6 +175,9 @@ export default function App() {
     loadTimelineGroupedBetaFlag()
       .then((on) => setTimelineGroupedBeta(on === true))
       .catch(() => setTimelineGroupedBeta(false))
+    loadAccountUiFlag()
+      .then((on) => setAccountUi(on === true))
+      .catch(() => setAccountUi(false))
   }, [])
 
   // Step 9 (§8): tapping a node makes it focal — its depth-2 neighborhood
@@ -388,6 +398,15 @@ export default function App() {
           ))}
         </nav>
         {graph && <span className="data-source">data: {graph.source}</span>}
+        {accountUi && (
+          <button
+            className="account-btn"
+            aria-label="Account"
+            onClick={() => setAccountOpen(true)}
+          >
+            Sign in
+          </button>
+        )}
         <button
           className="info-btn"
           aria-label="About this app"
@@ -419,6 +438,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {accountOpen && accountUi && <AccountPanel onClose={() => setAccountOpen(false)} />}
 
       {topicsOpen && topicsData && (
         <TopicBrowser
