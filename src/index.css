@@ -1993,6 +1993,12 @@ body {
 
 .hub-meta {
   flex-shrink: 0;
+  /* Defense-in-depth (2026-08-14): with flex-shrink: 0 the meta keeps its
+     intrinsic width; min-width: 0 plus wrap means a pathologically long
+     meta value (e.g. the e7e35b9 UUID-in-degree regression) wraps within
+     its own box instead of forcing the title column to near-zero width. */
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--text-muted);
   font-size: 15px;
 }
