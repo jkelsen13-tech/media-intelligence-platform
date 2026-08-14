@@ -143,7 +143,7 @@ export default function App() {
   // is true, and the flat view's code path is unchanged either way.
   const [timelineGroupedBeta, setTimelineGroupedBeta] = useState(false)
   const [timelineMode, setTimelineMode] = useState('flat')
-  // 05_ACCOUNT_PIPELINE: account UI flag. Same withhold posture: false
+  // 16_ACCOUNT_PIPELINE: account UI flag. Same withhold posture: false
   // until pipeline_config.account_ui === true; rollback = flip flag false,
   // the entry point disappears without touching accounts or data.
   const [accountUi, setAccountUi] = useState(false)
@@ -343,7 +343,7 @@ export default function App() {
       degree.set(e.target, (degree.get(e.target) ?? 0) + 1)
     })
     return graph.nodes
-      .map((n) => ({ node: n, degree: degree.get(n.id ?? n.slug) ?? 0 }))
+      .map((n) => ({ node: n, degree: (n.id ?? n.slug) ?? 0 }))
       .sort((a, b) => b.degree - a.degree)
       .slice(0, HUB_LIST_SIZE)
   }, [graph])
@@ -503,7 +503,7 @@ export default function App() {
                     {nodeMatches.length > 0 && (
                       <ul className="graph-search-results">
                         {nodeMatches.map((n) => (
-                          <li key={n.id ?? n.slug}>
+                          <li key={node.id ?? node.slug}>
                             <button onClick={() => pickNode(n)}>
                               <span className="graph-search-label">{n.label}</span>
                               <span className="graph-search-type">{n.type}</span>
