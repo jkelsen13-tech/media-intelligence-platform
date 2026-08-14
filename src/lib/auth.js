@@ -1,4 +1,4 @@
-// 05_ACCOUNT_PIPELINE — identity layer seam (UI side).
+// 16_ACCOUNT_PIPELINE — identity layer seam (UI side).
 //
 // Scope: magic-link signup/login, session detection, and auth state exposure
 // for the rest of the app. No workspace/saved-topics/flagging — those are
@@ -35,7 +35,7 @@ export async function loadAccountUiFlag() {
 
 /**
  * Send a magic link. shouldCreateUser: true makes this one call serve both
- * signup and login (per Doc 05's single entry point). options.data carries
+ * signup and login (per Doc 16's single entry point). options.data carries
  * the trigger-gating metadata on the FIRST sign-in that creates the user.
  */
 export async function sendMagicLink(email) {
@@ -96,7 +96,7 @@ export function clearAuthRedirectError() {
 }
 
 /**
- * Auth state for the rest of the app (Doc 05 acceptance: "the auth state is
+ * Auth state for the rest of the app (Doc 16 acceptance: "the auth state is
  * available to other parts of the app"). Any component can call this hook;
  * 02B-ADD Part B will consume session.user.id as the flag-enforcement
  * user_id. Returns { session, user, loading }.

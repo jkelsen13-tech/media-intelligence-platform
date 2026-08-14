@@ -1,4 +1,4 @@
-// 05_ACCOUNT_PIPELINE — account sheet (identity layer UI only).
+// 16_ACCOUNT_PIPELINE — account sheet (identity layer UI only).
 //
 // Renders inside App's sheet pattern. Behind pipeline_config.account_ui
 // (App only mounts this component while the flag is true). States:
