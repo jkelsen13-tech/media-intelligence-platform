@@ -1,4 +1,4 @@
--- 05_ACCOUNT_PIPELINE: minimal identity layer for MIP
+-- 16_ACCOUNT_PIPELINE: minimal identity layer for MIP
 -- Namespaced to avoid collision with an unrelated app's public.profiles on this project.
 -- Applied live via Supabase migration history version 20260812175607
 -- (name: add_mip_profiles_table_with_rls). This file is the byte-exact applied SQL.

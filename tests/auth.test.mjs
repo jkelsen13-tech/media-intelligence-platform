@@ -1,4 +1,4 @@
-// 05_ACCOUNT_PIPELINE — lock the identity-layer wiring.
+// 16_ACCOUNT_PIPELINE — lock the identity-layer wiring.
 //
 // The two failure modes these tests guard against are both silent:
 //   1. MIP_USER_METADATA loses app:'mip' -> the DB trigger stops creating

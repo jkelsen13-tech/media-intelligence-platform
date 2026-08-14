@@ -1,4 +1,4 @@
--- 05_ACCOUNT_PIPELINE follow-up: scope the signup trigger to MIP signups only.
+-- 16_ACCOUNT_PIPELINE follow-up: scope the signup trigger to MIP signups only.
 -- MIP's auth signup call sets raw_user_meta_data->>'app' = 'mip'.
 -- Signups without that key (e.g. Threshold's) produce no mip_profiles row.
 -- Behaviorally verified live 2026-08-13:
