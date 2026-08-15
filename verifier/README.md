@@ -59,3 +59,18 @@ drift-guard test (tests/atomicAttach15A.test.mjs) guarding both callers;
 inherited re-parenting limitation documented (owner instruction). Details:
 `v6/doc15a-atomic-attach.md`. Run log: `runs/2026-08-12-doc15a-atomic-attach.md`.
 Differs from prior version: first concurrency/atomicity verification.
+
+## v7 (created 2026-08-15)
+Measures: 04_TRACK_B Step 1 shared light-theme tokens — flag withhold unit
+test (`tests/themeFlag.test.mjs`, withhold posture for every non-true value),
+before/after screenshots of header + all four tabs in both themes with
+programmatic body-background assertion, accent-removal test on Header and
+News Feed, WCAG AA contrast on all light-theme text pairs (22/22 >= 4.5:1;
+three marginal values fixed during verification), live rollback drill
+(flag true -> live light, flag false -> instant dark revert), byte-verified
+pushes, CI at final HEAD. Owner adjustment: 13px -> 16–18px body-text change
+held out of this pass (open item; affects layout/density, not just color).
+Details: `v7/trackb-step1-tokens.md`. Run log:
+`runs/2026-08-15-trackb-step1.md`.
+Differs from prior version: first styling/theme verification; adds
+token-level contrast measurement and a live feature-flag rollback drill.
