@@ -71,3 +71,39 @@ Append-only. Times UTC.
      instant revert to dark on next page load, no redeploy. PASS
   Screenshots: live-drill-{false-pre,true,false-post}-{news,timeline}.png.
 - Flag left at false (dark) — withhold posture restored.
+
+## 05:50Z–06:10Z — PRODUCTION FLIP to light (owner-authorized 2026-08-15)
+- Pre-flip SELECT confirmed live value was false (not assumed).
+- UPDATE pipeline_config SET value=true, returning confirmed true.
+- Live verification against production (headless Chromium, fresh loads):
+  all four tabs (News/Graph/Timeline/Arcs) render light —
+  data-theme='light', body bg rgb(247,247,244)=#F7F7F4, text
+  rgb(26,26,23)=#1a1a17 on every tab. Screenshots: live-light-*.png.
+- Accent-removal test re-run against the LIVE light state (accent +
+  cat-blue neutralized to grey): Header + News Feed remain fully legible —
+  hierarchy via typography/layout, statuses are text labels. PASS.
+  Screenshot: live-light-accent-removed-news.png.
+- NO-FLASH CHECK — found a real defect: content render is correctly gated
+  (first-contentful-paint at 4636ms, already light), but the page BACKDROP
+  painted dark rgb(11,11,10) from first-paint (1340ms) until the flag
+  resolved (4624ms). Reported to owner; owner answered "no preference" —
+  shipped the minimal fix as Step 1 polish:
+- ee0c7480 flash fix: index.html inline head script applies the
+  localStorage-cached theme ('mip-theme') before first paint;
+  themeFlag.js cacheTheme() writes the cache after each authoritative
+  resolution; +1 unit test (5 total, all green locally with stubbed
+  supabase). Cache is a paint-time hint only — authoritative re-resolution
+  gates render on every load, withhold posture intact (failed fetch =>
+  dark regardless of cache). Byte-verified: index.html 84a81948,
+  themeFlag.js 004a52f7, themeFlag.test.mjs cba73f06.
+- Post-fix flash measurement (deployed at ee0c7480, CI green: Golden
+  regression suite + Pages deploy both success):
+  - WARM visit (cache primed): data-theme='light' at 46ms, bg light from
+    the start, first-paint 32ms light, FCP 388ms. ZERO flash.
+  - COLD visit (empty cache, e.g. first-ever visit or right after a flag
+    change): dark backdrop during flag fetch, content still gated light.
+    Documented limitation, by design.
+- CI re-confirmed post-flip: latest runs at HEAD 6bc98e5b and ee0c7480 all
+  success; DB-only flip triggered no runs, as expected.
+- Final state: track_b_light_theme = true; light theme is the production
+  default. Rollback remains: set flag false (one SQL update).
