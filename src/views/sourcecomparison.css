@@ -1,5 +1,5 @@
 /* Source Comparison (Item 1) beta view — mirrors phase3.css conventions:
-   sc- prefix, same banner/notice reuse, same chip vocabulary, dashed #6c71c4
+   sc- prefix, same banner/notice reuse, same chip vocabulary, dashed --cat-inferred
    for absence-style markers. No composite-score affordances anywhere. */
 
 .sc-view {
@@ -9,8 +9,8 @@
 }
 
 .sc-banner {
-  background: #1b1f2a;
-  border: 1px solid #2a3040;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 16px 20px;
 }
@@ -18,19 +18,19 @@
 .sc-banner h2 {
   margin: 0 0 8px;
   font-size: 1.05rem;
-  color: #cfd3e0;
+  color: var(--text-body);
 }
 
 .sc-banner p {
   margin: 0;
   font-size: 0.85rem;
   line-height: 1.5;
-  color: #9aa0b4;
+  color: var(--text-secondary);
 }
 
 .sc-event {
-  background: #161a24;
-  border: 1px solid #262c3a;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 16px 20px;
   display: flex;
@@ -49,18 +49,18 @@
 .sc-event-head h3 {
   margin: 0;
   font-size: 0.95rem;
-  color: #dde1ec;
+  color: var(--text-primary);
 }
 
 .sc-meta {
   margin: 0;
   font-size: 0.78rem;
-  color: #8a90a4;
+  color: var(--text-muted);
 }
 
 .sc-outlet {
   font-weight: 600;
-  color: #cfd3e0;
+  color: var(--text-body);
 }
 
 .sc-outlet-inline {
@@ -75,40 +75,40 @@
   padding: 1px 8px;
   border-radius: 10px;
   font-size: 0.72rem;
-  border: 1px solid #3a4152;
-  color: #aab0c4;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
-.sc-chip-r1 { border-color: #3d7a4f; color: #8fd6a3; }
-.sc-chip-r2 { border-color: #6a7a3d; color: #c2d68f; }
-.sc-chip-r3 { border-color: #8a6d3b; color: #e0b36a; }
-.sc-chip-r4 { border-color: #8a3b3b; color: #e08a8a; }
+.sc-chip-r1 { border-color: var(--tier-1-border); color: var(--tier-1-text); }
+.sc-chip-r2 { border-color: var(--tier-2-border); color: var(--tier-2-text); }
+.sc-chip-r3 { border-color: var(--tier-3-border); color: var(--tier-3-text); }
+.sc-chip-r4 { border-color: var(--tier-4-border); color: var(--tier-4-text); }
 
-.sc-chip-e1 { border-color: #3d7a4f; color: #8fd6a3; }
-.sc-chip-e2 { border-color: #6a7a3d; color: #c2d68f; }
-.sc-chip-e3 { border-color: #8a6d3b; color: #e0b36a; }
-.sc-chip-e4 { border-color: #4a5064; color: #9aa0b4; }
+.sc-chip-e1 { border-color: var(--tier-1-border); color: var(--tier-1-text); }
+.sc-chip-e2 { border-color: var(--tier-2-border); color: var(--tier-2-text); }
+.sc-chip-e3 { border-color: var(--tier-3-border); color: var(--tier-3-text); }
+.sc-chip-e4 { border-color: var(--tier-4-muted-border); color: var(--tier-4-muted-text); }
 
-.sc-chip-shared { border-color: #3d5a80; color: #8fb3e0; }
-.sc-chip-unique { border-color: #5a4a80; color: #b3a0e0; }
+.sc-chip-shared { border-color: var(--status-blue-border); color: var(--status-blue-text); }
+.sc-chip-unique { border-color: var(--cat-inferred); color: var(--cat-inferred); }
 
-.sc-chip-muted { color: #6a7084; border-style: dashed; }
-.sc-chip-thin { border-color: #8a6d3b; color: #e0b36a; border-style: dashed; }
-.sc-chip-loaded { border-color: #8a3b6a; color: #e08ac0; margin-right: 4px; }
+.sc-chip-muted { color: var(--text-muted); border-style: dashed; }
+.sc-chip-thin { border-color: var(--tier-3-border); color: var(--tier-3-text); border-style: dashed; }
+.sc-chip-loaded { border-color: var(--cat-pink-border); color: var(--cat-pink); margin-right: 4px; }
 
 .sc-claim {
-  border: 1px solid #232a38;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #141821;
+  background: var(--bg-elevated);
 }
 
 .sc-claim-thin {
-  border-left: 3px solid #8a6d3b;
+  border-left: 3px solid var(--tier-3-border);
 }
 
 .sc-claim-head {
@@ -121,43 +121,43 @@
 .sc-claim-text {
   margin: 0;
   font-size: 0.9rem;
-  color: #dde1ec;
+  color: var(--text-primary);
   line-height: 1.45;
 }
 
 /* Omission vs coverage_unknown — deliberately distinct styling and copy.
-   Omission uses the dashed #6c71c4 absence marker convention from phase3. */
+   Omission uses the dashed --cat-inferred absence marker convention from phase3. */
 .sc-omission {
   margin: 0;
   font-size: 0.8rem;
-  color: #aab0c4;
-  border-left: 3px dashed #6c71c4;
+  color: var(--text-secondary);
+  border-left: 3px dashed var(--cat-inferred);
   padding: 4px 10px;
 }
 
 .sc-unknown {
   margin: 0;
   font-size: 0.8rem;
-  color: #7d8397;
-  border-left: 3px dotted #4a5064;
+  color: var(--text-muted);
+  border-left: 3px dotted var(--border-strong);
   padding: 4px 10px;
   font-style: italic;
 }
 
 .sc-syndicated {
-  color: #8fb3e0;
+  color: var(--status-blue-text);
 }
 
 .sc-timing {
-  color: #9aa0b4;
+  color: var(--text-secondary);
 }
 
 .sc-single-source,
 .sc-empty {
   margin: 0;
   font-size: 0.82rem;
-  color: #7d8397;
-  border: 1px dashed #3a4152;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
   border-radius: 6px;
   padding: 8px 12px;
 }
@@ -165,7 +165,7 @@
 .sc-correction {
   margin: 0;
   font-size: 0.8rem;
-  color: #e0b36a;
+  color: var(--tier-3-text);
 }
 
 .sc-surface-list {
@@ -178,7 +178,7 @@
 }
 
 .sc-surface {
-  border: 1px solid #202634;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px 12px;
   display: flex;
@@ -196,22 +196,22 @@
 .sc-surface-text {
   margin: 0;
   font-size: 0.84rem;
-  color: #c3c8d8;
+  color: var(--text-body);
   line-height: 1.5;
 }
 
 .sc-loaded {
   margin: 0;
   font-size: 0.78rem;
-  color: #9aa0b4;
+  color: var(--text-secondary);
 }
 
 .sc-loaded-cat {
-  color: #7d8397;
+  color: var(--text-muted);
 }
 
 .sc-src {
-  color: #8fb3e0;
+  color: var(--status-blue-text);
   text-decoration: none;
   font-size: 0.78rem;
 }
@@ -223,7 +223,7 @@
 .sc-details summary {
   cursor: pointer;
   font-size: 0.78rem;
-  color: #8a90a4;
+  color: var(--text-muted);
 }
 
 .sc-details[open] summary {
@@ -231,7 +231,7 @@
 }
 
 .sc-explanation {
-  border-top: 1px dashed #2a3040;
+  border-top: 1px dashed var(--border-color);
   padding-top: 6px;
   display: flex;
   flex-direction: column;
@@ -241,7 +241,7 @@
 .sc-ev-passage {
   margin: 0;
   font-size: 0.8rem;
-  color: #b8bdd0;
+  color: var(--text-body);
   line-height: 1.45;
 }
 
@@ -255,7 +255,7 @@
 }
 
 .sc-xlink:focus-visible {
-  outline: 2px solid #8fb3e0;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -271,7 +271,7 @@
 }
 
 .sc-event.sc-focused {
-  outline: 2px solid #8fb3e0;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 4px;
   border-radius: 4px;
   transition: outline-color 0.3s ease;

@@ -2,8 +2,8 @@
 
 .p3-view { padding: 0 0 24px; }
 .p3-banner {
-  border: 1px solid #444;
-  border-left: 4px solid #b58900;
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--status-amber-text);
   background: rgba(181, 137, 0, 0.08);
   padding: 12px 16px;
   margin-bottom: 16px;
@@ -14,7 +14,7 @@
 .p3-section-title { font-size: 1rem; margin: 20px 0 10px; }
 
 .p3-case {
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 14px 16px;
   margin-bottom: 16px;
@@ -32,24 +32,24 @@
   font-size: 0.72rem;
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid #666;
+  border: 1px solid var(--border-strong);
   white-space: nowrap;
 }
-.p3-chip-draft { border-color: #888; opacity: 0.8; }
-.p3-chip-awaiting_review { border-color: #b58900; color: #b58900; }
-.p3-chip-reviewed { border-color: #2aa198; color: #2aa198; }
-.p3-chip-published { border-color: #268bd2; color: #268bd2; }
-.p3-chip-disputed, .p3-chip-corrected, .p3-chip-withdrawn { border-color: #dc322f; color: #dc322f; }
+.p3-chip-draft { border-color: var(--text-muted); opacity: 0.8; }
+.p3-chip-awaiting_review { border-color: var(--status-amber-text); color: var(--status-amber-text); }
+.p3-chip-reviewed { border-color: var(--status-green-text); color: var(--status-green-text); }
+.p3-chip-published { border-color: var(--status-blue-text); color: var(--status-blue-text); }
+.p3-chip-disputed, .p3-chip-corrected, .p3-chip-withdrawn { border-color: var(--cat-red); color: var(--cat-red); }
 
 .p3-privacy-banner {
-  border: 1px dashed #cb4b16;
-  color: #cb4b16;
+  border: 1px dashed var(--status-amber-text);
+  color: var(--status-amber-text);
   padding: 6px 10px;
   border-radius: 6px;
   font-size: 0.8rem;
 }
 .p3-open-banner {
-  border: 1px dashed #888;
+  border: 1px dashed var(--text-muted);
   padding: 6px 10px;
   border-radius: 6px;
   font-size: 0.82rem;
@@ -57,8 +57,8 @@
 }
 
 .p3-verdict {
-  border: 1px solid #555;
-  border-left: 4px solid #268bd2;
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--accent);
   border-radius: 6px;
   padding: 10px 12px;
   margin: 10px 0;
@@ -68,7 +68,7 @@
 .p3-framed-as { font-size: 0.78rem; font-style: italic; opacity: 0.8; margin: 6px 0 0; }
 
 .p3-uncertainty {
-  border-left: 3px solid #b58900;
+  border-left: 3px solid var(--status-amber-text);
   padding: 4px 10px;
   font-size: 0.85rem;
   margin: 10px 0;
@@ -79,11 +79,11 @@
 .p3-track-count { font-size: 0.72rem; opacity: 0.6; }
 .p3-track-copy { font-size: 0.76rem; opacity: 0.7; margin: 0 0 6px; }
 .p3-track-empty { font-size: 0.8rem; opacity: 0.6; margin: 4px 0; }
-.p3-track-withheld_from_factfinder h4 { color: #dc322f; }
+.p3-track-withheld_from_factfinder h4 { color: var(--cat-red); }
 
 .p3-ev-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .p3-ev {
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 0.85rem;
@@ -92,7 +92,7 @@
 .p3-ev-passage {
   margin: 6px 0;
   padding: 6px 10px;
-  border-left: 3px solid #555;
+  border-left: 3px solid var(--border-strong);
   font-size: 0.8rem;
   opacity: 0.85;
 }
@@ -103,22 +103,22 @@
    "confirmed absent" copy — never mistakable for an evidence passage. */
 .p3-ev-marker {
   border-style: dashed;
-  border-color: #6c71c4;
+  border-color: var(--cat-inferred);
   background: rgba(108, 113, 196, 0.06);
 }
-.p3-marker-copy { font-size: 0.76rem; color: #6c71c4; margin: 4px 0; font-style: italic; }
+.p3-marker-copy { font-size: 0.76rem; color: var(--cat-inferred); margin: 4px 0; font-style: italic; }
 
 /* 02C hard rule: unverified social material is dashed + labeled. */
-.p3-ev-unverified { border-style: dashed; border-color: #b58900; }
+.p3-ev-unverified { border-style: dashed; border-color: var(--status-amber-text); }
 .p3-unverified-banner {
   font-size: 0.74rem;
-  color: #b58900;
+  color: var(--status-amber-text);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin: 0 0 4px;
 }
 
-.p3-correction { color: #dc322f; font-size: 0.82rem; }
+.p3-correction { color: var(--cat-red); font-size: 0.82rem; }
 
 /* Policy lifecycle strip (02C 3A UI requirement: horizontal strip, every
    segment opens its provenance and source). */
@@ -133,12 +133,12 @@
 .p3-segment {
   flex: 0 0 auto;
   min-width: 140px;
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 0.8rem;
 }
-.p3-segment-missing { border-style: dashed; border-color: #6c71c4; }
+.p3-segment-missing { border-style: dashed; border-color: var(--cat-inferred); }
 .p3-segment summary { cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
 .p3-segment-state { font-weight: 600; }
 .p3-segment-date { font-size: 0.72rem; opacity: 0.7; }
