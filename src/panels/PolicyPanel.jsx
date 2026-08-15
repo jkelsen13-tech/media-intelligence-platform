@@ -269,7 +269,7 @@ export default function PolicyPanel({ node, nodes, edges, onNavigate, onClose, i
           </div>
         </div>
         <div className="ap-tags">
-          <span className="ap-tag ap-tag-type" style={{ borderColor: '#a78bfa', color: '#a78bfa' }}>
+          <span className="ap-tag ap-tag-type" style={{ borderColor: 'var(--cat-violet)', color: 'var(--cat-violet)' }}>
             Policy
           </span>
           {status && <span className="ap-tag pp-status">{status}</span>}

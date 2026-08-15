@@ -20,7 +20,7 @@ const LINK_FILTERS = [
 ]
 
 function confidenceColor(score) {
-  if (score == null) return '#6b7280'
+  if (score == null) return 'var(--text-muted)'
   const hue = Math.round((score / 100) * 120)
   return `hsl(${hue}, 70%, 45%)`
 }

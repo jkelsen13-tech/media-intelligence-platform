@@ -18,7 +18,7 @@ import SkyBadge from './SkyBadge'
 // is omitted rather than fabricated.
 
 function confidenceColor(score) {
-  if (score == null) return '#6b7280'
+  if (score == null) return 'var(--text-muted)'
   // red (0) -> amber (50) -> green (100)
   const hue = Math.round((score / 100) * 120)
   return `hsl(${hue}, 70%, 45%)`
@@ -481,7 +481,7 @@ export default function ArticlePanel({
                     }}
                   />
                   <span className="ap-conn-label">{c.label}</span>
-                  <span className="ap-conn-meta" style={{ color: edgeMeta?.color ?? '#9ca3af' }}>
+                  <span className="ap-conn-meta" style={{ color: edgeMeta?.color ?? 'var(--text-secondary)' }}>
                     {c.direction === 'out' ? '→' : '←'} {c.rel ?? edgeMeta?.label}
                   </span>
                   <span className="ap-conn-strength num" title="Connection strength">
