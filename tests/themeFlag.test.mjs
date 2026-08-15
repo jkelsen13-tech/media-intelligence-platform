@@ -7,7 +7,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveTheme, applyTheme } from '../src/lib/themeFlag.js'
+import { resolveTheme, applyTheme, cacheTheme } from '../src/lib/themeFlag.js'
 
 test('resolveTheme: exactly boolean true -> light', () => {
   assert.equal(resolveTheme(true), 'light')
@@ -32,4 +32,13 @@ test('applyTheme: unknown theme never sets the attribute', () => {
   applyTheme('light', el)
   applyTheme('blue', el)
   assert.equal(el.dataset.theme, undefined)
+})
+
+test('cacheTheme: writes mip-theme, never throws on storage failure', () => {
+  const store = { v: null, setItem(k, val) { this.v = [k, val] } }
+  cacheTheme('light', store)
+  assert.deepEqual(store.v, ['mip-theme', 'light'])
+  const broken = { setItem() { throw new Error('blocked') } }
+  cacheTheme('dark', broken) // must not throw
+  cacheTheme('light', null) // no storage: no-op
 })

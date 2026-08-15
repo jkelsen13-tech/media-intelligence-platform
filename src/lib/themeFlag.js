@@ -12,6 +12,13 @@
 // default, so rollback = set the flag false (one SQL update, effective on
 // next page load) — no data or logic changes, per Doc 04's rollback field.
 //
+// Flash fix (2026-08-15): the resolved theme is cached to localStorage
+// ('mip-theme'); an inline script in index.html applies the cached value
+// before first paint so repeat visits don't flash the dark backdrop during
+// the flag fetch. The cache is a paint-time hint only — this module still
+// re-resolves authoritatively on every load and its result wins (withhold
+// posture intact: a failed fetch resolves dark regardless of the cache).
+//
 // Step 1 scope note: token values only. No layout, density, or font-size
 // changes ship under this flag (body-text 16–18px is a separately logged
 // open item).
@@ -31,9 +38,21 @@ export function applyTheme(theme, root) {
   else delete el.dataset.theme
 }
 
+/** Cache the resolved theme for the inline pre-paint hint in index.html. */
+export function cacheTheme(theme, storage) {
+  const store =
+    storage ?? (typeof localStorage !== 'undefined' ? localStorage : null)
+  if (!store) return
+  try {
+    store.setItem('mip-theme', theme)
+  } catch {
+    /* storage full/blocked — cosmetic cache, safe to skip */
+  }
+}
+
 /**
- * Flag read + apply. Returns the applied theme. Withhold posture: any error
- * or non-true value applies dark.
+ * Flag read + apply + cache. Returns the applied theme. Withhold posture:
+ * any error or non-true value applies dark.
  */
 export async function applyThemeFlag() {
   let theme = 'dark'
@@ -50,5 +69,6 @@ export async function applyThemeFlag() {
     theme = 'dark'
   }
   applyTheme(theme)
+  cacheTheme(theme)
   return theme
 }
