@@ -52,7 +52,9 @@
   /* Card rhythm (C6) */
   --card-pad-y: 14px;
   --card-pad-x: 18px;
-  --card-radius: 8px;
+  --card-radius: 20px; /* owner 2026-08-15: deliberately softer than the
+      original 4-8px Track B spec; applied uniformly to rectangular content
+      cards. Pills/badges (999px) and small controls keep their own radii. */
   --view-pad-top: 24px;
 
   /* 04_TRACK_B Step 1 additions (dark defaults — pixel-identical to the

@@ -12,7 +12,7 @@
   flex-direction: column;
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--card-radius);
   padding: 10px 12px;
 }
 

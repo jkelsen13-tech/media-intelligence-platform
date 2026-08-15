@@ -280,7 +280,7 @@
   background: var(--bg-panel);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: var(--card-radius);
   padding: 0.3rem 0.45rem;
   font: inherit;
 }
