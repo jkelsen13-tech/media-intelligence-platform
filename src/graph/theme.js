@@ -25,9 +25,9 @@ export const NODE_TYPES = {
   institution: { color: '#ffb01f', cssVar: '--cat-amber', label: 'Institution', shape: 'octagon' }, // amber
   document: { color: '#2fdc6f', cssVar: '--cat-green', label: 'Document', shape: 'octagon' }, // green
   anomaly: { color: '#ff5252', cssVar: '--cat-red', label: 'Anomaly', shape: 'octagon' }, // red
-  // Prepared for upcoming node types (no CSS token yet — hex fallback only).
-  topic: { color: '#2dd4bf', cssVar: null, label: 'Topic', shape: 'barrel' }, // teal
-  policy: { color: '#a78bfa', cssVar: null, label: 'Policy', shape: 'diamond' }, // violet
+  // Upcoming node types — wired to tokens (--cat-teal/--cat-violet, both themes).
+  topic: { color: '#2dd4bf', cssVar: '--cat-teal', label: 'Topic', shape: 'barrel' }, // teal
+  policy: { color: '#a78bfa', cssVar: '--cat-violet', label: 'Policy', shape: 'diamond' }, // violet
 }
 
 export const DEFAULT_NODE_SHAPE = 'octagon'

@@ -67,7 +67,7 @@
 }
 
 .auth-field input:focus {
-  outline: 2px solid #6aa5ff;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
@@ -93,12 +93,12 @@
 }
 
 .auth-sent {
-  color: #4caf7d;
+  color: var(--status-green-text);
   margin: 0;
 }
 
 .auth-error {
-  color: #e06666;
+  color: var(--danger-text);
   margin: 0;
 }
 

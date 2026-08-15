@@ -10,8 +10,8 @@
   max-height: 60vh;
   display: flex;
   flex-direction: column;
-  background: var(--ap-panel, #10151c);
-  border: 1px solid var(--ap-border, #2a3442);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 10px 12px;
 }
@@ -59,28 +59,28 @@
 }
 
 .review-status-badge.tone-human {
-  background: #123a2a;
-  color: #5ee0a0;
-  border-color: #2a6b4a;
+  background: var(--status-green-bg);
+  color: var(--status-green-text);
+  border-color: var(--status-green-border);
 }
 
 .review-status-badge.tone-system {
-  background: #1a2a4a;
-  color: #7aa8ff;
-  border-color: #33509b;
+  background: var(--status-blue-bg);
+  color: var(--status-blue-text);
+  border-color: var(--status-blue-border);
   font-style: italic;
 }
 
 .review-status-badge.tone-muted {
-  background: #232a34;
-  color: #9aa7b5;
-  border-color: #39434f;
+  background: var(--status-neutral-bg);
+  color: var(--status-neutral-text);
+  border-color: var(--status-neutral-border);
 }
 
 .review-status-badge.tone-warn {
-  background: #402a12;
-  color: #f0b35e;
-  border-color: #7a5426;
+  background: var(--status-amber-bg);
+  color: var(--status-amber-text);
+  border-color: var(--status-amber-border);
 }
 
 .review-status-group ul {
