@@ -54,6 +54,89 @@
   --card-pad-x: 18px;
   --card-radius: 8px;
   --view-pad-top: 24px;
+
+  /* 04_TRACK_B Step 1 additions (dark defaults — pixel-identical to the
+     hardcoded hexes they replace; see hex-audit in verifier/v7). */
+  --cat-inferred: #6c71c4; /* hypothesis / inferred — pair with dashed border */
+  --cat-teal: #2dd4bf;
+  --cat-violet: #a78bfa;
+  --cat-pink: #e08ac0;
+  --cat-pink-border: #8a3b6a;
+  --focus-ring: #6aa5ff;
+  --danger-text: #f87171;
+  --status-green-bg: #123a2a; --status-green-text: #5ee0a0; --status-green-border: #2a6b4a;
+  --status-blue-bg: #1a2a4a; --status-blue-text: #7aa8ff; --status-blue-border: #33509b;
+  --status-neutral-bg: #232a34; --status-neutral-text: #9aa7b5; --status-neutral-border: #39434f;
+  --status-amber-bg: #402a12; --status-amber-text: #f0b35e; --status-amber-border: #7a5426;
+  --tier-1-text: #8fd6a3; --tier-1-border: #3d7a4f;
+  --tier-2-text: #c2d68f; --tier-2-border: #6a7a3d;
+  --tier-3-text: #e0b36a; --tier-3-border: #8a6d3b;
+  --tier-4-text: #e08a8a; --tier-4-border: #8a3b3b;
+  --tier-4-muted-text: #9aa0b4; --tier-4-muted-border: #4a5064;
+  --badge-causal-text: #7c2d12; --badge-causal-bg: rgba(234, 88, 12, 0.18); --badge-causal-border: rgba(234, 88, 12, 0.45);
+  --badge-sequence-text: #1e40af; --badge-sequence-bg: rgba(59, 130, 246, 0.14); --badge-sequence-border: rgba(59, 130, 246, 0.4);
+}
+
+/* ---------- 04_TRACK_B Step 1: shared light-theme tokens ----------
+   Enabled ONLY when pipeline_config.track_b_light_theme is exactly true
+   (src/lib/themeFlag.js sets data-theme="light" on <html>). Dark :root
+   above stays the default; rollback = flag false. Values per Doc 04 Step 1:
+   warm off-white canvas, white reading surfaces, one structural blue,
+   green/amber/red semantic status, purple+dashed for inferred, 1px neutral
+   borders, 4–8px radius, ~85/10/5 neutral/blue/status budget. */
+[data-theme='light'] {
+  /* Surfaces */
+  --bg-page: #F7F7F4;
+  --bg-panel: #ffffff; /* white reading surfaces */
+  --bg-elevated: #f0f0ea; /* pale neutral-gray secondary */
+  --bg-inset: #f4f4ef;
+  --bg-selected: #dce9f7;
+  --bg-panel-rgb: 255, 255, 255;
+
+  /* Borders — 1px neutral */
+  --border-color: #d9d9d2;
+  --border-strong: #b5b5aa;
+
+  /* Text — ink on paper */
+  --text-primary: #1a1a17;
+  --text-body: #3f3f3a;
+  --text-secondary: #5c5c55;
+  --text-muted: #6e6e65; /* 4.79:1 on canvas, 5.15:1 on white (AA) */
+
+  /* Category hues — re-hued for light-bg contrast (>= 4.5:1 on white). */
+  --cat-blue: #156ebf; /* locked structural blue */
+  --cat-amber: #925e06;
+  --cat-green: #1e7f43;
+  --cat-red: #c0392b;
+  --cat-grey: #6e6e66;
+
+  /* Accent + derivatives */
+  --accent: var(--cat-blue);
+  --accent-soft: #0d4f8c; /* darker derivative reads as "soft" on light bg */
+  --accent-rgb: 21, 110, 191;
+  --flag-yellow: #a16207;
+  --red-soft: #b3261e;
+  --green-bright: #15803d;
+
+  /* 04_TRACK_B Step 1 additions, light values */
+  --cat-inferred: #7c3aed; /* purple — pair with dashed border */
+  --cat-teal: #0f766e;
+  --cat-violet: #6d28d9;
+  --cat-pink: #a21c6d;
+  --cat-pink-border: #e0a5cb;
+  --focus-ring: #156ebf;
+  --danger-text: #b3261e;
+  --status-green-bg: #e5f3eb; --status-green-text: #1a6f3a; --status-green-border: #9ccdb2;
+  --status-blue-bg: #e3eef9; --status-blue-text: #1259a6; --status-blue-border: #a9c8e8;
+  --status-neutral-bg: #efefe9; --status-neutral-text: #5c5c55; --status-neutral-border: #d5d5cb;
+  --status-amber-bg: #fbf0da; --status-amber-text: #925e06; --status-amber-border: #e3c287;
+  --tier-1-text: #1e7f43; --tier-1-border: #7fbf9b;
+  --tier-2-text: #5c7a1f; --tier-2-border: #b4c77f;
+  --tier-3-text: #925e06; --tier-3-border: #e3c287;
+  --tier-4-text: #c0392b; --tier-4-border: #e0a39b;
+  --tier-4-muted-text: #5c5c55; --tier-4-muted-border: #c9c9be;
+  --badge-causal-text: #9a3412; --badge-causal-bg: rgba(234, 88, 12, 0.12); --badge-causal-border: rgba(234, 88, 12, 0.35);
+  --badge-sequence-text: #156ebf; --badge-sequence-bg: rgba(21, 110, 191, 0.1); --badge-sequence-border: rgba(21, 110, 191, 0.35);
 }
 
 /* C5: one numeric language app-wide — the "92% DOCUMENTED" treatment
