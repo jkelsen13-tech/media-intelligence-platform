@@ -48,3 +48,26 @@ Append-only. Times UTC.
 
 ## Live migration + rollback drill
 (Executed after deploy of the above commits; entries appended below.)
+
+## 05:10Z–05:18Z — verifier push, live migration, CI, rollback drill (times UTC;
+  the blocks above were logged in sandbox-local time — actual UTC = minus ~7h)
+- 79b51b97 verifier: README.md (70950716), v7/trackb-step1-tokens.md
+  (d87ba8b9), runs/2026-08-15-trackb-step1.md (615694cd) — byte-verified.
+  (README first-verify found a 1-byte newline mismatch in the local copy;
+  remote content confirmed correct, local reconstruction re-matched.)
+- Migration `20260815_track_b_light_theme_flag` applied to live project
+  niejaejtbxgakyrsntxm via apply_migration (recorded in schema_migrations);
+  SELECT confirms key present, value false.
+- CI at every commit, including final HEAD 79b51b97: Golden regression suite
+  success + Deploy to GitHub Pages success (runs 31866394534 / 31866397530).
+- LIVE ROLLBACK DRILL against https://jkelsen13-tech.github.io/media-intelligence-platform/
+  (headless Chromium, fresh page load each phase; flag is read at load):
+  1. flag=false (baseline): data-theme absent, body bg rgb(11,11,10),
+     text rgb(232,234,240) — dark, news + timeline tabs. PASS
+  2. UPDATE pipeline_config SET value=true (returning confirmed true):
+     data-theme='light', body bg rgb(247,247,244) = #F7F7F4, text
+     rgb(26,26,23) = #1a1a17 — light, news + timeline tabs. PASS
+  3. UPDATE back to false: data-theme absent, body bg rgb(11,11,10) —
+     instant revert to dark on next page load, no redeploy. PASS
+  Screenshots: live-drill-{false-pre,true,false-post}-{news,timeline}.png.
+- Flag left at false (dark) — withhold posture restored.
