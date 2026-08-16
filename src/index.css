@@ -102,6 +102,70 @@ body {
   position: relative;
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Track B Step 2 item 1: graph chrome in normal flow — toolbar on top,
+   rail beside the canvas. Nothing floats over the canvas. */
+.graph-toolbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-panel);
+}
+
+.graph-toolbar .graph-search {
+  flex: 0 1 320px;
+}
+
+.graph-toolbar-btn {
+  min-height: 32px;
+  padding: 4px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.graph-toolbar-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.graph-toolbar-btn[aria-expanded='true'] {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.graph-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.graph-rail {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-panel);
+}
+
+.graph-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* C3: grid canvas sits under the (transparent) cytoscape layers and is
@@ -129,18 +193,14 @@ body {
 }
 
 .legend {
-  position: absolute;
-  top: 16px;
-  left: 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 12px 14px;
-  background: rgba(var(--bg-panel-rgb), 0.92);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: var(--card-radius);
   font-size: 12px;
-  pointer-events: none;
 }
 
 /* Collapse toggle: the parent legend ignores pointer events, so the
@@ -170,17 +230,14 @@ body {
   color: var(--text-primary);
 }
 
-/* Collapsed state: a single-line chip in the same corner. */
+/* Collapsed state: a single-line chip at the top of the rail. */
 .legend-collapsed {
-  position: absolute;
-  top: 16px;
-  left: 16px;
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: rgba(var(--bg-panel-rgb), 0.92);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: var(--card-radius);
   color: var(--text-secondary);
@@ -289,18 +346,14 @@ body {
   font-size: 11px;
 }
 
-/* ---------- Step 7/8: graph filter controls (bottom-left, near legend) ---------- */
+/* ---------- Step 7/8: graph filter controls (stacked in the left rail) ---------- */
 
 .graph-controls {
-  position: absolute;
-  bottom: 16px;
-  left: 16px;
-  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
-  background: rgba(var(--bg-panel-rgb), 0.92);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: var(--card-radius);
   font-size: 12px;
@@ -372,17 +425,14 @@ body {
 /* ---------- Step 9: focus breadcrumb trail ---------- */
 
 .focus-trail {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
   display: flex;
   align-items: center;
+  align-self: center;
   gap: 8px;
-  max-width: min(70%, 720px);
+  max-width: min(90%, 720px);
+  margin: 8px 12px 0;
   padding: 6px 10px;
-  background: rgba(var(--bg-panel-rgb), 0.92);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: var(--card-radius);
   font-size: 12px;
@@ -540,6 +590,18 @@ body {
 }
 
 /* ---------- Step 8: topic browser ---------- */
+
+/* Track B Step 2 item 1: docked panel in the graph rail (no longer a
+   full-screen sheet over the canvas). */
+.topic-browser {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--card-radius);
+  padding: 10px 12px;
+  font-size: 12px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
 
 .topic-browser .topic-back {
   background: none;
@@ -2315,21 +2377,37 @@ body {
     min-height: 0;
   }
 
-  /* §2.7: the collapsed legend chip also sits at top:16px; left:16px —
-     drop the full-width search bar below it so they don't collide, and
-     keep the legend (chip or expanded) stacked above the search field
-     and its results list. */
-  .graph-search {
-    top: 64px;
-    left: 16px;
-    right: 16px;
-    width: auto;
-    z-index: 10;
+  /* Track B Step 2 item 1: mobile keeps the same in-flow structure —
+     toolbar wraps, rail collapses to a horizontal strip above the canvas. */
+  .graph-toolbar {
+    flex-wrap: wrap;
   }
 
-  .legend,
-  .legend-collapsed {
-    z-index: 11;
+  .graph-toolbar .graph-search {
+    flex: 1 1 100%;
+  }
+
+  .graph-body {
+    flex-direction: column;
+  }
+
+  .graph-rail {
+    flex: 0 0 auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    max-height: 40vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .graph-rail .legend {
+    flex: 1 1 100%;
+  }
+
+  .graph-stage {
+    flex: 1;
+    min-height: 280px;
   }
 
   .graph-search input {
@@ -2337,13 +2415,8 @@ body {
     min-height: 44px;
   }
 
-  /* Focus trail drops below the full-width search bar on mobile so it
-     never collides with the legend chip or the search field. */
+  /* Focus trail is in-flow below the toolbar on all viewports. */
   .focus-trail {
-    top: 118px;
-    left: 16px;
-    right: 16px;
-    transform: none;
     max-width: none;
     font-size: 15px;
   }
@@ -2359,11 +2432,7 @@ body {
     min-height: 44px;
   }
 
-  /* Lift the EdgeControls panel above the relocated Hub list button
-     (44px min-height + 16px padding + border ≈ 62px, plus an 8px gap)
-     so the two bottom-left floating layers never overlap. */
   .graph-controls {
-    bottom: calc(88px + env(safe-area-inset-bottom));
     font-size: 15px;
   }
 
