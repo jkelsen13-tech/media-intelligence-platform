@@ -111,3 +111,16 @@ Details: `v10/source-comparison-debeta.md`. Run log:
 `runs/2026-08-16-sc-debeta.md`.
 Differs from prior version: first single-screen copy-alignment pass; adds
 a full-screen "beta" absence scan on live body text as a criterion.
+
+## v11 — 2026-08-16 — Legal & Policy in-page de-beta
+Measures: presentational-only copy change in Phase3View.jsx — h2 reads
+exactly "Legal & Policy"; no user-facing "beta" string anywhere on that
+screen (header, subtitle, disabled notice, error notice, tooltips,
+aria-labels); diff limited to three copy strings (no logic/routing/data);
+suite 240/240 rerun against the exact deployed file; build clean;
+byte-verified push (commit fe4d0e7, blob e0674b76, MATCH after adopting
+remote &amp; entity as canonical); CI green; live mobile (390px) and
+desktop screenshots with programmatic h2 confirmation.
+Details: `v11/phase3-debeta.md`. Run log: `runs/2026-08-16-phase3-debeta.md`.
+Differs from prior version: same criterion set as v10, applied to the
+Legal & Policy screen; closes the observation v10 flagged.
