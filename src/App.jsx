@@ -333,7 +333,7 @@ export default function App() {
   const focal = focusStack.length > 0 ? focusStack[focusStack.length - 1] : null
   const subgraph = useMemo(() => {
     if (!graph || !focal) return null
-    if (focal.kind === 'topic') return topicSubgraph(graph.nodes, focal.memberIds)
+    if (focal.kind === 'topic') return topicSubgraph(graph.nodes, graph.edges, focal.memberIds)
     return localSubgraph(graph.nodes, graph.edges, focal.id, 2)
   }, [graph, focal])
 
