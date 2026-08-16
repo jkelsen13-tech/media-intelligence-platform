@@ -216,12 +216,12 @@ export default function Phase3View() {
     return () => { cancelled = true }
   }, [])
 
-  if (error) return <div className="notice error">Phase 3 beta view failed to load.</div>
+  if (error) return <div className="notice error">Legal &amp; Policy view failed to load.</div>
   if (view === null) return <div className="notice">Loading…</div>
   if (!view.enabled) {
     return (
       <div className="notice">
-        Phase 3 is an internal closed beta. This surface is disabled (phase3_beta flag off).
+        Legal &amp; Policy is currently unavailable.
       </div>
     )
   }
@@ -229,7 +229,7 @@ export default function Phase3View() {
   return (
     <div className="p3-view">
       <section className="p3-banner">
-        <h2>Legal &amp; Policy — internal closed beta</h2>
+        <h2>Legal &amp; Policy</h2>
         <p>
           Curated records under human editorial review. Verdicts appear as documented claims of
           their deciding bodies. No composite alignment scores are computed. Missing evidence is
