@@ -740,7 +740,7 @@ export default function App() {
           <button
             key={v.key}
             className={`bottom-tab${(v.key === 'more' ? moreActive : view === v.key) ? ' active' : ''}`}
-            onClick={() => (v.key === 'more' ? moreActive : view === v.key)}
+            onClick={() => (v.key === 'more' ? setMoreOpen(true) : setView(v.key))}
           >
             {v.shortLabel}
           </button>
