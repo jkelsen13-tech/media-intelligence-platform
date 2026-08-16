@@ -124,3 +124,19 @@ desktop screenshots with programmatic h2 confirmation.
 Details: `v11/phase3-debeta.md`. Run log: `runs/2026-08-16-phase3-debeta.md`.
 Differs from prior version: same criterion set as v10, applied to the
 Legal & Policy screen; closes the observation v10 flagged.
+
+## v12 — 2026-08-17 — Graph chrome overlap fix (Track B Step 2 item 1)
+Measures: graph chrome in normal flow (toolbar / rail / stage), retired
+floating `.edge-list-toggle`, docked TopicBrowser; clip-aware geometry
+verifier across 8 browser states (desktop 1280×800 + mobile 390×844:
+baseline, topics-open, edge-list-open, review-status-open, search-open,
+legend-expanded) with zero chrome-on-canvas overlaps; suite 240/240;
+byte-verified pushes (App.jsx final blob 9aae9338, commit 4a98d402 —
+includes fix for a one-commit bottom-nav onClick regression at 657c6f08,
+caught by the mobile Playwright run); live screenshots desktop + mobile.
+Details: `v12/graph-chrome-overlap-fix.md`. Run log:
+`runs/2026-08-17-trackb-step2-item1.md`. Verifier script:
+`v12/check_overlap.py`.
+Differs from prior version: first layout-geometry criterion set; introduces
+the clip-aware overlap checker (ancestor overflow clipping, so scrollable
+rail content is not misreported as overlay).
