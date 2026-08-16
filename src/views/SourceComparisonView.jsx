@@ -269,7 +269,7 @@ export default function SourceComparisonView({ onOpenArticle, onOpenArc, onOpenT
   if (!view.enabled) {
     return (
       <div className="notice">
-        Source Comparison is a beta surface. This view is disabled (source_comparison_beta flag off).
+        Source Comparison is currently unavailable.
       </div>
     )
   }
@@ -277,7 +277,7 @@ export default function SourceComparisonView({ onOpenArticle, onOpenArc, onOpenT
   return (
     <div className="sc-view">
       <section className="sc-banner">
-        <h2>Source Comparison — beta</h2>
+        <h2>Source Comparison</h2>
         <p>
           Coverage of the same event compared claim by claim. Shared facts, unique claims,
           omissions, loaded language, primary evidence, corrections, timing, and source quality
