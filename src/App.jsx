@@ -17,28 +17,16 @@ import Phase3View from './views/Phase3View'
 import SourceComparisonView from './views/SourceComparisonView'
 import { loadPhase3BetaFlag } from './lib/phase3ReadPath'
 import { loadSourceComparisonBetaFlag } from './lib/sourceComparisonReadPath'
+import { buildNavViews, buildMoreEntries, isMoreViewKey } from './lib/navViews'
 import { loadGraph, loadTopics } from './lib/supabase'
 import { computeHubs } from './lib/hubs'
 import AccountPanel from './panels/AccountPanel'
 import { loadAccountUiFlag } from './lib/auth'
 
-const VIEWS = [
-  { key: 'news', label: 'News Feed', shortLabel: 'News' },
-  { key: 'graph', label: 'Knowledge Graph', shortLabel: 'Graph' },
-  { key: 'timeline', label: 'Causal Timeline', shortLabel: 'Timeline' },
-  { key: 'arcs', label: 'Story Arcs', shortLabel: 'Arcs' },
-]
-
-// 02C Phase 3 internal closed beta — nav entry exists ONLY while
-// pipeline_config.phase3_beta is true. Public release stays blocked per the
-// 02C gate; this flag is beta-internal and never implies public exposure.
-const PHASE3_VIEW = { key: 'phase3', label: 'Legal & Policy (Beta)', shortLabel: 'Beta' }
-
-// 03_BACKLOG Item 1 Source Comparison — internal beta. Nav entry exists
-// ONLY while pipeline_config.source_comparison_beta is true, and the route
-// itself is gated a second time below (mirroring phase3_beta's double
-// gate). source_comparison_public stays false — no public exposure.
-const SOURCE_COMPARISON_VIEW = { key: 'compare', label: 'Source Comparison (Beta)', shortLabel: 'Compare' }
+// Nav structure lives in ./lib/navViews (Track B 6->5 restructure,
+// 2026-08-16): four core tabs + "More"; the flag-gated Legal & Policy and
+// Source Comparison surfaces moved into the More sheet. View keys and
+// render blocks below are unchanged.
 
 // Mobile-first graph entry: the top N hubs by degree centrality.
 const HUB_LIST_SIZE = 30
@@ -109,6 +97,9 @@ export default function App() {
   const [view, setView] = useState('news')
   const [nodeQuery, setNodeQuery] = useState('')
   const [aboutOpen, setAboutOpen] = useState(false)
+  // Track B nav restructure: the "More" tab opens a bottom sheet listing
+  // the flag-gated surfaces instead of switching views itself.
+  const [moreOpen, setMoreOpen] = useState(false)
   // Mobile graph entry: 'hubs' (ranked list) -> 'sub' (hub subgraph) / 'all'.
   const [graphScreen, setGraphScreen] = useState('hubs')
   // Step 9 (§8): focus stack. Each crumb is
@@ -342,7 +333,7 @@ export default function App() {
   const focal = focusStack.length > 0 ? focusStack[focusStack.length - 1] : null
   const subgraph = useMemo(() => {
     if (!graph || !focal) return null
-    if (focal.kind === 'topic') return topicSubgraph(graph.nodes, graph.edges, focal.memberIds)
+    if (focal.kind === 'topic') return topicSubgraph(graph.nodes, focal.memberIds)
     return localSubgraph(graph.nodes, graph.edges, focal.id, 2)
   }, [graph, focal])
 
@@ -363,13 +354,18 @@ export default function App() {
     [graph],
   )
 
-  // 02C / Item 1: nav entries — each beta tab exists only while its flag is
-  // true. Withhold posture: an unreadable flag resolves false above.
-  const navViews = [
-    ...VIEWS,
-    ...(phase3Beta ? [PHASE3_VIEW] : []),
-    ...(sourceComparisonBeta ? [SOURCE_COMPARISON_VIEW] : []),
-  ]
+  // Nav entries — 4 core tabs + "More" while at least one gated surface is
+  // authorized. Withhold posture: an unreadable flag resolves false above,
+  // and with both flags false the More tab hides entirely (not grayed out).
+  const navViews = buildNavViews({ phase3Beta, sourceComparisonBeta })
+  const moreEntries = buildMoreEntries({ phase3Beta, sourceComparisonBeta })
+  // The More tab shows active while one of its member views is on screen.
+  const moreActive = isMoreViewKey(view)
+
+  const openFromMore = (key) => {
+    setView(key)
+    setMoreOpen(false)
+  }
 
   return (
     <div className="app">
@@ -380,8 +376,8 @@ export default function App() {
           {navViews.map((v) => (
             <button
               key={v.key}
-              className={`nav-tab${view === v.key ? ' active' : ''}`}
-              onClick={() => setView(v.key)}
+              className={`nav-tab${(v.key === 'more' ? moreActive : view === v.key) ? ' active' : ''}`}
+              onClick={() => (v.key === 'more' ? setMoreOpen(true) : setView(v.key))}
             >
               {v.label}
             </button>
@@ -425,6 +421,35 @@ export default function App() {
               timeline, story arcs, and the live article feed.
             </p>
             {graph && <p className="sheet-body muted">Data source: {graph.source}</p>}
+          </div>
+        </div>
+      )}
+
+      {moreOpen && moreEntries.length > 0 && (
+        <div className="sheet-backdrop" onClick={() => setMoreOpen(false)}>
+          <div
+            className="sheet more-sheet"
+            role="dialog"
+            aria-label="More"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sheet-head">
+              <h2>More</h2>
+              <button className="sheet-close" aria-label="Close" onClick={() => setMoreOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="more-list">
+              {moreEntries.map((entry) => (
+                <button
+                  key={entry.key}
+                  className="more-item"
+                  onClick={() => openFromMore(entry.key)}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -704,8 +729,8 @@ export default function App() {
         {navViews.map((v) => (
           <button
             key={v.key}
-            className={`bottom-tab${view === v.key ? ' active' : ''}`}
-            onClick={() => setView(v.key)}
+            className={`bottom-tab${(v.key === 'more' ? moreActive : view === v.key) ? ' active' : ''}`}
+            onClick={() => (v.key === 'more' ? setMoreOpen(true) : setView(v.key))}
           >
             {v.shortLabel}
           </button>
