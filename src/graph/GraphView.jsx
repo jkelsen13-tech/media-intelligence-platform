@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef } from 'react'
 import cytoscape from 'cytoscape'
 import fcose from 'cytoscape-fcose'
 import { graphStylesheet } from './styles'
-import PanJoystick from './PanJoystick'
+import GraphViewControls from './GraphViewControls'
+import { cssToken } from './theme'
 import { seedPositions } from '../analysis/layoutSeed'
 import { splitByConnectivity, placeDisconnectedBand } from './bandPlacement'
 
@@ -78,7 +79,6 @@ function fcoseOptions({ firstRun, positions }) {
 // synced <canvas> under the cytoscape layers, redrawn from pan/zoom so the
 // grid pans and zooms with the graph rather than the viewport.
 const GRID_SPACING = 48 // model px between lines
-const GRID_OPACITY = 0.07
 
 function drawGrid(canvas, cy) {
   const ctx = canvas.getContext('2d')
@@ -95,7 +95,10 @@ function drawGrid(canvas, cy) {
   const pan = cy.pan()
   const step = GRID_SPACING * zoom
   if (step < 8) return // too dense to read; fade out at far zoom
-  ctx.strokeStyle = `rgba(255, 255, 255, ${GRID_OPACITY})`
+  ctx.strokeStyle = cssToken(
+    '--graph-grid',
+    'rgba(26, 26, 23, 0.08)', // light-canvas fallback; dark token overrides
+  )
   ctx.lineWidth = 1
   ctx.beginPath()
   // First grid line at/left-of the viewport's left edge, in screen space.
@@ -154,13 +157,15 @@ export default function GraphView({
   showInferred = false,
   // Step 7: edge tap → evidence popover.
   onEdgeSelect,
-  // Fade the pan/zoom joystick while a mobile bottom sheet is open.
-  joystickDimmed = false,
+  // Fade the view controls while a mobile bottom sheet is open.
+  controlsDimmed = false,
 }) {
   const containerRef = useRef(null)
   const gridRef = useRef(null)
   const bandLabelRef = useRef(null)
   const cyRef = useRef(null)
+  // Item 2: Reset button re-runs the initial layout (assigned in effect).
+  const resetLayoutRef = useRef(null)
 
   useEffect(() => {
     // Track B Step 2: zero-edge (fully disconnected) nodes are NOT part of
@@ -525,9 +530,35 @@ export default function GraphView({
         : null
     resizeObserver?.observe(containerRef.current)
 
+    // Item 2: plain Reset control — re-run the initial layout on the same
+    // element set the constructor used (connected set when a band exists),
+    // then fit. Band singletons re-place via the layoutstop handler above.
+    resetLayoutRef.current = () => {
+      if (cy.destroyed()) return
+      const eles = runBand
+        ? cy
+            .nodes()
+            .filter((n) => connectedIds.has(n.id()))
+            .union(cy.edges())
+        : cy.elements()
+      eles
+        .layout(
+          fcoseOptions({
+            firstRun: true,
+            positions: deterministicLayoutRequested()
+              ? seedPositions(
+                  (runBand ? connected : nodes).map((n) => String(n.id ?? n.slug)),
+                )
+              : undefined,
+          }),
+        )
+        .run()
+    }
+
     redrawGrid()
     cyRef.current = cy
     return () => {
+      resetLayoutRef.current = null
       graphContainer.removeEventListener('wheel', onWheelZoom, { capture: true })
       clearTimeout(declutterTimer)
       resizeObserver?.disconnect()
@@ -577,8 +608,8 @@ export default function GraphView({
   }, [panelOpen])
 
   // Tier 5: keyboard zoom. The canvas is tab-focusable; +/− zoom around the
-  // viewport center and 0 fits the graph (the PanJoystick +/− buttons remain
-  // the on-screen keyboard-operable equivalents).
+  // viewport center and 0 fits the graph (the GraphViewControls +/−/Fit
+  // buttons remain the on-screen keyboard-operable equivalents).
   const onGraphKeyDown = (e) => {
     const cy = cyRef.current
     if (!cy || cy.destroyed()) return
@@ -621,7 +652,11 @@ export default function GraphView({
       >
         No documented connections ({disconnectedCount})
       </div>
-      <PanJoystick cyRef={cyRef} dimmed={joystickDimmed} />
+      <GraphViewControls
+        cyRef={cyRef}
+        onReset={() => resetLayoutRef.current?.()}
+        dimmed={controlsDimmed}
+      />
     </div>
   )
 }

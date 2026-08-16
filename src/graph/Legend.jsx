@@ -75,6 +75,10 @@ export default function Legend() {
       </section>
       <section>
         <h3>Edges</h3>
+        <p className="legend-note">
+          Edges are neutral grey until selected — a selected or hovered
+          relationship shows its type color:
+        </p>
         {Object.entries(EDGE_TYPES).map(([key, { cssVar, label }]) => (
           <div key={key} className="legend-row">
             <span className="legend-line" style={{ background: `var(${cssVar})` }} />
@@ -112,7 +116,9 @@ export default function Legend() {
         </div>
       </section>
       <section>
-        <p className="legend-note">Node fill color = story arc; border &amp; shape = node type.</p>
+        <p className="legend-note">
+          Border color &amp; shape = node type; node fill is neutral.
+        </p>
       </section>
     </aside>
   )

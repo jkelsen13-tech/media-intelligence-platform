@@ -7,12 +7,19 @@ import {
   typeColor,
 } from './theme'
 
-// Encoding: node FILL color = story arc (distinct muted hue per arc_id),
-// node BORDER color + octagon shape = node type. Edges keep type/weight
-// encoding (color = edge type, width = edge weight). Colors resolve from the
-// CSS tokens at draw time (Pass C C1) with theme.js hexes as fallback.
-const FALLBACK_NODE_COLOR = '#6b7280'
-const FALLBACK_EDGE_COLOR = '#6b7280'
+// Track B Step 2 item 2 (2026-08-17): light-canvas vocabulary.
+// Node FILL is white (--bg-panel) — the arc-fill encoding is retired.
+// Meaning now rides on: node BORDER color + silhouette = node type;
+// edges are neutral grey by default and take their relationship-type
+// color only while selected/hover-highlighted. Colors resolve from the
+// CSS tokens at draw time (Pass C C1) with the hexes as fallback.
+const FALLBACK_NODE_COLOR = '#6e6e66'
+const FALLBACK_EDGE_COLOR = '#6e6e66'
+
+// Neutral default edge color; the type color appears on selection only.
+function neutralEdgeColor() {
+  return cssToken('--cat-grey', FALLBACK_EDGE_COLOR)
+}
 
 // Node size scales with connection count: 36px base + 8px per connected
 // edge, capped so hubs don't swallow the canvas.
@@ -20,19 +27,8 @@ function nodeSize(ele) {
   return Math.min(36 + ele.degree(false) * 8, 110)
 }
 
-// Golden-angle hue per arc_id: hash the string, spread hashes around the
-// color wheel by 137.508° so distinct arcs land on distinct hues. Muted
-// saturation/lightness keeps the project's dark, low-key tone.
-function arcFillColor(ele) {
-  const arcId = ele.data('arc_id')
-  if (!arcId) return cssToken('--bg-elevated', '#1d2230')
-  let hash = 0
-  const s = String(arcId)
-  for (let i = 0; i < s.length; i++) {
-    hash = (hash * 31 + s.charCodeAt(i)) >>> 0
-  }
-  const hue = (hash * 137.508) % 360
-  return `hsl(${hue}, 55%, 50%)`
+function nodeFill() {
+  return cssToken('--bg-panel', '#ffffff')
 }
 
 function nodeColor(ele) {
@@ -74,21 +70,22 @@ export const graphStylesheet = [
       shape: nodeShape,
       width: nodeSize,
       height: nodeSize,
-      'background-color': arcFillColor,
+      'background-color': nodeFill,
       // C2: octagon borders are the graph's primary visual vocabulary —
-      // thicker so they read before zooming in.
+      // thicker so they read before zooming in. Border color = node type.
       'border-width': 4,
       'border-color': nodeColor,
       'border-opacity': 1,
       // Labels are gated by zoom level (GraphView toggles the .lbl class):
       // none below 0.6x, top-N hubs 0.6-1.2x, everything above 1.2x.
       label: '',
-      // C4: Inter at label weight, with a dark halo for legibility over edges.
-      color: cssToken('--text-primary', '#e8eaf0'),
+      // C4: Inter at label weight, with a canvas-colored halo for
+      // legibility over edges.
+      color: cssToken('--text-primary', '#1a1a17'),
       'font-family': 'Inter, "IBM Plex Sans", system-ui, sans-serif',
       'font-weight': 600,
       'font-size': 11,
-      'text-outline-color': cssToken('--bg-page', '#0b0b0a'),
+      'text-outline-color': cssToken('--bg-page', '#F7F7F4'),
       'text-outline-width': 2,
       'text-outline-opacity': 0.9,
       'text-valign': 'bottom',
@@ -113,7 +110,7 @@ export const graphStylesheet = [
   {
     selector: 'node:selected',
     style: {
-      'background-color': cssToken('--bg-selected', '#2d3550'),
+      'background-color': cssToken('--bg-selected', '#dce9f7'),
       'border-width': 6,
     },
   },
@@ -121,8 +118,10 @@ export const graphStylesheet = [
     selector: 'edge',
     style: {
       width: edgeWidth,
-      'line-color': edgeColor,
-      'target-arrow-color': edgeColor,
+      // Item 2: neutral grey at rest; relationship-type color only on
+      // selection / hover highlight (see edge:selected + .highlighted).
+      'line-color': neutralEdgeColor,
+      'target-arrow-color': neutralEdgeColor,
       'target-arrow-shape': 'triangle',
       'curve-style': 'bezier',
       'arrow-scale': 0.9,
@@ -130,9 +129,9 @@ export const graphStylesheet = [
       label: '',
       'font-size': 8,
       'font-family': 'Inter, "IBM Plex Sans", system-ui, sans-serif',
-      color: cssToken('--text-secondary', '#9ca3af'),
+      color: cssToken('--text-secondary', '#5c5c55'),
       'text-rotation': 'autorotate',
-      'text-background-color': cssToken('--bg-page', '#0b0b0a'),
+      'text-background-color': cssToken('--bg-page', '#F7F7F4'),
       'text-background-opacity': 0.7,
       'text-background-padding': 2,
     },
@@ -142,6 +141,9 @@ export const graphStylesheet = [
     style: {
       opacity: 1,
       'z-index': 10,
+      'line-color': edgeColor,
+      'target-arrow-color': edgeColor,
+      width: (ele) => edgeWidth(ele) + 1,
     },
   },
   // Step 7 (§3.2/§3.3): MIP_inferred edges are hypotheses — dashed, no
@@ -188,6 +190,8 @@ export const graphStylesheet = [
     style: {
       opacity: 1,
       'z-index': 10,
+      'line-color': edgeColor,
+      'target-arrow-color': edgeColor,
     },
   },
 ]

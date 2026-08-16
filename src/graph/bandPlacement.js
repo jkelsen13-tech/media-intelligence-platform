@@ -31,8 +31,9 @@ export function splitByConnectivity(nodes, edges) {
   return { connected, disconnected }
 }
 
-// Golden-angle hue per arc_id — MUST match arcFillColor in
-// src/graph/styles.js so band ordering follows the same color vocabulary.
+// Golden-angle key per arc_id. Item 2 retired the arc-fill color encoding
+// (nodes are white-filled); this remains only as a stable grouping key so
+// band ordering keeps nodes of one arc together deterministically.
 function arcHue(arcId) {
   let hash = 0
   const s = String(arcId)

@@ -49,6 +49,10 @@ export const EDGE_TYPES = {
   financial: { color: '#ffb01f', cssVar: '--cat-amber', label: 'Financial' }, // amber
   conflict: { color: '#ff5252', cssVar: '--cat-red', label: 'Conflict' }, // red
   documentary: { color: '#2fdc6f', cssVar: '--cat-green', label: 'Documentary' }, // green
+  // Live edge vocabulary (2026-08-17 census: 330 actor / 80 sequence /
+  // 1 constrained_by). Colors show only on selection/hover (item 2).
+  sequence: { color: '#a78bfa', cssVar: '--cat-violet', label: 'Sequence' }, // violet
+  constrained_by: { color: '#2dd4bf', cssVar: '--cat-teal', label: 'Constrained by' }, // teal
 }
 
 // Story-arc categories (§4.4 category tag). Colors come from the same token
