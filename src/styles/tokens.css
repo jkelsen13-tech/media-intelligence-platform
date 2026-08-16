@@ -77,6 +77,9 @@
   --tier-4-muted-text: #9aa0b4; --tier-4-muted-border: #4a5064;
   --badge-causal-text: #7c2d12; --badge-causal-bg: rgba(234, 88, 12, 0.18); --badge-causal-border: rgba(234, 88, 12, 0.45);
   --badge-sequence-text: #1e40af; --badge-sequence-bg: rgba(59, 130, 246, 0.14); --badge-sequence-border: rgba(59, 130, 246, 0.4);
+
+  /* Step 2 item 2: graph-paper grid on the canvas (drawn in canvas space). */
+  --graph-grid: rgba(255, 255, 255, 0.07);
 }
 
 /* ---------- 04_TRACK_B Step 1: shared light-theme tokens ----------
@@ -139,6 +142,9 @@
   --tier-4-muted-text: #5c5c55; --tier-4-muted-border: #c9c9be;
   --badge-causal-text: #9a3412; --badge-causal-bg: rgba(234, 88, 12, 0.12); --badge-causal-border: rgba(234, 88, 12, 0.35);
   --badge-sequence-text: #156ebf; --badge-sequence-bg: rgba(21, 110, 191, 0.1); --badge-sequence-border: rgba(21, 110, 191, 0.35);
+
+  /* Step 2 item 2: grid ink on the warm-gray canvas. */
+  --graph-grid: rgba(26, 26, 23, 0.08);
 }
 
 /* C5: one numeric language app-wide — the "92% DOCUMENTED" treatment
