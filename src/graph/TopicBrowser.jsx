@@ -43,7 +43,7 @@ export default function TopicBrowser({ topicsData, onSelectTopic, onClose }) {
     const ids = new Set([topicId])
     const queue = [topicId]
     while (queue.length) {
-      for (const c of childrenByParent.get(queue.pop()) ?? []) {
+      for (const c of children.get(queue.pop()) ?? []) {
         if (!ids.has(c.id)) {
           ids.add(c.id)
           queue.push(c.id)
@@ -58,14 +58,11 @@ export default function TopicBrowser({ topicsData, onSelectTopic, onClose }) {
   const current = currentId ? topicById.get(currentId) : null
   const listing = current ? (childrenByParent.get(current.id) ?? []) : topLevel
 
+  // Track B Step 2 item 1: docked in the graph's left rail (normal flow,
+  // beside the canvas) instead of a full-screen modal sheet over it.
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div
-        className="sheet topic-browser"
-        role="dialog"
-        aria-label="Topics"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="topic-browser" role="dialog" aria-label="Topics">
+      <div>
         <div className="sheet-head">
           <h2>{current ? current.name : 'Topics'}</h2>
           <button className="sheet-close" aria-label="Close" onClick={onClose}>
