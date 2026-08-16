@@ -61,7 +61,7 @@ inherited re-parenting limitation documented (owner instruction). Details:
 Differs from prior version: first concurrency/atomicity verification.
 
 ## v7 (created 2026-08-15)
-Measures: 04_TRACK_B Step 1 shared light-theme tokens — flag withhold unit
+Measures: Track B Step 1 shared light-theme tokens — flag withhold unit
 test (`tests/themeFlag.test.mjs`, withhold posture for every non-true value),
 before/after screenshots of header + all four tabs in both themes with
 programmatic body-background assertion, accent-removal test on Header and
@@ -97,3 +97,17 @@ Details: `v9/trackb-nav-restructure.md`. Run log:
 `runs/2026-08-16-trackb-nav-restructure.md`.
 Differs from prior version: first navigation-structure change; adds live
 cross-jump click-through and production before/after screenshot criteria.
+
+## v10 — 2026-08-16 — Source Comparison in-page de-beta
+Measures: presentational-only copy change in SourceComparisonView.jsx — h2
+reads exactly "Source Comparison"; no user-facing "beta" string anywhere on
+that screen (header, disabled notice, subtitle, tooltips, aria-labels);
+diff limited to two copy strings (no logic/routing/data); suite 240/240;
+build clean; byte-verified push (commit 90cdc79, blob 19d2a0dd, MATCH);
+CI green; live mobile (390px) and desktop screenshots. Out-of-scope
+observation recorded: Phase3View's own header still reads
+"Legal & Policy — internal closed beta".
+Details: `v10/source-comparison-debeta.md`. Run log:
+`runs/2026-08-16-sc-debeta.md`.
+Differs from prior version: first single-screen copy-alignment pass; adds
+a full-screen "beta" absence scan on live body text as a criterion.
