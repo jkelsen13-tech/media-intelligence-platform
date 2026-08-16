@@ -284,17 +284,15 @@
 /* ---------- Graph node search ---------- */
 
 .graph-search {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 10;
-  width: 220px;
+  /* Track B Step 2 item 1: in-flow inside .graph-toolbar; relative only so
+     the results dropdown anchors beneath it. */
+  position: relative;
 }
 
 .graph-search input {
   width: 100%;
   padding: 7px 12px;
-  background: rgba(var(--bg-panel-rgb), 0.95);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: var(--card-radius);
   color: var(--text-primary);
@@ -307,9 +305,13 @@
 }
 
 .graph-search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
   list-style: none;
   padding: 4px;
-  margin-top: 4px;
   background: rgba(var(--bg-panel-rgb), 0.97);
   border: 1px solid var(--border-color);
   border-radius: var(--card-radius);

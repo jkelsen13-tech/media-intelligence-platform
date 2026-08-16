@@ -16,41 +16,26 @@
   border: 0;
 }
 
-.edge-list-toggle {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 10;
-  min-height: 32px;
-  padding: 4px 12px;
-  background: rgba(var(--bg-panel-rgb), 0.92);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  color: var(--accent-soft);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.edge-list-toggle:hover {
-  color: var(--text-primary);
-}
+/* Track B Step 2 item 1: the toggle buttons moved into .graph-toolbar
+   (see index.css .graph-toolbar-btn). The .edge-list-toggle class is
+   retired — do not reintroduce it; floating toggles were the overlap bug. */
 
 .edge-list {
   position: absolute;
-  top: 56px;
-  right: 16px;
+  top: 8px;
+  right: 8px;
   z-index: 12;
   width: 460px;
-  max-width: calc(100% - 32px);
-  max-height: calc(100% - 72px);
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 16px);
   display: flex;
   flex-direction: column;
   padding: 12px 14px;
-  background: rgba(var(--bg-panel-rgb), 0.97);
+  background: var(--bg-panel);
   border: 1px solid var(--border-color);
   border-radius: var(--card-radius);
   font-size: 12px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
 .edge-list-head {
@@ -138,15 +123,15 @@
 }
 
 @media (max-width: 767px) {
-  .edge-list-toggle {
+  .graph-toolbar-btn {
     min-height: 44px;
     font-size: 15px;
   }
 
   .edge-list {
-    top: 64px;
-    right: 16px;
-    left: 16px;
+    top: 8px;
+    right: 8px;
+    left: 8px;
     width: auto;
     font-size: 15px;
   }
