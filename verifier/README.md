@@ -83,3 +83,17 @@ confirmation. Details: `v8/trackb-radius-20px.md`. Run log:
 `runs/2026-08-15-trackb-step1.md` (appended).
 Differs from prior version: first purely cosmetic token-value change; adds
 a card-vs-control radius classification audit and a live-bundle CSS check.
+
+## v9 — 2026-08-16 — Track B nav restructure (6 tabs -> 5 + More sheet)
+Measures: nav structure 4 core tabs + More (phase3/compare never top-level),
+More-sheet order and per-flag gating, '(Beta)' suffix removal, withhold
+posture (both flags off => no More, no disabled trace), unchanged view keys
+for cross-jump stability (tests/navViews.test.mjs, 7 tests); 390px
+before/after screenshots (live truncation -> 5 tabs, no ellipsis); live
+click-through of both cross-jump paths (News 'Compare sources' -> compare;
+Graph policy node -> PolicyPanel, structurally unaffected); byte-verified
+pushes; both CI workflows green on final commit.
+Details: `v9/trackb-nav-restructure.md`. Run log:
+`runs/2026-08-16-trackb-nav-restructure.md`.
+Differs from prior version: first navigation-structure change; adds live
+cross-jump click-through and production before/after screenshot criteria.
