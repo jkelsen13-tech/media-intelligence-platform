@@ -456,14 +456,6 @@ export default function App() {
 
       {accountOpen && accountUi && <AccountPanel onClose={() => setAccountOpen(false)} />}
 
-      {topicsOpen && topicsData && (
-        <TopicBrowser
-          topicsData={topicsData}
-          onSelectTopic={handleSelectTopic}
-          onClose={() => setTopicsOpen(false)}
-        />
-      )}
-
       <main className="app-main">
         {error && <div className="notice error">Failed to load graph: {error}</div>}
 
@@ -507,26 +499,47 @@ export default function App() {
             )}
             {graph && !showHubList && (
               <div className="graph-layout">
+                {/* Track B Step 2 item 1: graph chrome in normal flow —
+                    toolbar on top, controls rail beside the canvas stage.
+                    Nothing floats over the canvas. */}
                 <div className="graph-area">
-                  <div className="graph-search">
-                    <input
-                      type="search"
-                      placeholder="Search nodes…"
-                      value={nodeQuery}
-                      onChange={(e) => setNodeQuery(e.target.value)}
-                    />
-                    {nodeMatches.length > 0 && (
-                      <ul className="graph-search-results">
-                        {nodeMatches.map((n) => (
-                          <li key={n.id ?? n.slug}>
-                            <button onClick={() => pickNode(n)}>
-                              <span className="graph-search-label">{n.label}</span>
-                              <span className="graph-search-type">{n.type}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                  <div className="graph-toolbar">
+                    <div className="graph-search">
+                      <input
+                        type="search"
+                        placeholder="Search nodes…"
+                        value={nodeQuery}
+                        onChange={(e) => setNodeQuery(e.target.value)}
+                      />
+                      {nodeMatches.length > 0 && (
+                        <ul className="graph-search-results">
+                          {nodeMatches.map((n) => (
+                            <li key={n.id ?? n.slug}>
+                              <button onClick={() => pickNode(n)}>
+                                <span className="graph-search-label">{n.label}</span>
+                                <span className="graph-search-type">{n.type}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className="graph-toolbar-btn"
+                      aria-expanded={edgeListOpen}
+                      onClick={() => setEdgeListOpen((v) => !v)}
+                    >
+                      Relationship list
+                    </button>
+                    <button
+                      type="button"
+                      className="graph-toolbar-btn"
+                      aria-expanded={reviewStatusOpen}
+                      onClick={() => setReviewStatusOpen((v) => !v)}
+                    >
+                      Review status
+                    </button>
                   </div>
                   {focusStack.length > 0 && (
                     <nav className="focus-trail" aria-label="Focus path">
@@ -558,82 +571,79 @@ export default function App() {
                       </button>
                     </nav>
                   )}
-                  {isMobile && (
-                    <div className="graph-mobile-bar">
-                      {focusStack.length === 0 && (
-                        <button
-                          type="button"
-                          className="graph-mode-btn"
-                          onClick={() => setGraphScreen(graphScreen === 'all' ? 'hubs' : 'all')}
-                        >
-                          {graphScreen === 'all' ? 'Hub list' : 'Show all'}
-                        </button>
+                  <div className="graph-body">
+                    <div className="graph-rail">
+                      <Legend />
+                      <EdgeControls
+                        minReliability={minReliability}
+                        onMinReliabilityChange={setMinReliability}
+                        showInferred={showInferred}
+                        onShowInferredChange={setShowInferred}
+                        inferredCount={inferredCount}
+                        topicsAvailable={!!topicsData}
+                        onOpenTopics={() => setTopicsOpen((v) => !v)}
+                      />
+                      {topicsOpen && topicsData && (
+                        <TopicBrowser
+                          topicsData={topicsData}
+                          onSelectTopic={handleSelectTopic}
+                          onClose={() => setTopicsOpen(false)}
+                        />
                       )}
                     </div>
-                  )}
-                  <GraphView
-                    key={focal ? `focus-${focal.kind}-${focal.id}` : 'all'}
-                    nodes={displayNodes}
-                    edges={displayEdges}
-                    onSelect={handleSelect}
-                    panelOpen={!!(selected || policyNode) && !isMobile}
-                    joystickDimmed={isMobile && !!(selected || policyNode)}
-                    minReliability={minReliability}
-                    showInferred={showInferred}
-                    onEdgeSelect={setEdgeEvidence}
-                  />
-                  <Legend />
-                  <EdgeControls
-                    minReliability={minReliability}
-                    onMinReliabilityChange={setMinReliability}
-                    showInferred={showInferred}
-                    onShowInferredChange={setShowInferred}
-                    inferredCount={inferredCount}
-                    topicsAvailable={!!topicsData}
-                    onOpenTopics={() => setTopicsOpen(true)}
-                  />
-                  <button
-                    type="button"
-                    className="edge-list-toggle"
-                    aria-expanded={edgeListOpen}
-                    onClick={() => setEdgeListOpen((v) => !v)}
-                  >
-                    Relationship list
-                  </button>
-                  {edgeListOpen && (
-                    <EdgeList
-                      nodes={graph.nodes}
-                      edges={displayEdges ?? []}
-                      minReliability={minReliability}
-                      showInferred={showInferred}
-                      onSelectEdge={(edge) => setEdgeEvidence({ edge, position: null })}
-                      onClose={() => setEdgeListOpen(false)}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    className="edge-list-toggle"
-                    aria-expanded={reviewStatusOpen}
-                    onClick={() => setReviewStatusOpen((v) => !v)}
-                  >
-                    Review status
-                  </button>
-                  {reviewStatusOpen && (
-                    <ReviewStatusPanel onClose={() => setReviewStatusOpen(false)} />
-                  )}
-                  {edgeEvidence && (
-                    <EdgeEvidence
-                      edge={edgeEvidence.edge}
-                      position={edgeEvidence.position}
-                      sourceLabel={
-                        graph.nodes.find((n) => (n.id ?? n.slug) === edgeEvidence.edge.source)?.label
-                      }
-                      targetLabel={
-                        graph.nodes.find((n) => (n.id ?? n.slug) === edgeEvidence.edge.target)?.label
-                      }
-                      onClose={() => setEdgeEvidence(null)}
-                    />
-                  )}
+                    <div className="graph-stage">
+                      {isMobile && (
+                        <div className="graph-mobile-bar">
+                          {focusStack.length === 0 && (
+                            <button
+                              type="button"
+                              className="graph-mode-btn"
+                              onClick={() => setGraphScreen(graphScreen === 'all' ? 'hubs' : 'all')}
+                            >
+                              {graphScreen === 'all' ? 'Hub list' : 'Show all'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      <GraphView
+                        key={focal ? `focus-${focal.kind}-${focal.id}` : 'all'}
+                        nodes={displayNodes}
+                        edges={displayEdges}
+                        onSelect={handleSelect}
+                        panelOpen={!!(selected || policyNode) && !isMobile}
+                        joystickDimmed={isMobile && !!(selected || policyNode)}
+                        minReliability={minReliability}
+                        showInferred={showInferred}
+                        onEdgeSelect={setEdgeEvidence}
+                      />
+                      {edgeListOpen && (
+                        <EdgeList
+                          nodes={graph.nodes}
+                          edges={displayEdges ?? []}
+                          minReliability={minReliability}
+                          showInferred={showInferred}
+                          onSelectEdge={(edge) => setEdgeEvidence({ edge, position: null })}
+                          onClose={() => setEdgeListOpen(false)}
+                        />
+                      )}
+                      {reviewStatusOpen && (
+                        <ReviewStatusPanel onClose={() => setReviewStatusOpen(false)} />
+                      )}
+                      {edgeEvidence && (
+                        <EdgeEvidence
+                          edge={edgeEvidence.edge}
+                          position={edgeEvidence.position}
+                          sourceLabel={
+                            graph.nodes.find((n) => (n.id ?? n.slug) === edgeEvidence.edge.source)?.label
+                          }
+                          targetLabel={
+                            graph.nodes.find((n) => (n.id ?? n.slug) === edgeEvidence.edge.target)?.label
+                          }
+                          onClose={() => setEdgeEvidence(null)}
+                        />
+                      )}
+                    </div>
+                  </div>
                 </div>
                 {/* Mobile: scrim behind the bottom sheet (tap to close). */}
                 {selected && isMobile && (
@@ -730,7 +740,7 @@ export default function App() {
           <button
             key={v.key}
             className={`bottom-tab${(v.key === 'more' ? moreActive : view === v.key) ? ' active' : ''}`}
-            onClick={() => (v.key === 'more' ? setMoreOpen(true) : setView(v.key))}
+            onClick={() => (v.key === 'more' ? moreActive : view === v.key)}
           >
             {v.shortLabel}
           </button>
