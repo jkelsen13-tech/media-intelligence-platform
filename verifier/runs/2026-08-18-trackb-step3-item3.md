@@ -111,3 +111,12 @@ with the f8a080d4 intermediate failure root-caused and disclosed. ✔
 - The on-demand article-excerpt loader (entry.article_id join) is an
   item-4 wiring concern; entryDetailView already consumes the resolved
   article or null.
+
+## 9. Final push record
+
+- 27e3c85f — verifier/README.md trackb3-v3 entry appended (append-only);
+  remote blob 6bd45f5a MATCHES local.
+- f66a3ab5 — this run log, initial push; remote blob b80dfae7 MATCHES
+  local.
+- (final update) — this section added; remote blob recorded in the local
+  record commit after verification.
