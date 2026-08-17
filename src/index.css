@@ -144,6 +144,14 @@ body {
   color: var(--text-primary);
 }
 
+/* Item 3: "Focused view" return control (desktop full-graph opt-out).
+   Truncates long hub labels instead of stretching the toolbar. */
+.graph-toolbar-focus-btn {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .graph-body {
   display: flex;
   flex: 1;
@@ -497,6 +505,18 @@ body {
   color: var(--text-primary);
   font-weight: 600;
   cursor: default;
+}
+
+/* Item 3: the desktop default-focus crumb is documentation, not a
+   breadcrumb button — same rhythm, secondary ink, no hover. */
+.focus-crumb-static {
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 6px;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .focus-show-all {
