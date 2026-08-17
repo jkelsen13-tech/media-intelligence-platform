@@ -138,3 +138,78 @@ truncates at 1000 rows without erroring, which would drop lineage silently.
 `originScopeLine` returns `null` when corpus scope or check date is missing,
 so an origin finding that cannot state its own scope renders nothing rather
 than an unfalsifiable claim (locked guardrail 4).
+
+---
+
+# 7b — Graph lineage-mode rendering (data + element layer)
+
+Built after the rebase onto the finished Track B item 5, not against a moving
+target. Tests: `tests/golden/lineage_graph_elements.test.mjs` (13/13).
+
+## The finding that shaped this
+
+The live `nodes` population is event/actor/policy only — there are NO article
+nodes. That is the same fact that made `edges` structurally invalid as a
+lineage store (brief Section 1), and it has a rendering consequence the brief
+does not spell out: article-to-article lineage has nothing on the existing
+canvas to attach to.
+
+So lineage mode cannot overlay onto the current graph. It builds its OWN
+article nodes from the projection and renders them through the same GraphView
+with the same conventions. Nothing is written to `nodes` or `edges`.
+
+## Vocabulary — a separate registry, deliberately
+
+`Legend` renders every `EDGE_TYPES` entry unconditionally. Folding the four
+lineage types into it would add four permanent rows to the DEFAULT graph's
+legend for relationships that only ever appear in lineage mode. They live in
+`LINEAGE_EDGE_TYPES` instead — identical shape (token color + label + plain
+verb phrase), same rendering path. A new vocabulary, not a new visual system.
+
+A test asserts `EDGE_TYPES` is unchanged (exactly the seven existing keys) and
+that no lineage key leaks into it.
+
+| Type | Plain phrase |
+|---|---|
+| `syndicated_from` | "syndicated from" |
+| `derived_from` | "derived from" |
+| `quotes` | "quotes" |
+| `press_release_origin` | "originates in press release" |
+
+Every phrase is distinct, so meaning survives the v7 accent-removal bar
+without color.
+
+## Origin states are node states, never edges
+
+A parentless assertion has nothing to draw an edge to. `ORIGIN_STATUS_LABELS`
+gives each a hedged phrase — "no shared origin found — candidate, not
+confirmed" — and a test asserts no phrase claims the article IS independently
+reported.
+
+Guardrail 4 is enforced structurally: an origin state whose evidence lacks
+`corpus_scope.articles_scanned` or `checked_at` renders NO claim at all. The
+node still appears; it simply carries nothing unfalsifiable. Method, corpus
+size and check date are exposed as separate fields, never combined.
+
+An unknown `origin_status` also produces no claim rather than a guess.
+
+## Honest degradation
+
+An article referenced by lineage but missing from metadata still renders, as
+"Article 2e4fd9b8". Dropping it would silently delete one end of a real
+relationship; a degraded label keeps both the relationship visible and the gap
+obvious. `hydrateLineageArticles` treats a failed lookup the same way — no
+thrown render.
+
+`lineageEmptyState` returns copy that says WHY the view is empty, naming both
+the verified requirement and the deliberate shadow exclusion, so an empty
+lineage mode reads as intentional (same discipline as Track B's relationship
+panel).
+
+## Remaining for 7b
+
+The canvas wiring — an App-level mode toggle and a lineage section in the
+Legend — is NOT in this commit. The data and element layers are complete and
+tested; the wiring touches `src/App.jsx` and `src/graph/Legend.jsx`, both
+heavily K3-owned, and is kept as its own focused change rather than bundled
+here.

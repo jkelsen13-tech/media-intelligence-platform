@@ -142,3 +142,40 @@ export function originScopeLine(annotation) {
   if (typeof scanned !== 'number' || !checked) return null
   return `Checked ${scanned} articles in the monitored corpus as of ${String(checked).slice(0, 10)} · method: ${annotation.detectionMethod}`
 }
+
+/**
+ * Hydrate article metadata for the articles a projection references.
+ *
+ * The projection carries ids only. Lineage mode needs outlet/title to label
+ * its nodes, and those live in `articles` (public read). Chunked at 100 ids:
+ * a single .in() with hundreds of UUIDs exceeds the PostgREST URL ceiling —
+ * hit live 2026-08-09 in source-comparison-run, same constraint here.
+ *
+ * A failed or partial lookup is NOT an error: buildLineageElements labels an
+ * unresolved article honestly rather than dropping it, so a metadata gap
+ * degrades the label and never deletes one end of a real relationship.
+ */
+export async function hydrateLineageArticles(projection, { supabaseClient } = {}) {
+  const supabase = supabaseClient ?? (await import('./supabase.js')).supabase
+  const ids = new Set()
+  for (const e of projection?.edges ?? []) {
+    if (e.childArticleId) ids.add(e.childArticleId)
+    if (e.parentArticleId) ids.add(e.parentArticleId)
+  }
+  for (const a of projection?.originAnnotations ?? []) {
+    if (a.childArticleId) ids.add(a.childArticleId)
+  }
+  const byId = new Map()
+  if (!supabase || ids.size === 0) return byId
+
+  const list = [...ids]
+  for (let i = 0; i < list.length; i += 100) {
+    const { data, error } = await supabase
+      .from('articles')
+      .select('id, outlet, title, url, published_at')
+      .in('id', list.slice(i, i + 100))
+    if (error) continue // honest degradation, never a thrown render
+    for (const row of data ?? []) byId.set(row.id, row)
+  }
+  return byId
+}

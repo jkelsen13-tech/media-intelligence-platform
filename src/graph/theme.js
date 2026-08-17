@@ -77,6 +77,49 @@ export function edgePlainLabel(edge) {
   return raw || String(edge.type ?? '')
 }
 
+// 20_IDEA capability 1 (2026-08-17): lineage relationship types.
+//
+// A SEPARATE registry, not new entries in EDGE_TYPES, for one concrete
+// reason: Legend renders every EDGE_TYPES entry unconditionally, so folding
+// these in would add four permanent rows to the default graph's legend for
+// relationships that only ever appear in lineage mode. Same conventions
+// (token color + label + plain verb phrase), same rendering path — a new
+// vocabulary, not a new visual system, per the implementation brief.
+//
+// Colors reuse existing palette tokens rather than introducing any. Meaning
+// never rests on color alone: every type carries a distinct plain-language
+// phrase, so the v7 accent-removal bar holds here as it does for EDGE_TYPES.
+export const LINEAGE_EDGE_TYPES = {
+  syndicated_from: { color: '#a78bfa', cssVar: '--cat-violet', label: 'Syndicated from', plain: 'syndicated from' },
+  derived_from: { color: '#4d9aff', cssVar: '--cat-blue', label: 'Derived from', plain: 'derived from' },
+  quotes: { color: '#9ca3af', cssVar: '--cat-grey', label: 'Quotes', plain: 'quotes' },
+  press_release_origin: { color: '#ffb01f', cssVar: '--cat-amber', label: 'Press release origin', plain: 'originates in press release' },
+}
+
+// Parentless origin findings are STATES on a single article, never edges.
+// The vocabulary is deliberately hedged: absence of a detected parent is not
+// evidence of independence (locked G2), so neither phrase claims the article
+// IS independently reported.
+export const ORIGIN_STATUS_LABELS = {
+  independent_origin_candidate: {
+    label: 'Independent origin candidate',
+    plain: 'no shared origin found — candidate, not confirmed',
+  },
+  no_shared_origin_detected_within_corpus: {
+    label: 'No shared origin detected in corpus',
+    plain: 'no shared origin detected within the monitored corpus',
+  },
+  resolved_origin_found: {
+    label: 'Origin identified outside corpus',
+    plain: 'origin identified but not held as an article',
+  },
+}
+
+/** Plain-language phrase for a lineage relationship type. */
+export function lineagePlainLabel(relationshipType) {
+  return LINEAGE_EDGE_TYPES[relationshipType]?.plain ?? String(relationshipType ?? '')
+}
+
 // Story-arc categories (§4.4 category tag). Colors come from the same token
 // palette as the graph vocabulary; Unclassified stays neutral grey (Pass A).
 export const CATEGORY_TYPES = {
