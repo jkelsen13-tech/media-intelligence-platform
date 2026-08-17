@@ -278,7 +278,7 @@ export async function loadArcGroupedTimeline({ supabaseClient } = {}) {
       relationEdges: remapTimelineEdges(
         demoEdges
           .filter((e) => e.type === 'causal' || e.type === 'sequence')
-          .map((e) => ({ id: e.id, source: e.source, target: e.target, type: e.type, weight: e.weight, label: e.label })),
+          .map((e) => ({ id: e.id, source: e.source, target: e.target, type: e.type, weight: e.weight, label: e.label, doc_strength: e.doc_strength ?? null })),
         canonicalOf,
       ),
       labels: demoNodes.map((n) => ({ id: n.id ?? n.slug, slug: n.slug, label: n.label })),
@@ -293,7 +293,9 @@ export async function loadArcGroupedTimeline({ supabaseClient } = {}) {
       keysetAll(supabase, 'nodes', 'id, slug, label, description, confidence, summary, occurred_at, arc_id', {
         filter: (q) => q.eq('type', 'event'),
       }).then((r) => (r.data ? { ...r, data: resortRows(r.data, 'occurred_at', { ascending: true, nullsFirst: false }) } : r)),
-      keysetAll(supabase, 'edges', 'id, source_id, target_id, type, weight, label', {
+      // doc_strength added 2026-08-18 (item 4, read-path only): the Screen 5
+      // connector engine requires it before any causal label may render.
+      keysetAll(supabase, 'edges', 'id, source_id, target_id, type, weight, label, doc_strength', {
         filter: (q) => q.in('type', ['causal', 'sequence']),
       }),
       keysetAll(supabase, 'nodes', 'id, slug, label'),
@@ -372,6 +374,7 @@ export async function loadArcGroupedTimeline({ supabaseClient } = {}) {
         type: e.type,
         weight: e.weight,
         label: e.label,
+        doc_strength: e.doc_strength ?? null,
       })),
       canonicalOf,
     ),
