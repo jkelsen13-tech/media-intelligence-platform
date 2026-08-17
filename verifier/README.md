@@ -251,3 +251,24 @@ new); build clean. Details: `trackb3-v1/trackb3-step3-item1.md`. Run log:
 Differs from prior version: first entry under the prefixed Step 3
 namespace (flat integers abandoned 2026-08-17); first component-extraction
 criterion set with no user-facing surface change (kit consumed from item 2).
+
+## trackb3-v2 — 2026-08-18 — Policy Arc screen (Track B Step 3 item 2)
+Measures: ArcsView detail panel rebuilt to the addendum's Screen 4
+structure on the item-1 kit — eyebrow logic ("POLICY ARC" only for policy
+categories), status line with real updated-date, standing explanation,
+Overview/Evidence tabs (Timeline tab deferred to the item-3/4 engine),
+Explore-connections CTA behind its root-node join, static lifecycle strip
+with hardcoded "Orientation only. Not a score." caption (no caption prop,
+no progress vocabulary, static-guarded), key developments with honest
+neutral icon fallback for unmapped live categories, verbatim chronology
+banner, evidence-state bar with documented-zero contested (probe-swept
+across the confidence vocabulary) and live guardrail-4 missing-scope copy,
+remaining-uncertainty block derived from pending milestones, sources line
+from attached-article outlets only, trust footer with no fabricated review
+date, zero hardcoded hex in new files. Suite 301/301 (284 + 17 new);
+build clean. Details: `trackb3-v2/trackb3-step3-item2.md`. Run log:
+`runs/2026-08-18-trackb-step3-item2.md`.
+Differs from prior version: first user-facing Screen 4 surface; the
+pre-existing §2.5.4 elements (milestone checklist, coverage-gap bar,
+arc-age bar, attached-articles list) are folded into the Evidence tab per
+owner delegation 2026-08-18, not retired.
