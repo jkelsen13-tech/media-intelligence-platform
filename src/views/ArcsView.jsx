@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadArcs, loadArcDetail, loadArcArticles } from '../lib/supabase'
+import { loadArcs, loadArcDetail, loadArcArticles, loadArticleExcerpt } from '../lib/supabase'
 import { filterArcs } from '../lib/listFilters'
+import { normalizeArcEvent, TIMELINE_CLOSING_FOOTNOTE } from '../lib/timelineScreenModel'
 import ArcEvidencePanel from '../components/ArcEvidencePanel'
+import ArcTimeline from '../components/ArcTimeline'
 import EpistemicBanner from '../components/EpistemicBanner'
 import EvidenceStateBar from '../components/EvidenceStateBar'
 import LifecycleStrip from '../components/LifecycleStrip'
@@ -21,8 +23,9 @@ import {
 // Story Arcs (concept doc §2.5): persistent longitudinal tracking through a
 // story's full consequence arc. Track B Step 3 item 2 rebuilt the detail
 // panel to the addendum's Screen 4 (Policy Arc) structure: eyebrow, report
-// title, status line, standing explanation, tabs (Overview / Evidence —
-// the Timeline tab arrives with the item-3/4 engine), Explore-connections
+// title, status line, standing explanation, tabs (Overview / Timeline /
+// Evidence — item 5 shipped the Timeline tab on the shared ArcTimeline
+// renderer + the item-3 connector engine), Explore-connections
 // CTA, lifecycle strip, key developments, chronology banner, evidence-state
 // bar, remaining uncertainty, sources line, trust footer. The pre-existing
 // elements (milestone checklist, coverage-gap bar, arc-age bar, attached
@@ -66,9 +69,7 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
   const [detail, setDetail] = useState(null)
   const [detailError, setDetailError] = useState(null)
   const [arcArticles, setArcArticles] = useState([])
-  // Screen 4 tabs. The addendum's third tab (Timeline) is added when the
-  // item-3/4 engine ships — a tab whose content does not exist is not
-  // rendered.
+  // Screen 4 tabs in the addendum's order: Overview / Timeline / Evidence.
   const [activeTab, setActiveTab] = useState('overview')
   // Mobile (<1024px): the list is full-width and selecting an arc pushes a
   // full-screen detail view. Desktop keeps the split-pane and ignores this.
@@ -145,6 +146,15 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
       cancelled = true
     }
   }, [selected])
+
+  // Screen 4 Timeline tab entries: the SAME arc_events detail the Overview
+  // tab lists, normalized through the item-4 seam so this tab can never
+  // drift from Screen 5's arc scope. Declared with the other hooks — the
+  // early returns below must never change the hook order.
+  const timelineEntries = useMemo(
+    () => (detail ? detail.events.map(normalizeArcEvent).filter(Boolean) : []),
+    [detail],
+  )
 
   if (error) return <div className="notice error">Failed to load story arcs: {error}</div>
   if (!arcs) return <div className="notice">Loading story arcs…</div>
@@ -274,6 +284,14 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
               </button>
               <button
                 role="tab"
+                aria-selected={activeTab === 'timeline'}
+                className={`ep-tab${activeTab === 'timeline' ? ' ep-tab-active' : ''}`}
+                onClick={() => setActiveTab('timeline')}
+              >
+                Timeline
+              </button>
+              <button
+                role="tab"
                 aria-selected={activeTab === 'evidence'}
                 className={`ep-tab${activeTab === 'evidence' ? ' ep-tab-active' : ''}`}
                 onClick={() => setActiveTab('evidence')}
@@ -357,6 +375,20 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
             </>
           )}
 
+          {activeTab === 'timeline' && detail && (
+            /* The shared ArcTimeline renderer (item 4) over the same
+               arc_events — edges=[] by construction (arc_events are not
+               graph nodes), so every connector between every adjacent
+               pair honestly renders "Sequence only", identical to Screen
+               5's arc scope. Connectors are never dropped for density. */
+            <ArcTimeline
+              entries={timelineEntries}
+              edges={[]}
+              loadArticle={loadArticleExcerpt}
+              emptyText="No consequence events recorded yet for this arc."
+            />
+          )}
+
           {activeTab === 'evidence' && detail && (
             /* Pre-existing §2.5.4 elements folded into the Evidence tab
                (owner delegation 2026-08-18): arc-age bar, coverage-gap
@@ -374,8 +406,19 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
           {/* Trust footer (addendum: bottom of every screen). reviewedAt is
               null — story_arcs.last_update_at is a machine update timestamp,
               not a human review date, and a review date is never fabricated;
-              the Reviewed line appears when a real one exists. */}
-          <TrustFooter left={null} reviewedAt={null} />
+              the Reviewed line appears when a real one exists. The left slot
+              carries the item-3 closing footnote (imported via the
+              timelineScreenModel seam, never re-typed) only while the
+              Timeline tab is active — it speaks to the timeline, not to the
+              Overview/Evidence tabs. */}
+          <TrustFooter
+            left={
+              activeTab === 'timeline' ? (
+                <span className="ep-tl-footnote">{TIMELINE_CLOSING_FOOTNOTE}</span>
+              ) : null
+            }
+            reviewedAt={null}
+          />
         </section>
       )}
     </div>
