@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadSources, loadNodeArticles, loadNodeCategory, loadSkyVerificationForNode, loadActorDerivation } from '../lib/supabase'
-import { NODE_TYPES, EDGE_TYPES, CATEGORY_TYPES } from '../graph/theme'
+import { NODE_TYPES, EDGE_TYPES, CATEGORY_TYPES, edgePlainLabel } from '../graph/theme'
 import { applySkyBoost } from '../lib/sky'
 import SkyBadge from './SkyBadge'
 
@@ -482,7 +482,7 @@ export default function ArticlePanel({
                   />
                   <span className="ap-conn-label">{c.label}</span>
                   <span className="ap-conn-meta" style={{ color: edgeMeta?.color ?? 'var(--text-secondary)' }}>
-                    {c.direction === 'out' ? '→' : '←'} {c.rel ?? edgeMeta?.label}
+                    {c.direction === 'out' ? '→' : '←'} {edgePlainLabel(c.edge) || edgeMeta?.label}
                   </span>
                   <span className="ap-conn-strength num" title="Connection strength">
                     {edgeMeta?.label ?? c.edgeType} · {strengthLabel(c)}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadTimeline } from '../lib/supabase'
-import { EDGE_WEIGHTS } from '../graph/theme'
+import { EDGE_WEIGHTS, edgePlainLabel } from '../graph/theme'
 import '../styles/timeline.css'
 
 // Causal timeline (concept doc §2.4): events ordered by date, with causal AND
@@ -274,7 +274,7 @@ export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey }
                       <div className="timeline-links">
                         {inbound.map((e) => (
                           <span key={e.id} className="timeline-link inbound">
-                            ← {e.sourceLabel} <em>({e.label ?? 'caused'})</em>
+                            ← {e.sourceLabel} <em>({edgePlainLabel(e)})</em>
                             <b className={`timeline-badge ${e.type}`}>{e.type}</b>
                             <i style={{ borderTopWidth: EDGE_WEIGHTS[e.weight] ?? 3 }} />
                           </span>
@@ -285,7 +285,7 @@ export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey }
                       <div className="timeline-links">
                         {outbound.map((e) => (
                           <span key={e.id} className="timeline-link outbound">
-                            → {e.targetLabel} <em>({e.label ?? 'led to'})</em>
+                            → {e.targetLabel} <em>({edgePlainLabel(e)})</em>
                             <b className={`timeline-badge ${e.type}`}>{e.type}</b>
                             <i style={{ borderTopWidth: EDGE_WEIGHTS[e.weight] ?? 3 }} />
                           </span>
