@@ -19,7 +19,7 @@
 //     and check date in evidence_basis (locked guardrail 4);
 //   - publication count is never treated as evidence.
 
-import { canonicalUrl } from './lib.js'
+import { canonicalUrl, bodyHash } from './lib.js'
 
 export const LINEAGE_RULE_VERSION = 'lineage-v1'
 
@@ -284,4 +284,130 @@ export function buildStage1Assertions(articles, { authorNameById = new Map(), co
     })
   }
   return { assertions, wireOriginals }
+}
+
+// ---- Stage 3: normalized exact-text hashing -----------------------------------------
+//
+// THIS STAGE DOES NOT DETECT ANYTHING NEW. The canonical-URL + normalized
+// body-hash + union-find collapse in ./lib.js detectSyndicates already ran
+// correctly at write time and has since 2026-08-06; its only defect was that
+// nothing persisted it (00_INDEX thread (i)). Stage 3 is therefore a
+// PERSISTENCE seam over that existing computation: runPipeline hands its
+// already-computed `syndicates` map to buildStage3Assertions, which turns each
+// collapsed group into rows. detectSyndicates is not called a second time and
+// its grouping rule is not restated here.
+//
+// The only thing computed locally is EVIDENCE ANNOTATION — which of the two
+// keys (body hash / canonical URL) a given member shares with its group
+// origin — using the same bodyHash/canonicalUrl helpers, so evidence_basis can
+// name the matched value instead of asserting an unexplained match.
+
+/**
+ * Deterministic origin representative for one collapsed group.
+ *
+ * Earliest published_at wins; unknown timestamps sort last; ties break on the
+ * lexically smallest id so re-runs are stable.
+ *
+ * NOTE ON WHAT THIS DOES AND DOES NOT CLAIM: this picks a representative, not
+ * a proven source. The corpus may not contain the true original at all (the
+ * live Reuters/billingsgazette case is exactly that). The defensible claim a
+ * collapsed group supports is "these N articles share ONE origin, so they are
+ * one corroborating source, not N" — which is all E2 needs. It is NOT "article
+ * X is where this story came from", and nothing downstream renders it as such.
+ */
+export function selectGroupOrigin(members) {
+  return [...members].sort((a, b) => {
+    const ta = a.published_at ? Date.parse(a.published_at) : Number.POSITIVE_INFINITY
+    const tb = b.published_at ? Date.parse(b.published_at) : Number.POSITIVE_INFINITY
+    if (ta !== tb) return ta - tb
+    return String(a.id).localeCompare(String(b.id))
+  })[0]
+}
+
+// Match basis -> confidence band. Bands, never numbers, and never summed.
+//
+// FLAGGED FOR OWNER REVIEW: the brief says "confidence_band scaled to match
+// percentage", but v1 matching is EXACT only (fuzzy/near-duplicate is
+// shadow-mode and excluded), so match percentage takes exactly two values
+// rather than a range:
+//   exact_text_hash  — normalized bodies are byte-identical, 100%  -> high
+//   canonical_url    — same document URL, but the stored text was NOT proven
+//                      identical (missing body, sub-200-char body, or a page
+//                      edited between fetches)                     -> medium
+// Reading "scaled" as a real similarity percentage would require the fuzzy
+// matching this build is explicitly forbidden from putting in presentation.
+const MATCH_BASIS_BANDS = { exact_text_hash: 'high', canonical_url: 'medium' }
+
+/** Which key this member actually shares with its group origin. */
+function matchBasis(member, origin) {
+  const mh = bodyHash(member.body_text)
+  const oh = bodyHash(origin.body_text)
+  if (mh && oh && mh === oh) {
+    return { basis: 'exact_text_hash', match_percent: 100, matched_value: mh }
+  }
+  const mu = canonicalUrl(member.url)
+  const ou = canonicalUrl(origin.url)
+  if (mu && ou && mu === ou) {
+    return { basis: 'canonical_url', match_percent: null, matched_value: mu }
+  }
+  // Transitively collapsed: joined to the group through another member rather
+  // than by a key shared directly with the origin. Union-find guarantees the
+  // group is genuinely connected; the direct pair simply is not the link.
+  return { basis: 'canonical_url', match_percent: null, matched_value: null, transitive: true }
+}
+
+/**
+ * Stage 3 assertion rows from an ALREADY-COMPUTED syndicate map.
+ *
+ * @param articles   corpus slice (needs id, url, body_text, published_at)
+ * @param syndicates Map(articleId -> syndicateId) from lib.js detectSyndicates,
+ *                   surfaced on the pipeline plan as plan.syndicates
+ */
+export function buildStage3Assertions(articles, syndicates, { corpusScope, checkedAt } = {}) {
+  if (!corpusScope || typeof corpusScope.articles_scanned !== 'number') {
+    throw new Error('buildStage3Assertions: corpusScope.articles_scanned is required (locked guardrail 4)')
+  }
+  const scannedAt = checkedAt ?? new Date().toISOString()
+  const byId = new Map(articles.map((a) => [a.id, a]))
+
+  const groups = new Map()
+  for (const [articleId, syndicateId] of syndicates) {
+    const article = byId.get(articleId)
+    if (!article) continue
+    if (!groups.has(syndicateId)) groups.set(syndicateId, [])
+    groups.get(syndicateId).push(article)
+  }
+
+  const assertions = []
+  for (const [syndicateId, members] of groups) {
+    if (members.length < 2) continue
+    const origin = selectGroupOrigin(members)
+    for (const member of members) {
+      if (member.id === origin.id) continue
+      const { basis, match_percent, matched_value, transitive } = matchBasis(member, origin)
+      assertions.push({
+        child_article_id: member.id,
+        parent_article_id: origin.id,
+        relationship_class: 'derivation',
+        relationship_type: 'syndicated_from',
+        origin_status: null,          // parent resolved -> no origin_status (schema enforces this)
+        detection_method: basis === 'exact_text_hash' ? 'exact_text_hash' : 'canonical_url_match',
+        evidence_basis: {
+          match_basis: basis,
+          match_percent,              // 100 for byte-identical normalized bodies; null when unproven
+          matched_value,
+          transitive_via_group: !!transitive,
+          syndicate_id: syndicateId,
+          group_size: members.length,
+          origin_selection: 'earliest_published_then_lexical_id',
+          corpus_scope: corpusScope,
+          checked_at: scannedAt,
+        },
+        confidence_band: MATCH_BASIS_BANDS[basis],
+        review_status: 'unreviewed',
+        rule_version: LINEAGE_RULE_VERSION,
+      })
+    }
+  }
+  return assertions
 }

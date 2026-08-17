@@ -55,6 +55,67 @@ export function collapseBySyndication(articles) {
   return out
 }
 
+/**
+ * Map(articleId -> originClusterId) from PERSISTED lineage assertions.
+ *
+ * 00_INDEX thread (i). collapseBySyndication above re-derives syndication at
+ * READ time from canonical URL alone, so a verbatim wire story republished
+ * under three different URLs counts as three independent outlets in E2. This
+ * seam replaces that with the persisted result of the write-path collapse
+ * (canonical URL + normalized body hash + union-find), which was always
+ * correct and simply never survived the run.
+ *
+ * This is NOT a second syndication detector. It makes no similarity judgment
+ * of any kind: it reads stored parent/child facts and takes their connected
+ * components, so a chain A->B->C collapses to one cluster. All detection lives
+ * in the write path.
+ *
+ * Only DERIVATION-class assertions collapse a cluster. A 'reference' ('quotes')
+ * assertion means one article cited another — citation is never treated as
+ * derivation proof (locked schema-concepts decision), and collapsing on it
+ * would merge genuinely independent outlets and UNDERCOUNT corroboration.
+ *
+ * Shadow and rejected rows are filtered here as well as by RLS: guardrail 6
+ * should not depend on a policy the caller might be querying around.
+ */
+export function collapseByPersistedLineage(assertions) {
+  const parent = new Map()
+  const find = (x) => {
+    while (parent.get(x) !== x) {
+      parent.set(x, parent.get(parent.get(x)))
+      x = parent.get(x)
+    }
+    return x
+  }
+  const add = (x) => { if (!parent.has(x)) parent.set(x, x) }
+  const union = (a, b) => {
+    add(a); add(b)
+    const ra = find(a), rb = find(b)
+    if (ra !== rb) parent.set(rb, ra)
+  }
+
+  let linked = false
+  for (const a of assertions ?? []) {
+    if (a.relationship_class !== 'derivation') continue
+    if (a.is_current === false) continue
+    if (a.review_status === 'shadow' || a.review_status === 'rejected') continue
+    if (!a.parent_article_id || !a.child_article_id) continue
+    union(a.parent_article_id, a.child_article_id)
+    linked = true
+  }
+  if (!linked) return new Map()
+
+  const out = new Map()
+  const rootToCluster = new Map()
+  let n = 0
+  for (const id of parent.keys()) {
+    const root = find(id)
+    if (!rootToCluster.has(root)) rootToCluster.set(root, 'origin-' + ++n)
+    out.set(id, rootToCluster.get(root))
+  }
+  return out
+}
+
 /** Distinct outlets after syndicate collapse. One syndicate = one source. */
 export function independentOutlets(articleIds, articlesById, syndicates) {
   const seen = new Set()

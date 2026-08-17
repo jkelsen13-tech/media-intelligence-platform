@@ -4,12 +4,17 @@
 // (read-only), runs the deterministic sc-v1 pipeline, and writes ONLY to the
 // Item 1 tables (events, claims, article_claims, event_articles) plus Phase 2
 // explanation rows (assertion_type event_membership / claim_grouping,
-// rule_version sc-v1|<method>). It NEVER writes to articles, nodes, edges,
-// story_arcs, arc_events, or any other production table.
+// rule_version sc-v1|<method>) plus article_lineage_assertions rows carrying
+// rule_version lineage-v1 (20_IDEA capability 1, added 2026-08-17). It NEVER
+// writes to articles, nodes, edges, story_arcs, arc_events, or any other
+// production table.
 // Rebuild semantics: before writing, it deletes its own prior sc-v1 rows
 // (events/claims with rule_version 'sc-v1', their dependent rows, and
 // explanations with assertion_type in (event_membership, claim_grouping) and
 // rule_version LIKE 'sc-v1|%'). No cron, no trigger: runs only when called.
+// Lineage rebuild deletes only rule_version 'lineage-v1' rows that are still
+// review_status 'unreviewed': a reviewed row (verified/rejected) carries a
+// human decision and is never discarded by a re-run.
 //
 // Auth: fail-closed shared secret. Requires header
 //   x-source-comparison-key: <SOURCE_COMPARISON_RUN_KEY>
@@ -28,6 +33,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { runPipeline, parseEmbedding, RULE_VERSION, pagedSelect } from './lib.js'
+import { buildStage1Assertions, buildStage3Assertions, LINEAGE_RULE_VERSION } from './lineage.js'
 import lexicon from './loadedLanguageLexicon.json' with { type: 'json' }
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
@@ -35,7 +41,7 @@ function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
 }
 
-const ARTICLE_COLS = 'id,outlet,title,url,summary,body_text,published_at,claims,embedding,unattributed,monoculture,is_digest'
+const ARTICLE_COLS = 'id,outlet,title,url,summary,body_text,published_at,claims,embedding,unattributed,monoculture,is_digest,author_id'
 const ENTITY_COLS = 'article_id,entity_id'
 
 function resolvePageSize(raw: unknown): number {
@@ -146,8 +152,28 @@ Deno.serve(async (req: Request) => {
     return json(500, { error: `dedupe failed: ${(e as Error).message}` })
   }
 
+  // 20_IDEA capability 1 — lineage assertions (00_INDEX thread (i)).
+  // Stage 3 consumes plan.syndicates: the SAME union-find collapse this
+  // pipeline has always computed, which previously died in the ephemeral
+  // stats.comparisons sample below. It is persisted here, not recomputed.
+  const authorNameById = new Map<string, string>()
+  {
+    const authorIds = [...new Set(articles.map((a: any) => a.author_id).filter(Boolean))]
+    for (let i = 0; i < authorIds.length; i += 100) {
+      const { data } = await supabase.from('authors').select('id,name').in('id', authorIds.slice(i, i + 100))
+      for (const r of data || []) authorNameById.set(r.id, r.name)
+    }
+  }
+  const corpusScope = { articles_scanned: articles.length, corpus: 'live', rule_version: LINEAGE_RULE_VERSION }
+  const checkedAt = new Date().toISOString()
+  const stage1 = buildStage1Assertions(articles, { authorNameById, corpusScope, checkedAt })
+  const stage3 = buildStage3Assertions(articles, plan.syndicates, { corpusScope, checkedAt })
+  const lineageRows = [...stage1.assertions, ...stage3]
+
   const stats = { ...plan.stats, comparisons: undefined, comparison_sample: plan.stats.comparisons.slice(0, 5), page_size: pageSize,
-    article_claims_deduped: dedupedAC.length, explanations_deduped: dedupedExp.length }
+    article_claims_deduped: dedupedAC.length, explanations_deduped: dedupedExp.length,
+    lineage_stage1: stage1.assertions.length, lineage_stage3: stage3.length,
+    lineage_wire_originals: stage1.wireOriginals.length, lineage_total: lineageRows.length }
   if (dryRun) return json(200, { dry_run: true, rule_version: RULE_VERSION, ...stats })
 
   // Rebuild: clear own sc-v1 namespace only, in dependency order.
@@ -228,5 +254,19 @@ Deno.serve(async (req: Request) => {
     if (error) return json(500, { error: `explanations insert failed: ${error.message}` })
   }
 
-  return json(200, { dry_run: false, rule_version: RULE_VERSION, ...stats })
+  // Lineage rebuild: clear ONLY this rule_version's own rows, mirroring the
+  // sc-v1 namespace discipline above. Reviewed rows are deliberately spared —
+  // deleting a 'verified' or 'rejected' assertion would silently discard a
+  // human review decision on every re-run.
+  {
+    const { error } = await supabase.from('article_lineage_assertions').delete()
+      .eq('rule_version', LINEAGE_RULE_VERSION).eq('review_status', 'unreviewed')
+    if (error) return json(500, { error: `lineage cleanup failed: ${error.message}` })
+  }
+  for (let i = 0; i < lineageRows.length; i += 500) {
+    const { error } = await supabase.from('article_lineage_assertions').insert(lineageRows.slice(i, i + 500))
+    if (error) return json(500, { error: `lineage insert failed: ${error.message}` })
+  }
+
+  return json(200, { dry_run: false, rule_version: RULE_VERSION, lineage_rule_version: LINEAGE_RULE_VERSION, ...stats })
 })

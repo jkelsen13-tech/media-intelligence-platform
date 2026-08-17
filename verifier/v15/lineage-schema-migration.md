@@ -242,3 +242,94 @@ independent of any WHERE clause a caller may forget.
 `rows_persisted` = 0 (every probe transaction rolled back). `anon` grants:
 `SELECT` only. Core census unchanged: articles 752, nodes 750, edges 411,
 explanations 1892.
+
+---
+
+# Stage 3 — exact-text hashing, and the thread (i) regression (checkpoint 4)
+
+Tests: `tests/golden/lineage_stage3_thread_i.test.mjs` (14/14)
+Fixture: `tests/golden/fixtures/source_comparison.json`
+
+## Extraction, not reimplementation — the seam
+
+The collapse logic in `lib.js detectSyndicates` (canonical URL + normalized
+body hash + union-find) has been correct since 2026-08-06. Its only defect
+was having exactly ONE consumer — `computeComparison` — so its result died
+with the HTTP response in `stats.comparisons`.
+
+The change is one line of extraction plus a persistence consumer:
+
+| Before | After |
+|---|---|
+| `runPipeline` computes `syndicates`, passes it to `computeComparison`, discards it | `runPipeline` also surfaces it as `plan.syndicates` |
+| — | `buildStage3Assertions(articles, plan.syndicates, …)` turns each group into rows |
+
+`detectSyndicates` is **not called a second time** and its grouping rule is
+**not restated**. A test pins this: `plan.syndicates` is asserted deep-equal
+to a direct `detectSyndicates` call, so a future divergence fails the suite.
+The only logic computed locally is evidence annotation — which of the two
+keys a member shares with its origin — so `evidence_basis` can name the
+matched value instead of asserting an unexplained match.
+
+## Confidence band — FLAGGED for owner review
+
+The brief says "confidence_band scaled to match percentage", but v1 matching
+is EXACT only (fuzzy is shadow-mode and excluded), so match percentage has
+two values, not a range:
+
+| Match basis | match_percent | Band |
+|---|---|---|
+| `exact_text_hash` — normalized bodies byte-identical | 100 | high |
+| `canonical_url` — same document URL, text NOT proven identical | null | medium |
+
+Reading "scaled" as a real similarity percentage would require the fuzzy
+matching this build is forbidden from putting into presentation.
+`match_percent` lives in `evidence_basis` only — never in an API response or
+UI as a score.
+
+## Origin selection — what it does and does not claim
+
+Earliest `published_at`, then lexical id. This picks a deterministic
+REPRESENTATIVE, not a proven source: the corpus may not contain the true
+original at all. The claim a collapsed group supports is "these N articles
+share ONE origin, so they are one corroborating source, not N" — which is
+all E2 needs. It is not "article X is where this story came from".
+
+## The thread (i) regression
+
+Fixture case: one verbatim wire story under **three DISTINCT canonical URLs**
+across three outlets (`o2`, `o2wire2`, `o2wire3`), joined only by the
+normalized body hash. `a2w` remains separately as `a2`'s tracking-param
+duplicate, preserving the existing canonical-URL collapse coverage.
+
+The fixture was corrected mid-checkpoint: the first version had two of the
+three sharing a canonical URL, so the pre-fix path yielded 2 — which would
+have made the "not three" assertion pass trivially without reproducing the
+defect thread (i) actually describes.
+
+| Path | Independent outlets | Evidence strength |
+|---|---|---|
+| Pre-fix (canonical URL recomputed at read time) | **3** | E2 "corroborated" |
+| Persisted origin clusters | **1** | E4 asserted |
+
+Both directions are pinned. The pre-fix behavior is a live test, so the
+defect cannot silently return.
+
+Guard tests, all passing: citation (`quotes`) assertions never collapse a
+cluster; shadow and rejected never collapse; superseded (`is_current false`)
+rows are inert; parentless Stage 1 rows never merge anything; chains
+A->B->C collapse to one cluster; genuinely independent articles (`a1`, `a3`)
+stay independent — the fix does not over-collapse.
+
+## Write path
+
+`index.ts` persists Stage 1 + Stage 3 rows after the explanations insert.
+Rebuild semantics mirror the sc-v1 namespace but spare reviewed rows: the
+cleanup deletes only `rule_version = 'lineage-v1' AND review_status =
+'unreviewed'`, so a re-run never discards a human verify/reject decision.
+The function header comment was updated — it previously claimed the function
+writes to no table beyond the Item 1 set, which this change made untrue.
+
+**Not yet executed against production.** The edge function is manually
+invoked and requires `SOURCE_COMPARISON_RUN_KEY`; no live run was performed
+this checkpoint, so `article_lineage_assertions` still holds 0 rows.
