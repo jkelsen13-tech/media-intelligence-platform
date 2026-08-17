@@ -837,7 +837,7 @@ export async function loadSkyVerificationForNode(nodeId) {
       supabase.from('story_arcs').select('id').eq('root_node_id', nodeId),
     ])
     if (citRes.error) return null
-    const ids = [...new Set((citRes.data ?? []).map((r) => r.article_id))]
+    const ids = new Set((citRes.data ?? []).map((r) => r.article_id))
     if (!arcRes.error) {
       const arcIds = (arcRes.data ?? []).map((r) => r.id)
       if (arcIds.length > 0) {
@@ -852,7 +852,7 @@ export async function loadSkyVerificationForNode(nodeId) {
     const { data, error } = await supabase
       .from('sky_verifications')
       .select(SKY_COLUMNS)
-      .in('id', [...ids])
+      .in('article_id', [...ids])
       .order('captured_at', { ascending: false, nullsFirst: false })
       .limit(1)
     if (error) return null
