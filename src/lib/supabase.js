@@ -559,7 +559,7 @@ export async function loadTimeline({ supabaseClient } = {}) {
       relationEdges: remapTimelineEdges(
         demoEdges
           .filter((e) => e.type === 'causal' || e.type === 'sequence')
-          .map((e) => ({ id: e.id, source: e.source, target: e.target, type: e.type, weight: e.weight, label: e.label })),
+          .map((e) => ({ id: e.id, source: e.source, target: e.target, type: e.type, weight: e.weight, label: e.label, doc_strength: e.doc_strength ?? null })),
         canonicalOf,
       ),
       labels: demoNodes.map((n) => ({ id: n.id ?? n.slug, slug: n.slug, label: n.label })),
@@ -574,7 +574,10 @@ export async function loadTimeline({ supabaseClient } = {}) {
     }).then((r) => (r.data ? { ...r, data: resortRows(r.data, 'occurred_at', { ascending: true, nullsFirst: false }) } : r)),
     // Causal AND sequential relations — the UI must preserve the distinction
     // (Tier 4 acceptance: "preserve causal versus sequential labels").
-    keysetAll(client, 'edges', 'id, source_id, target_id, type, weight, label', {
+    // doc_strength added 2026-08-18 (Track B Step 3 item 4, read-path only):
+    // the Screen 5 connector engine requires confirmed-grade strength before
+    // any gap may be labeled "Source-supported causal link".
+    keysetAll(client, 'edges', 'id, source_id, target_id, type, weight, label, doc_strength', {
       filter: (q) => q.in('type', ['causal', 'sequence']),
     }),
     keysetAll(client, 'nodes', 'id, slug, label'),
@@ -613,6 +616,7 @@ export async function loadTimeline({ supabaseClient } = {}) {
         type: e.type,
         weight: e.weight,
         label: e.label,
+        doc_strength: e.doc_strength ?? null,
       })),
       canonicalOf,
     ),
@@ -833,7 +837,7 @@ export async function loadSkyVerificationForNode(nodeId) {
       supabase.from('story_arcs').select('id').eq('root_node_id', nodeId),
     ])
     if (citRes.error) return null
-    const ids = new Set((citRes.data ?? []).map((r) => r.article_id))
+    const ids = [...new Set((citRes.data ?? []).map((r) => r.article_id))]
     if (!arcRes.error) {
       const arcIds = (arcRes.data ?? []).map((r) => r.id)
       if (arcIds.length > 0) {
@@ -848,7 +852,7 @@ export async function loadSkyVerificationForNode(nodeId) {
     const { data, error } = await supabase
       .from('sky_verifications')
       .select(SKY_COLUMNS)
-      .in('article_id', [...ids])
+      .in('id', [...ids])
       .order('captured_at', { ascending: false, nullsFirst: false })
       .limit(1)
     if (error) return null
@@ -869,4 +873,70 @@ export async function loadArcArticles(arcId) {
     .limit(50)
   if (error) throw error
   return data
+}
+
+// Track B Step 3 item 4 (Screen 5 Connections tab + footer count): every
+// edge touching a node owned by this arc (nodes.arc_id), all types, with
+// doc_strength so the connector engine and the connections list see the
+// same record. Read-path only; both reads keyset-paginate (Doc 13).
+// Returns { edges, labels } with edges mapped to { id, source, target,
+// type, weight, label, doc_strength } — empty when the arc owns no nodes.
+export async function loadArcConnections(arcId) {
+  if (!supabase || !arcId) return { edges: [], labels: new Map() }
+  const nodesRes = await keysetAll(supabase, 'nodes', 'id, slug, label', {
+    filter: (q) => q.eq('arc_id', arcId),
+  })
+  if (nodesRes.error) throw nodesRes.error
+  const nodeRows = nodesRes.data ?? []
+  const labels = new Map(nodeRows.map((n) => [n.id ?? n.slug, n.label]))
+  if (nodeRows.length === 0) return { edges: [], labels }
+  const keys = nodeRows.map((n) => n.id ?? n.slug)
+  const edgesRes = await keysetAll(supabase, 'edges', 'id, source_id, target_id, type, weight, label, doc_strength', {
+    filter: (q) => q.or(`source_id.in.(${keys.join(',')}),target_id.in.(${keys.join(',')})`),
+  })
+  if (edgesRes.error) throw edgesRes.error
+  const edgeRows = edgesRes.data ?? []
+  // Label BOTH endpoints: an edge's far end can be a node outside the arc,
+  // and an endpoint must never render as a raw uuid.
+  const missing = [...new Set(edgeRows.flatMap((e) => [e.source_id, e.target_id]))].filter(
+    (k) => !labels.has(k),
+  )
+  if (missing.length > 0) {
+    const farRes = await keysetAll(supabase, 'nodes', 'id, slug, label', {
+      filter: (q) => q.in('id', missing),
+    })
+    if (farRes.error) throw farRes.error
+    for (const n of farRes.data ?? []) labels.set(n.id ?? n.slug, n.label)
+  }
+  return {
+    edges: edgeRows.map((e) => ({
+      id: e.id,
+      source: e.source_id,
+      target: e.target_id,
+      type: e.type,
+      weight: e.weight,
+      label: e.label,
+      doc_strength: e.doc_strength ?? null,
+    })),
+    labels,
+  }
+}
+
+// Track B Step 3 item 4 (Screen 5 expansion): on-demand excerpt legs for a
+// timeline entry's resolved article — summary, outlet, published_at. The
+// detail card quotes the excerpt ONLY when all attribution legs resolve
+// (timelineEngine entryDetailView). Null when absent/unreadable.
+export async function loadArticleExcerpt(articleId) {
+  if (!supabase || !articleId) return null
+  try {
+    const { data, error } = await supabase
+      .from('articles')
+      .select('id, summary, outlet, published_at')
+      .eq('id', articleId)
+      .maybeSingle()
+    if (error) return null
+    return data ?? null
+  } catch {
+    return null
+  }
 }
