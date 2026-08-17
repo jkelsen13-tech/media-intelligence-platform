@@ -12,7 +12,9 @@
 //     distinct from coverage_unknown (extraction has not run / nothing to
 //     compare against) — never collapsed;
 //   - thin_extraction claims (title/summary-grain) carry a visible marker;
-//   - syndicated copies collapse to one original source (canonical URL);
+//   - syndicated copies collapse to one original source, counted from
+//     PERSISTED origin clusters written by the source-comparison-run write
+//     path — never re-derived here from canonical URL alone (thread (i));
 //   - no outlet-count gating — thin columns are honest signal;
 //   - every surface claim carries its Phase 2 explanation object for the
 //     details disclosure.
@@ -36,7 +38,21 @@ export function canonicalUrl(url) {
   }
 }
 
-/** Map(articleId -> syndicateId) over event member articles (canonical URL). */
+/**
+ * LEGACY — the pre-fix read-time collapse. Map(articleId -> syndicateId) by
+ * canonical URL alone.
+ *
+ * NO LONGER USED BY THIS READ PATH. It is retained for exactly one reason:
+ * the thread (i) regression test exercises the ACTUAL pre-fix code to prove
+ * the defect it fixes, rather than simulating it with a fresh copy. A static
+ * drift guard (tests/golden/lineage_readpath_wiring.test.mjs) fails the suite
+ * if loadSourceComparisonView ever calls this again.
+ *
+ * Why it was wrong: canonical URL is only ONE of the two keys the write-path
+ * collapse uses. A verbatim wire story republished under three different URLs
+ * shares no canonical URL with itself, so this function returns three separate
+ * sources and E2 reports "corroborated" for what is one wire report.
+ */
 export function collapseBySyndication(articles) {
   const byUrl = new Map()
   for (const a of articles) {
@@ -338,7 +354,7 @@ export async function loadSourceComparisonView({ supabaseClient } = {}) {
     .maybeSingle()
   if (flagError || flagRow?.value !== true) return { enabled: false, events: [] }
 
-  const [eventsRes, membersRes, claimsRes, surfacesRes, linksRes, corrRes, explRes] = await Promise.all([
+  const [eventsRes, membersRes, claimsRes, surfacesRes, linksRes, corrRes, explRes, lineageRes] = await Promise.all([
     keysetAll(supabase, 'events', 'id, canonical_title, occurred_at_start, occurred_at_end, status'),
     pagedAll(supabase, 'event_articles', 'event_id, article_id, membership_method, membership_confidence', ['event_id', 'article_id']),
     keysetAll(supabase, 'claims', 'id, event_id, canonical_text, thin_extraction, status', { filter: (q) => q.eq('status', 'active') }),
@@ -348,6 +364,13 @@ export async function loadSourceComparisonView({ supabaseClient } = {}) {
     keysetAll(supabase, 'explanations', 'id, assertion_id, assertion_type, supporting_passage, rule_version, provenance_class, review_status, state, remaining_uncertainty', {
       filter: (q) => q.in('assertion_type', ['event_membership', 'claim_grouping']).like('rule_version', 'sc-v1|%').eq('is_current', true),
     }),
+    // 20_IDEA capability 1 / 00_INDEX thread (i): persisted origin clusters.
+    // RLS already withholds shadow and rejected rows from this client;
+    // collapseByPersistedLineage filters them again so the guarantee does not
+    // depend on a policy the caller might be querying around.
+    keysetAll(supabase, 'article_lineage_assertions',
+      'id, child_article_id, parent_article_id, relationship_class, relationship_type, detection_method, confidence_band, review_status, is_current',
+      { filter: (q) => q.eq('is_current', true) }),
   ])
   const firstError = [eventsRes, membersRes, claimsRes, surfacesRes].find((r) => r.error)?.error
   if (firstError) return { enabled: true, events: [], loadError: firstError.message }
@@ -359,6 +382,19 @@ export async function loadSourceComparisonView({ supabaseClient } = {}) {
   const links = linksRes.data ?? []
   const corrections = corrRes.data ?? []
   const explanations = explRes.data ?? []
+  const lineageAssertions = lineageRes.data ?? []
+
+  // Thread (i) fix. Origin clusters come from the PERSISTED write-path
+  // collapse (canonical URL + normalized body hash + union-find), computed
+  // once for the whole corpus rather than re-derived per event from canonical
+  // URLs alone. A verbatim wire story under three different URLs is one
+  // cluster here; under the old per-event canonical-URL recomputation it was
+  // three independent outlets.
+  //
+  // Empty table -> empty map -> every article is its own source. That is the
+  // honest degradation: with no lineage recorded we cannot claim a shared
+  // origin, and we must not invent one.
+  const originClusters = collapseByPersistedLineage(lineageAssertions)
 
   // Presentation order preserved from the pre-fix query (occurred_at_start
   // desc, nulls last); pagination orders by id, so the display sort is
@@ -420,7 +456,6 @@ export async function loadSourceComparisonView({ supabaseClient } = {}) {
   const eventViews = events.map((event) => {
     const memberRows = members.filter((m) => m.event_id === event.id)
     const memberArticles = memberRows.map((m) => articlesById.get(m.article_id)).filter(Boolean)
-    const syndicates = collapseBySyndication(memberArticles)
     const eventArticlesByOutlet = new Map()
     for (const a of memberArticles) {
       if (!eventArticlesByOutlet.has(a.outlet)) eventArticlesByOutlet.set(a.outlet, [])
@@ -430,7 +465,7 @@ export async function loadSourceComparisonView({ supabaseClient } = {}) {
     const claimViews = claims
       .filter((c) => c.event_id === event.id)
       .map((claim) => buildClaimView(claim, surfaces.filter((s) => s.claim_id === claim.id), {
-        articlesById, syndicates, eventOutlets: outlets, eventArticlesByOutlet,
+        articlesById, syndicates: originClusters, eventOutlets: outlets, eventArticlesByOutlet,
         extractedArticleIds, evidenceLinks: links, corrections, explanationsByArticle,
       }))
       // shared facts first, then unique claims; stable within class by canonical text

@@ -333,3 +333,68 @@ writes to no table beyond the Item 1 set, which this change made untrue.
 **Not yet executed against production.** The edge function is manually
 invoked and requires `SOURCE_COMPARISON_RUN_KEY`; no live run was performed
 this checkpoint, so `article_lineage_assertions` still holds 0 rows.
+
+---
+
+# Thread (i) fix at its landing point — loadSourceComparisonView (checkpoint 5)
+
+Tests: `tests/golden/lineage_readpath_wiring.test.mjs` (7/7)
+
+## The switch
+
+| | Before | After |
+|---|---|---|
+| Source | `collapseBySyndication(memberArticles)` — canonical URL only | `collapseByPersistedLineage(lineageAssertions)` |
+| Scope | recomputed per event, from that event's member articles | computed once over the persisted corpus-wide clusters |
+| Keys | canonical URL | canonical URL **+ normalized body hash + union-find**, as persisted |
+
+`collapseBySyndication` is retained but has **zero call sites in the read
+path** — it survives only so the regression test can exercise the ACTUAL
+pre-fix code rather than a fresh simulation of it.
+
+## End-to-end result, through the real async loader
+
+The loader runs against a PostgREST-shaped stub over the fixture corpus. The
+3-URL wire story is the event's membership.
+
+| Scenario | Independent outlets | Evidence strength |
+|---|---|---|
+| Persisted lineage present | **1** | **E4** asserted |
+| **Control:** lineage table empty | 3 | E2 "corroborated" |
+| Lineage rows marked `shadow` | 3 | E2 |
+| Lineage rows marked `rejected` | 3 | E2 |
+| Lineage rows `is_current = false` | 3 | E2 |
+| Lineage rows reclassified `reference`/`quotes` | 3 | E2 |
+
+The control row is the one that makes the headline result meaningful: the
+same corpus through the same loader returns 3 when the lineage table is
+empty, so the 1 is produced by the persisted clusters and not by some other
+property of the fixture.
+
+The shadow row is guardrail 6 enforced at a second layer — RLS already
+withholds shadow rows from this client, and the read path independently
+refuses to collapse on them, so the guarantee does not rest on a policy a
+caller might query around.
+
+## Static drift guard
+
+Following the 15A precedent (a static test forbidding the old read-then-write
+pattern from returning), `DRIFT GUARD` asserts against the source of
+`loadSourceComparisonView`:
+- it must NOT call `collapseBySyndication`;
+- it MUST call `collapseByPersistedLineage`;
+- exactly one `collapseBySyndication(` call site exists in the whole file (its
+  own definition), so no new caller can appear unnoticed.
+
+## Honest degradation
+
+An empty `article_lineage_assertions` table yields an empty cluster map, so
+every article counts as its own source and the view loads normally with no
+error. With no lineage recorded we cannot claim a shared origin and must not
+invent one — the same posture as G2's "missing evidence is not contradicting
+evidence".
+
+Note this direction of failure: before any live pipeline run, the read path
+now behaves EXACTLY as it did pre-fix (3 outlets for the wire story), because
+there are no persisted clusters to count. The fix changes nothing in
+production until the write path has run. See the live-run decision below.
