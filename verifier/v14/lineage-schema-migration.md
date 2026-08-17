@@ -119,3 +119,64 @@ Repo file: `supabase/migrations/20260817_article_lineage_assertions.sql`
 (sha256 `8dd918f3e79c5652dcf73811583c846a183d547b22d0b598c70b5139e3e80e6a`
 at the time of the drill; the file is the single source of truth for a
 fresh environment).
+
+---
+
+# Stage 1 — byline/wire-service attribution (checkpoint 3)
+
+Module: `supabase/functions/source-comparison-run/lineage.js`
+Tests: `tests/golden/lineage_stage1.test.mjs` (15/15)
+Live run: `verifier/v14/stage1_live_corpus_run.mjs`
+
+## Live corpus result (752 articles, 2026-08-17)
+
+Candidate set built by a deliberately broad SQL prefilter (any wire token in
+outlet, author name, body lead or summary) that is a strict SUPERSET of what
+the detector can match: **11 candidates, 741 articles with no wire token at
+all**.
+
+| Outcome | Count | Detail |
+|---|---|---|
+| `syndicated_from` asserted | **1** | Reuters analysis published on `billingsgazette.com` |
+| Wire original — no assertion | 5 | AP articles on `apnews.com` |
+| Correctly suppressed | 5 | Guardian ×3, SCMP ×2 — wire cited as a source of fact |
+
+The single assertion:
+
+```
+child           2e4fd9b8-…  (outlet Reuters, host billingsgazette.com)
+parent          NULL
+class/type      derivation / syndicated_from
+origin_status   resolved_origin_found
+confidence      high
+evidence_basis  wire_service Reuters, signal outlet_field,
+                published_host billingsgazette.com,
+                corpus_scope {752 scanned, 11 candidates}, checked_at …
+```
+
+## Two findings from the live run
+
+**1. A wire's own article is an origin, not a copy of itself.** Five AP
+articles carry `outlet = 'Associated Press'` on `apnews.com`. A naive outlet
+match would have written `syndicated_from` over all five, asserting that AP
+syndicated AP. The detector checks the publishing host against the service's
+own domains and emits NO assertion for a wire original. They are returned
+separately as `wireOriginals` so the fact is visible rather than dropped.
+
+**2. Every single wire-mention candidate in the live corpus is a CITATION,
+not a byline.** All five non-wire-outlet candidates are of the form
+"Reuters reported", "AFP reports", "state news agency Xinhua reported",
+"told Reuters" — Guardian and SCMP original reporting that cites a wire.
+Without a guard the detector would have asserted syndication over five
+articles that are nothing of the kind, and then collapsed those independent
+outlets into a wire origin cluster, UNDERCOUNTING corroboration in E2 — the
+mirror image of the bug this capability exists to fix. `isCitationUse`
+suppresses them; all five are locked into the test suite as live-derived
+regression cases. They are Stage 2 material (`reference` / `quotes`), never
+Stage 1 derivation.
+
+## Not yet persisted
+
+This run is detection evidence only — no rows were written to
+`article_lineage_assertions`. Persistence happens through the
+source-comparison-run write path (checkpoints 4-5) and is reported there.
