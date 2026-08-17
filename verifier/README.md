@@ -235,3 +235,39 @@ Differs from prior version: first docked-panel criterion set; supersedes
 v15's popover-era checks while preserving v15 unchanged as history; adds
 the first async-loading timing-race disclosure and the first honest-
 tones (three-tone) assertion pattern.
+---
+
+# Prefixed namespaces
+
+The flat `vN` sequence above is a single shared counter with no allocator, so
+two tracks working in parallel both take "the next integer" and collide. That
+happened twice in one day on 2026-08-17: Track B item 3 and the lineage track
+both wrote `v14`, then Track B item 4 and the lineage track both wrote `v15`.
+
+Tracks that run concurrently with Track B therefore version within their OWN
+prefix. Sequential inside the prefix, never colliding with Track B's numbers
+by construction — no coordination and no guessing required.
+
+## lineage-vN — 20_IDEA capability 1 (source independence and claim lineage)
+
+### lineage-v1 — 2026-08-17 — Schema, Stage 1, Stage 3, thread (i), Stage 2
+Covers the capability's foundation: the `article_lineage_assertions`
+migration (schema validated against live before applying, guardrail probes
+8/8 in a rolled-back transaction, rollback drilled against production with
+identical constraint/index fingerprints before and after); the RLS policy
+correction proven by querying the real Reuters/billingsgazette assertion as
+role `anon` (0 rows before, 1 after, shadow and rejected invisible
+throughout); Stage 1 byline/wire attribution run over the live 752-article
+corpus (11 candidates, 1 assertion, 5 wire originals correctly skipped, 5
+citations correctly suppressed); Stage 3 exact-text hashing extracted from —
+not reimplemented alongside — the existing `detectSyndicates` collapse; the
+00_INDEX thread (i) regression, where a verbatim wire story under three
+distinct canonical URLs reports 1 corroborating origin and E4 rather than 3
+and E2, with the pre-fix behavior pinned as a live test; and Stage 2
+attribution-vs-citation, held PROVISIONAL pending owner review of its
+ambiguous sample and deliberately unwired from the write path.
+Suite 297/297 green; every push byte-verified against the committed ref.
+Details: `lineage-v1/lineage-schema-migration.md`. Live Stage 1 run:
+`lineage-v1/stage1_live_corpus_run.mjs`.
+Renamed from the contested `v14`/`v15` flat-sequence slots on 2026-08-17;
+this track leaves that sequence entirely.

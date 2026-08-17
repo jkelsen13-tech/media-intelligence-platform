@@ -8,7 +8,7 @@
 //
 // Content is reproduced verbatim from the live rows (bodies truncated to the
 // 400-char lead the detector actually scans) so this run is reproducible
-// without database access. Run: node verifier/v15/stage1_live_corpus_run.mjs
+// without database access. Run: node verifier/lineage-v1/stage1_live_corpus_run.mjs
 
 import { buildStage1Assertions, detectWireAttribution } from '../../supabase/functions/source-comparison-run/lineage.js'
 
