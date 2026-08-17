@@ -181,3 +181,27 @@ Differs from prior version: first navigation-default criterion set;
 asserts rendered-graph cardinality via the cytoscape registry (no debug
 globals) and adds the first mobile-unchanged invariant with explicit
 side-effect disclosure.
+
+## v15 — 2026-08-17 — Plain-language edge labels (Track B Step 2 item 4)
+Measures: every edge-relationship surface (canvas, legend, evidence
+popover, relationship list, flat + grouped timelines, article panel)
+uses a plain-language phrase from a single helper
+(edgePlainLabel); the causal-vs-sequence distinction is stated in words
+("Causal claims one event led to another. Sequence claims only that one
+happened before the other — no causation is claimed.") and survives
+accent removal (grayscale(1)); sequence canvas labels read "happened
+before" with zero machine vocabulary ("<type>: ..."); evidence popover
+keeps the raw DB label as extraction detail ("Relation"); unknown
+types humanize rather than leak machine vocabulary; suite 253/253
+(246 + 7 new); v14/v12/v13 suites re-run green; cytoscape stylesheet-
+ordering bug found and fixed (edge.lbl must follow the base edge rule
+or base label:'' wins); byte-verified pushes (three commits, tip
+078b2499); CI green on all tips.
+Blob SHAs: criteria 485c0111, checker 78309b0e.
+Details: `v15/plain-language-edge-labels.md`. Run log:
+`runs/2026-08-17-trackb-step2-item4.md`. Verifier script:
+`v15/check_item4.py`.
+Differs from prior version: first language/semantics criterion set;
+asserts meaning carried by words under accent removal rather than by
+color or line style, and documents the first cytoscape stylesheet-
+ordering defect.
