@@ -53,21 +53,46 @@ test('a bare link with no attribution language -> reference (brief Section 3)', 
   assert.equal(v.phrase, null)
 })
 
-test('undecidable phrasing -> ambiguous, and it is checked BEFORE citation patterns', () => {
-  // Each of these is used both as a derivation credit and as a courtesy by an
-  // outlet doing entirely independent reporting. "first reported by" also
-  // contains "reported", so if ambiguity were checked after the citation
-  // patterns it would be silently written as quotes.
-  const cases = [
+test('RULING 1: priority-of-discovery credit stays ambiguous, never derived_from', () => {
+  // Used both as a derivation credit and as a courtesy by an outlet doing
+  // entirely independent reporting; nothing in the phrase separates the two.
+  // "first reported by" also contains "reported", so if ambiguity were checked
+  // after the citation patterns it would be silently written as quotes.
+  for (const text of [
     'The scheme was first reported by The Guardian on Tuesday, and officials later confirmed the details to this newspaper.',
-    'Following a report by the Financial Times, the company announced an internal review.',
-    'After Bloomberg reported the merger talks, shares rose four per cent.',
-    'The military intelligence officer left the country after The Times reported that he was using the Aeroflot office.',
-  ]
-  for (const text of cases) {
-    assert.equal(classifyReference(text).classification, 'ambiguous', text)
-    assert.ok(classifyReference(text).why.length > 0)
+    'The Guardian was first to report the scheme on Tuesday.',
+    'As the Financial Times first reported, the review had already begun.',
+  ]) {
+    const v = classifyReference(text)
+    assert.equal(v.classification, 'ambiguous', text)
+    assert.notEqual(v.classification, 'derivation', 'must never be reclassified as derived_from')
+    assert.ok(v.why.length > 0)
   }
+})
+
+test('RULING 2: sequence framing is a DECIDED reference, not ambiguous', () => {
+  // "After X reported" / "following a report by X" locate this article in time
+  // relative to another report; neither states its content came from it.
+  const cases = [
+    ['Following a report by the Financial Times, the company announced an internal review.', 'Following a report by'],
+    ['After Bloomberg reported the merger talks, shares rose four per cent.', 'After Bloomberg reported'],
+    ['The officer left the country after The Times reported that he was using the Aeroflot office.', 'after The Times reported'],
+  ]
+  for (const [text, phrase] of cases) {
+    const v = classifyReference(text)
+    assert.equal(v.classification, 'reference', text)
+    assert.notEqual(v.classification, 'ambiguous', 'reclassified by owner ruling 2026-08-17')
+    // The specific phrase must be what is recorded as evidence, not a looser
+    // pattern that happened to match first.
+    assert.equal(v.phrase, phrase)
+  }
+})
+
+test('"per" records a source, never a unit of measure', () => {
+  // A bare /\bper\b/ matched "four per cent" and recorded it as the evidence
+  // for a real classification. Caught on the live-shaped probe set.
+  assert.equal(classifyReference('The toll stands at 44, per Reuters.').phrase, 'per Reuters')
+  assert.equal(classifyReference('Shares rose four per cent on Tuesday.').phrase, null)
 })
 
 test('attribution AND citation language together is ambiguous, not a tiebreak', () => {
@@ -122,7 +147,7 @@ test('AN AMBIGUOUS REFERENCE PRODUCES NO ASSERTION — it is queued for review',
   assert.ok(ambiguous[0].window)
 })
 
-test('self-reference never becomes lineage', () => {
+test('RULING 3: self-reference exclusion is permanent', () => {
   // The live NYT case: "The Times reported" inside a New York Times article.
   assert.ok(isSelfReference('New York Times', 'after The Times reported that he was using the office'))
   assert.ok(isSelfReference('South China Morning Post', 'according to a tally by the South China Morning Post'))
@@ -165,7 +190,7 @@ test('corpus scope is required — a scopeless run throws rather than shipping',
 // Outlet-level references: reporting only, never assertions
 // ---------------------------------------------------------------------------
 
-test('outlet-name references are surfaced for review but never resolve to a parent', () => {
+test('RULING 4: outlet-level mentions are report-only, never a parentless quotes row', () => {
   // "The Times reported" names an OUTLET, not an article. Picking one of that
   // outlet's articles would be a guess dressed as evidence.
   const found = scanOutletReferences(
@@ -177,6 +202,17 @@ test('outlet-name references are surfaced for review but never resolve to a pare
   assert.equal(found[0].self_reference, false)
   // scanOutletReferences returns findings only — it has no assertion output.
   assert.equal(found[0].child_article_id, 'A')
+  assert.ok(!('relationship_type' in found[0]), 'a scan finding is not an assertion')
+
+  // And the assertion builder produces nothing from an outlet-name mention:
+  // it names an outlet, not an article, so no parent can resolve.
+  const { assertions, ambiguous, unresolvable } = build([
+    { id: 'A', outlet: 'South China Morning Post', url: 'https://scmp.com/a', body_text: 'The Guardian reported on Thursday that he was refused.' },
+    { id: 'B', outlet: 'The Guardian', url: 'https://theguardian.com/b', body_text: 'Original.' },
+  ])
+  assert.equal(assertions.length, 0, 'no parentless quotes row may be written')
+  assert.equal(ambiguous.length, 0)
+  assert.equal(unresolvable.length, 0)
 })
 
 test('outlet self-reference is flagged as such in the scan', () => {

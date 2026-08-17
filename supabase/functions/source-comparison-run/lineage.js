@@ -421,6 +421,14 @@ export function buildStage3Assertions(articles, syndicates, { corpusScope, check
 // 'reference', never treated as derivation proof per the locked
 // schema-concepts decision).
 //
+// Behavior FINALIZED 2026-08-17 by owner ruling on the ambiguous sample:
+//   1. "first reported by X" stays ambiguous — never reclassified to
+//      derived_from;
+//   2. "after X reported" / "following a report by X" are DECIDED references;
+//   3. self-reference exclusion is permanent;
+//   4. outlet-level mentions are report-only and never produce a parentless
+//      quotes row.
+//
 // THIS STAGE REFUSES TO GUESS. Three outcomes, not two: derivation, reference,
 // and AMBIGUOUS. An ambiguous reference produces NO assertion and is returned
 // for human review instead. Writing a coin-flip as either class would put a
@@ -438,22 +446,41 @@ const DERIVATION_PHRASES = [
 
 // The article references another's report as a SOURCE while doing its own work.
 const CITATION_PHRASES = [
+  // Specific phrasings FIRST: the array is scanned in order and the first hit
+  // is what gets recorded in evidence_basis, so a loose pattern placed early
+  // would mask the real phrase.
+  //
+  // Owner ruling 2026-08-17: sequence framing is a DECIDED reference, not an
+  // open question. "After X reported" and "following a report by X" locate
+  // this article in time relative to another report; neither states that this
+  // article's content came from it.
+  /\bfollowing a report by\b/i,
+  /\bafter .{0,30}\breported\b/i,
+  /\breport by\b/i,
   /\baccording to\b/i,
   /\bciting\b/i,
   /\btold\b/i,
-  /\bper\b/i,
+  // "per" must be followed by a source, not a unit. A bare /\bper\b/ matches
+  // "four per cent" and "per year", which recorded a nonsense phrase as the
+  // evidence for a real classification — caught on the live-shaped probe set.
+  /\bper\s+(?:the\s+)?[A-Z][A-Za-z'-]+/,
   /\b(?:reported|reports|said|says|wrote|noted|confirmed)\b/i,
 ]
 
 // Genuinely undecidable from the phrase alone. Each of these is routinely used
 // BOTH as a derivation credit and as a priority-of-discovery courtesy by an
 // outlet doing entirely independent reporting.
+//
+// FINALIZED 2026-08-17 by owner ruling. Priority-of-discovery credits stay
+// ambiguous: "first reported by X" is used both as a derivation credit and as
+// a courtesy by an outlet doing entirely independent reporting, and nothing in
+// the phrase distinguishes the two. Sequence framing ("after X reported",
+// "following a report by X") was RECLASSIFIED to a decided reference and now
+// lives in CITATION_PHRASES above.
 const AMBIGUOUS_PHRASES = [
   { re: /\bfirst reported by\b/i, why: 'credits priority of discovery; does not state whether this article derives from that report' },
   { re: /\bwas first to report\b/i, why: 'priority credit, not a derivation claim' },
   { re: /\bas .{0,30}first reported\b/i, why: 'priority credit, not a derivation claim' },
-  { re: /\bfollowing a report by\b/i, why: 'sequence, not stated dependence' },
-  { re: /\bafter .{0,30} reported\b/i, why: 'sequence, not stated dependence' },
   { re: /\bcited a report by\b/i, why: 'cites the report as evidence but may also be its source' },
   { re: /\bconfirming a report by\b/i, why: 'independent confirmation and dependence are indistinguishable here' },
 ]

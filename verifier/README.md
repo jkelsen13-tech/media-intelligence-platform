@@ -275,9 +275,21 @@ fingerprint before and after. Checkpoint 7 was split after a file-collision
 check against Track B item 5: 7a adds only NET-NEW files and modifies none,
 so it cannot conflict with the docked relationship panel; 7b (Graph lineage
 mode rendering) is deferred until item 5 lands.
-Suite 308/308 green; every push byte-verified against the committed ref.
-Details: `lineage-v1/lineage-schema-migration.md` and
+Closed 2026-08-17 with the full Section 7 acceptance pass: Graph lineage-mode
+rendering (a separate LINEAGE_EDGE_TYPES registry so the default legend is
+untouched; parentless assertions render as node STATES, never edges, and only
+when they can state their own corpus scope), Stage 2 finalized by owner ruling
+on its ambiguous sample, and screenshot evidence captured from a FIXTURE-
+SEEDED dev harness — production article_lineage_assertions still holds 0 rows
+and source-comparison-run was not invoked. Rendering verified by reading the
+live cytoscape instance (3 nodes, 1 syndicated_from edge labelled "syndicated
+from"), not by eyeballing the image.
+Suite 343/343 green; every push byte-verified against the committed ref.
+Details: `lineage-v1/section-7-acceptance.md`,
+`lineage-v1/lineage-schema-migration.md`,
 `lineage-v1/graph-projection-view.md`. Live Stage 1 run:
-`lineage-v1/stage1_live_corpus_run.mjs`.
+`lineage-v1/stage1_live_corpus_run.mjs`. Screenshots:
+`lineage-v1/screenshot-lineage-populated.png`,
+`lineage-v1/screenshot-lineage-empty.png`.
 Renamed from the contested `v14`/`v15` flat-sequence slots on 2026-08-17;
 this track leaves that sequence entirely.
