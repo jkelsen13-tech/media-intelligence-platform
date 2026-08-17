@@ -459,6 +459,14 @@ export function runPipeline(articles, entityPairs, cfg, lexicon) {
   }
 
   plan.explanations = buildExplanationRows(decisions)
+  // 20_IDEA capability 1 (thread (i)): the syndicate collapse above is
+  // correct and has always been correct — it just had exactly one consumer
+  // (computeComparison) and died with the response. Surfacing the SAME map
+  // here gives it a second consumer, the lineage write path, without
+  // recomputing or reimplementing the collapse. See lineage.js
+  // buildStage3Assertions, which takes this map as an argument rather than
+  // calling detectSyndicates again.
+  plan.syndicates = syndicates
   plan.stats = {
     events: plan.events.length,
     multi_outlet_events: clusters.filter((c) => c.multiOutlet).length,

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NODE_TYPES, EDGE_TYPES, EDGE_WEIGHTS, RELIABILITY_MIN, RELIABILITY_MAX } from './theme'
+import { NODE_TYPES, EDGE_TYPES, EDGE_WEIGHTS, RELIABILITY_MIN, RELIABILITY_MAX, LINEAGE_EDGE_TYPES, ORIGIN_STATUS_LABELS } from './theme'
 
 // Collapse toggle: mobile viewports start collapsed so the legend doesn't
 // cover the graph on load; tapping the chip expands it back.
@@ -27,7 +27,7 @@ function typeSwatchStyle({ cssVar, color }) {
   return { borderColor: cssVar ? `var(${cssVar})` : color }
 }
 
-export default function Legend() {
+export default function Legend({ lineageMode = false }) {
   const [collapsed, setCollapsed] = useState(startsCollapsed)
 
   if (collapsed) {
@@ -73,6 +73,30 @@ export default function Legend() {
           </div>
         ))}
       </section>
+      {lineageMode && (
+        <section>
+          <h3>Lineage relationships</h3>
+          <p className="legend-note">
+            Only reviewed and verified lineage is shown. Detected relationships
+            awaiting review, and shadow-mode candidates, are excluded on purpose.
+          </p>
+          {Object.entries(LINEAGE_EDGE_TYPES).map(([key, { cssVar, label, plain }]) => (
+            <div key={key} className="legend-row">
+              <span className="legend-line" style={{ background: `var(${cssVar})` }} />
+              {label} — “{plain}”
+            </div>
+          ))}
+          <p className="legend-note">
+            An article with no resolved parent carries a state, not an edge —
+            absence of a detected origin is never evidence of independence:
+          </p>
+          {Object.entries(ORIGIN_STATUS_LABELS).map(([key, { label, plain }]) => (
+            <div key={key} className="legend-row">
+              {label} — “{plain}”
+            </div>
+          ))}
+        </section>
+      )}
       <section>
         <h3>Edges</h3>
         <p className="legend-note">

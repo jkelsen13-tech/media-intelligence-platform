@@ -235,3 +235,61 @@ Differs from prior version: first docked-panel criterion set; supersedes
 v15's popover-era checks while preserving v15 unchanged as history; adds
 the first async-loading timing-race disclosure and the first honest-
 tones (three-tone) assertion pattern.
+---
+
+# Prefixed namespaces
+
+The flat `vN` sequence above is a single shared counter with no allocator, so
+two tracks working in parallel both take "the next integer" and collide. That
+happened twice in one day on 2026-08-17: Track B item 3 and the lineage track
+both wrote `v14`, then Track B item 4 and the lineage track both wrote `v15`.
+
+Tracks that run concurrently with Track B therefore version within their OWN
+prefix. Sequential inside the prefix, never colliding with Track B's numbers
+by construction — no coordination and no guessing required.
+
+## lineage-vN — 20_IDEA capability 1 (source independence and claim lineage)
+
+### lineage-v1 — 2026-08-17 — Schema, Stage 1, Stage 3, thread (i), Stage 2
+Covers the capability's foundation: the `article_lineage_assertions`
+migration (schema validated against live before applying, guardrail probes
+8/8 in a rolled-back transaction, rollback drilled against production with
+identical constraint/index fingerprints before and after); the RLS policy
+correction proven by querying the real Reuters/billingsgazette assertion as
+role `anon` (0 rows before, 1 after, shadow and rejected invisible
+throughout); Stage 1 byline/wire attribution run over the live 752-article
+corpus (11 candidates, 1 assertion, 5 wire originals correctly skipped, 5
+citations correctly suppressed); Stage 3 exact-text hashing extracted from —
+not reimplemented alongside — the existing `detectSyndicates` collapse; the
+00_INDEX thread (i) regression, where a verbatim wire story under three
+distinct canonical URLs reports 1 corroborating origin and E4 rather than 3
+and E2, with the pre-fix behavior pinned as a live test; and Stage 2
+attribution-vs-citation, held PROVISIONAL pending owner review of its
+ambiguous sample and deliberately unwired from the write path.
+Also covers the read-only Graph projection view (checkpoint 7a): a
+security_invoker view over the assertions table, confirmed from
+pg_class.reloptions rather than assumed, with shadow/unreviewed/rejected and
+superseded-verified exclusion proven by direct query as role `anon` (six
+probe rows in, two out), rollback drilled with an identical viewdef
+fingerprint before and after. Checkpoint 7 was split after a file-collision
+check against Track B item 5: 7a adds only NET-NEW files and modifies none,
+so it cannot conflict with the docked relationship panel; 7b (Graph lineage
+mode rendering) is deferred until item 5 lands.
+Closed 2026-08-17 with the full Section 7 acceptance pass: Graph lineage-mode
+rendering (a separate LINEAGE_EDGE_TYPES registry so the default legend is
+untouched; parentless assertions render as node STATES, never edges, and only
+when they can state their own corpus scope), Stage 2 finalized by owner ruling
+on its ambiguous sample, and screenshot evidence captured from a FIXTURE-
+SEEDED dev harness — production article_lineage_assertions still holds 0 rows
+and source-comparison-run was not invoked. Rendering verified by reading the
+live cytoscape instance (3 nodes, 1 syndicated_from edge labelled "syndicated
+from"), not by eyeballing the image.
+Suite 343/343 green; every push byte-verified against the committed ref.
+Details: `lineage-v1/section-7-acceptance.md`,
+`lineage-v1/lineage-schema-migration.md`,
+`lineage-v1/graph-projection-view.md`. Live Stage 1 run:
+`lineage-v1/stage1_live_corpus_run.mjs`. Screenshots:
+`lineage-v1/screenshot-lineage-populated.png`,
+`lineage-v1/screenshot-lineage-empty.png`.
+Renamed from the contested `v14`/`v15` flat-sequence slots on 2026-08-17;
+this track leaves that sequence entirely.
