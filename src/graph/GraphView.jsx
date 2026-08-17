@@ -318,7 +318,7 @@ export default function GraphView({
           (cy.height() / minZoom - (bb.y2 - bb.y1) - 220) / 48,
         )
         const maxCols = Math.floor(
-          (cy.width() / minZoom - (bb.x1 * 0 + bb.x1) - 220) / 48,
+          (cy.width() / minZoom - (bb.x2 - bb.x1) - 220) / 48,
         )
         const placed = placeDisconnectedBand(bandIds, {
           clusterBox: { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2, w: bb.w, h: bb.h },
@@ -644,7 +644,7 @@ export default function GraphView({
       cy.zoom({ level: Math.min(cy.maxZoom(), Math.max(cy.minZoom(), cy.zoom() * 1.2)), renderedPosition: center })
     } else if (e.key === '-' || e.key === '_') {
       e.preventDefault()
-      cy.zoom({ level: Math.max(cy.minZoom(), Math.max(cy.zoom() / 1.2)), renderedPosition: center })
+      cy.zoom({ level: Math.max(cy.minZoom(), cy.zoom() / 1.2), renderedPosition: center })
     } else if (e.key === '0') {
       e.preventDefault()
       cy.fit(undefined, 80)
