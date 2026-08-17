@@ -1,0 +1,228 @@
+/* ---------- Track B Step 3 item 1: shared epistemic components ----------
+   Addendum "System conventions shared across all seven screens". Token-
+   driven only (Step 1 hex-audit bar: no hardcoded color values here); both
+   themes render from the tokens defined in styles/tokens.css. */
+
+/* --- Status badge: icon + color + text, never color alone --- */
+.ep-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-label);
+  white-space: nowrap;
+}
+
+.ep-badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  flex: none;
+}
+
+/* Load-bearing: the dashed ring is the Inferred state's second non-color
+   channel and must survive accent-color removal (grayscale). Do not
+   collapse this to a color-only distinction. */
+.ep-badge-dashed .ep-badge-icon {
+  border-style: dashed;
+}
+
+.ep-badge-confirmed { color: var(--status-green-text); }
+.ep-badge-contested { color: var(--status-amber-text); }
+.ep-badge-inferred { color: var(--cat-inferred); }
+
+/* --- Inline epistemic info banner --- */
+.ep-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--status-blue-bg);
+  border: var(--border-width) solid var(--status-blue-border);
+  border-radius: var(--card-radius);
+  color: var(--status-blue-text);
+}
+
+.ep-banner-icon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+}
+
+.ep-banner-text {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+
+/* --- Evidence-state summary bar: three counts, never one figure --- */
+.ep-esb-cells {
+  display: flex;
+  gap: 0;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--card-radius);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.ep-esb-cell {
+  flex: 1 1 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: var(--card-pad-y) var(--card-pad-x);
+}
+
+.ep-esb-cell + .ep-esb-cell {
+  border-left: var(--border-width) solid var(--border-color);
+}
+
+.ep-esb-icon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 2px;
+}
+
+.ep-esb-supporting { color: var(--status-green-text); }
+.ep-esb-contested { color: var(--status-amber-text); }
+.ep-esb-missing { color: var(--cat-red); }
+
+.ep-esb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ep-esb-label {
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-label);
+}
+
+.ep-esb-count {
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.ep-esb-sub {
+  font-size: var(--fs-label);
+  color: var(--text-muted);
+}
+
+.ep-esb-scope {
+  margin: 6px 2px 0;
+  font-size: var(--fs-label);
+  color: var(--text-muted);
+}
+
+.ep-esb-scope-absent {
+  color: var(--status-amber-text);
+}
+
+/* --- Trust footer --- */
+.ep-trust {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 2px 4px;
+  border-top: var(--border-width) solid var(--border-color);
+  margin-top: 16px;
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+.ep-trust-reviewed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.ep-trust-shield {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+/* --- Remaining-uncertainty block: dashed border is load-bearing --- */
+.ep-uncertainty {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: var(--card-pad-y) var(--card-pad-x);
+  border: var(--border-width) dashed var(--cat-inferred);
+  border-radius: var(--card-radius);
+  background: var(--bg-inset);
+}
+
+.ep-uncertainty-icon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+  color: var(--cat-inferred);
+}
+
+.ep-uncertainty-title {
+  display: block;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-label);
+  color: var(--cat-inferred);
+  margin-bottom: 2px;
+}
+
+.ep-uncertainty-text {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.45;
+  color: var(--text-body);
+}
+
+/* --- Type pill --- */
+.ep-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: var(--fs-label);
+  font-weight: var(--fw-label);
+  color: var(--cat-violet);
+  border: var(--border-width) solid var(--cat-inferred);
+  border-radius: 999px;
+  background: transparent;
+  white-space: nowrap;
+}
+
+/* --- Source attribution line --- */
+.ep-src {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+  min-width: 0;
+}
+
+.ep-src-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.ep-src-outlet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-src-region {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.ep-src-badge {
+  margin-left: auto;
+  flex: none;
+}
