@@ -141,7 +141,10 @@ test('site 4: flat and grouped views agree on deep rows (identical read set)', a
 test('structure: grouped loader keyset-paginates all seven reads', () => {
   const src = readFileSync(new URL('../src/lib/arcGroupedTimeline.js', import.meta.url), 'utf8')
   assert.match(src, /keysetAll\(supabase, 'nodes', 'id, slug, label, description, confidence, summary, occurred_at, arc_id'/)
-  assert.match(src, /keysetAll\(supabase, 'edges', 'id, source_id, target_id, type, weight, label'/)
+  // doc_strength added 2026-08-18 (Track B Step 3 item 4, read-path only):
+  // the Screen 5 connector engine requires confirmed-grade strength before
+  // any gap may be labeled "Source-supported causal link".
+  assert.match(src, /keysetAll\(supabase, 'edges', 'id, source_id, target_id, type, weight, label, doc_strength'/)
   assert.match(src, /keysetAll\(supabase, 'nodes', 'id, slug, label'\)/)
   assert.match(src, /keysetAll\(supabase, 'articles', 'id, arc_id'\)/)
   assert.match(src, /keysetAll\(supabase, 'story_arcs', 'id, title, category, started_at'\)/)
