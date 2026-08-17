@@ -29,6 +29,7 @@ adaptation), byte-verified pushes, CI at HEAD 9db34829.
 Details: `v3/graph-band.md`. Run log: `runs/2026-08-10-trackb-step2-graph-band.md`.
 Differs from prior version: first graph-layout verification; adds headless
 fcose metrics harness. No schema changes; rendering only.
+
 ## v4 (created 2026-08-11)
 Measures: Doc 13 scaling/pagination ceiling — every unpaginated .select()
 that can exceed PostgREST's silent 1000-row cap. Criteria: limited read-path
@@ -235,3 +236,18 @@ Differs from prior version: first docked-panel criterion set; supersedes
 v15's popover-era checks while preserving v15 unchanged as history; adds
 the first async-loading timing-race disclosure and the first honest-
 tones (three-tone) assertion pattern.
+
+## trackb3-v1 — 2026-08-18 — Shared epistemic component kit (Track B Step 3 item 1)
+Measures: addendum system conventions extracted once as shared components —
+three-state badge distinguishable without color (icon + dash + label,
+dashed load-bearing on Inferred), contested never derivable from
+confidence, locked seven-type pill vocabulary with humanized fallback,
+evidence-state counts exactly three and frozen (static drift guard forbids
+any addition operator or aggregate label in EvidenceStateBar.jsx),
+guardrail-4 missing-scope requirement, no fabricated review dates, zero
+hardcoded hex across the kit (Step 1 token bar). Suite 284/284 (270 + 14
+new); build clean. Details: `trackb3-v1/trackb3-step3-item1.md`. Run log:
+`runs/2026-08-18-trackb-step3-item1.md`.
+Differs from prior version: first entry under the prefixed Step 3
+namespace (flat integers abandoned 2026-08-17); first component-extraction
+criterion set with no user-facing surface change (kit consumed from item 2).
