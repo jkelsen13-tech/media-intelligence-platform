@@ -73,5 +73,8 @@ deferral is explicit, not silent.
      (base adopted from remote canonical d8879132 before appending; no
      transcription slip this pass).
    CI on c3d50a43: Golden regression suite SUCCESS, Deploy SUCCESS.
+4. This run log — commit 321161467210f16b64a26ddfaf48fbf55419eedd.
+   - verifier/runs/2026-08-18-trackb-step3-item2.md bb3433f5b2bffcd19f31e3ad81958a13e7758a23 MATCH
+   CI on 32116146: Golden regression suite SUCCESS, Deploy SUCCESS.
 
 No DB mutations, no flag changes, no scope expansion. All queries read-only.
