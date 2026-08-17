@@ -1,13 +1,54 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadTimeline } from '../lib/supabase'
-import { EDGE_WEIGHTS, edgePlainLabel } from '../graph/theme'
+import {
+  loadArcs,
+  loadArcDetail,
+  loadArcArticles,
+  loadArcConnections,
+  loadArticleExcerpt,
+  loadTimeline,
+} from '../lib/supabase'
+import { loadTimelineGroupedBetaFlag } from '../lib/arcGroupedTimeline'
+import { edgePlainLabel } from '../graph/theme'
+import {
+  SCREEN5_EYEBROW,
+  SCREEN5_SUBTITLE,
+  SCREEN5_BANNER,
+  TIMELINE_CLOSING_FOOTNOTE,
+  ALL_EVENTS_SCOPE,
+  defaultArcSlug,
+  normalizeArcEvent,
+  normalizeNodeEvent,
+  deriveDateOptions,
+  deriveTypeOptions,
+  entryMatchesFilters,
+  footerCounts,
+} from '../lib/timelineScreenModel'
+import {
+  deriveEvidenceStates,
+  missingScopeCopy,
+  lastMilestoneCheck,
+  pendingUncertainty,
+} from '../lib/policyArcModel'
+import ArcTimeline from '../components/ArcTimeline'
+import ArcEvidencePanel from '../components/ArcEvidencePanel'
+import EpistemicBanner from '../components/EpistemicBanner'
+import EvidenceStateBar from '../components/EvidenceStateBar'
+import RemainingUncertaintyBlock from '../components/RemainingUncertaintyBlock'
+import TrustFooter from '../components/TrustFooter'
+import GroupedTimelineView from './GroupedTimelineView'
 import '../styles/timeline.css'
 
-// Causal timeline (concept doc §2.4): events ordered by date, with causal AND
-// sequential links rendered between them — the connective tissue the news
-// cycle severs. Phase 0 Item 4 (2026-07-28): deterministic evt-/art- dedup
-// (see canonicalizeTimelineEvents in lib/supabase.js), search, filters,
-// collapse/expand, and pagination.
+// Track B Step 3 item 4 — the addendum's Screen 5 (Timeline), arc-scoped by
+// default (owner delegation 2026-08-18): the screen follows ONE story arc's
+// chronology — eyebrow, arc title, standing subtitle, tabs
+// (Timeline / Connections / Evidence), date-range + event-type filter pills,
+// epistemic banner, the vertical timeline with connector labels between
+// EVERY entry (the item-3 engine), footer links with live counts, closing
+// footnote, trust footer. The pre-existing global corpus views (flat and
+// arc-grouped) are retained behind the explicit "All events" opt-in,
+// rebuilt on the same ArcTimeline renderer so the connector rule holds
+// there too. Criteria + locked decisions:
+// verifier/trackb3-v4/trackb3-step3-item4.md.
 
 const PAGE_SIZE = 25
 
@@ -19,308 +60,579 @@ const LINK_FILTERS = [
   { id: 'none', label: 'No links' },
 ]
 
-function confidenceColor(score) {
-  if (score == null) return 'var(--text-muted)'
-  const hue = Math.round((score / 100) * 120)
-  return `hsl(${hue}, 70%, 45%)`
-}
-
-// Doc 05 pairs 1–3: TimelineView accepts cross-window callbacks and a focus
-// key. focusEventKey is the 8-hex group suffix shared by an evt-/art- mirror
-// pair (i.e. the article id's first 8 hex chars) — the same key the dedup
-// groups on, so it always lands on the canonical card.
 export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey }) {
-  const [data, setData] = useState(null)
-  const [error, setError] = useState(null)
+  // --- arcs + scope -----------------------------------------------------------
+  const [arcs, setArcs] = useState(null)
+  const [arcsError, setArcsError] = useState(null)
+  const [selectedSlug, setSelectedSlug] = useState(null)
+  const [allEvents, setAllEvents] = useState(false)
+  const [activeTab, setActiveTab] = useState('timeline')
+  const [month, setMonth] = useState(null)
+  const [type, setType] = useState(null)
+
+  // --- arc-scope data ----------------------------------------------------------
+  const [detail, setDetail] = useState(null)
+  const [detailError, setDetailError] = useState(null)
+  const [arcArticles, setArcArticles] = useState(null)
+  const [connections, setConnections] = useState(null)
+  const [connectionsError, setConnectionsError] = useState(null)
+
+  // --- global-scope data (lazy: read only after the explicit opt-in, or when a
+  // cross-window focus request targets a global event) --------------------------
+  const [globalData, setGlobalData] = useState(null)
+  const [globalError, setGlobalError] = useState(null)
+  const [groupedBeta, setGroupedBeta] = useState(false)
+  const [timelineMode, setTimelineMode] = useState('flat')
   const [query, setQuery] = useState('')
   const [linkFilter, setLinkFilter] = useState('any')
   const [page, setPage] = useState(0)
-  // Expansion is keyed by node id, so collapsed/expanded context survives
-  // page changes and filtering (Tier 4 acceptance).
-  const [collapsed, setCollapsed] = useState(() => new Set())
   const [pendingFocus, setPendingFocus] = useState(null)
+  const [focusHighlight, setFocusHighlight] = useState(null)
   const itemRefs = useRef(new Map())
-  const focusGuard = useRef(false)
 
   useEffect(() => {
-    loadTimeline().then(setData).catch((err) => setError(err.message))
+    loadArcs()
+      .then((rows) => {
+        setArcs(rows)
+        const slug = defaultArcSlug(rows)
+        if (slug) setSelectedSlug(slug)
+        else setAllEvents(true) // no arcs tracked — global is the only honest scope
+      })
+      .catch((err) => setArcsError(err.message))
+    loadTimelineGroupedBetaFlag()
+      .then((on) => setGroupedBeta(on === true))
+      .catch(() => setGroupedBeta(false))
   }, [])
 
-  // New search/filter criteria always land on page 1; expansion state is kept.
+  const selected = useMemo(
+    () => arcs?.find((a) => a.slug === selectedSlug) ?? null,
+    [arcs, selectedSlug],
+  )
+
+  // Arc-scope loads (events + milestones, attached articles, connections).
   useEffect(() => {
-    if (focusGuard.current) {
-      focusGuard.current = false
-      return
+    if (!selected || allEvents) return
+    let cancelled = false
+    setDetail(null)
+    setDetailError(null)
+    setArcArticles(null)
+    setConnections(null)
+    setConnectionsError(null)
+    loadArcDetail(selected.id ?? selected.slug)
+      .then((d) => !cancelled && setDetail(d))
+      .catch((err) => !cancelled && setDetailError(err.message))
+    loadArcArticles(selected.id)
+      .then((rows) => !cancelled && setArcArticles(rows))
+      .catch(() => !cancelled && setArcArticles([]))
+    loadArcConnections(selected.id)
+      .then((c) => !cancelled && setConnections(c))
+      .catch((err) => !cancelled && setConnectionsError(err.message))
+    return () => {
+      cancelled = true
     }
-    setPage(0)
-  }, [query, linkFilter])
+  }, [selected, allEvents])
 
-  // Focus request from another window: clear search/filter, jump to the page
-  // containing the event, expand it, then scroll + highlight below.
+  // Global-scope load: explicit opt-in or cross-window focus only.
   useEffect(() => {
-    if (!focusEventKey || !data) return
-    const idx = data.events.findIndex((e) => (e.slug ?? '').slice(-8) === focusEventKey)
-    if (idx === -1) return
-    const key = data.events[idx].id ?? data.events[idx].slug
-    focusGuard.current = true
-    setQuery('')
-    setLinkFilter('any')
-    setPage(Math.floor(idx / PAGE_SIZE))
-    setCollapsed((prev) => {
-      if (!prev.has(key)) return prev
-      const next = new Set(prev)
-      next.delete(key)
-      return next
-    })
-    setPendingFocus(focusEventKey)
-  }, [focusEventKey, data])
+    if ((!allEvents && !focusEventKey) || globalData || globalError) return
+    let cancelled = false
+    loadTimeline()
+      .then((d) => !cancelled && setGlobalData(d))
+      .catch((err) => !cancelled && setGlobalError(err.message))
+    return () => {
+      cancelled = true
+    }
+  }, [allEvents, focusEventKey, globalData, globalError])
 
-  const { rows, total, suppressed } = useMemo(() => {
-    if (!data) return { rows: [], total: 0, suppressed: 0 }
-    // Label lookup covers every node type (data.labels), so edges ending at
-    // institutions/anomalies resolve to names, not raw uuids.
-    const labelById = new Map(
-      (data.labels ?? data.events).map((n) => [n.id ?? n.slug, n.label]),
+  // Changing arc or scope returns to the Timeline tab with filters cleared.
+  useEffect(() => {
+    setActiveTab('timeline')
+    setMonth(null)
+    setType(null)
+  }, [selectedSlug, allEvents])
+
+  // New search/filter criteria land on page 1 (global scope).
+  useEffect(() => {
+    setPage(0)
+  }, [query, linkFilter, month, type])
+
+  // --- entry lists ---------------------------------------------------------------
+  const arcEntries = useMemo(
+    () => (detail ? detail.events.map(normalizeArcEvent).filter(Boolean) : []),
+    [detail],
+  )
+
+  const global = useMemo(() => {
+    if (!globalData) return null
+    const entries = globalData.events.map(normalizeNodeEvent).filter(Boolean)
+    const edges = globalData.relationEdges ?? []
+    const labels = new Map(
+      (globalData.labels ?? []).map((n) => [n.id ?? n.slug, n.label]),
     )
-    const edges = data.relationEdges ?? []
+    const linksByKey = new Map()
+    for (const e of edges) {
+      for (const [k, role] of [
+        [e.source, 'outbound'],
+        [e.target, 'inbound'],
+      ]) {
+        const rec = linksByKey.get(k) ?? { outbound: [], inbound: [] }
+        rec[role].push(e)
+        linksByKey.set(k, rec)
+      }
+    }
     const term = query.trim().toLowerCase()
-
-    const allRows = data.events.map((evt) => {
-      const key = evt.id ?? evt.slug
-      const outbound = edges
-        .filter((e) => e.source === key)
-        .map((e) => ({ ...e, targetLabel: labelById.get(e.target) ?? e.target }))
-      const inbound = edges
-        .filter((e) => e.target === key)
-        .map((e) => ({ ...e, sourceLabel: labelById.get(e.source) ?? e.source }))
-      return { evt, key, outbound, inbound }
-    })
-
-    const filtered = allRows.filter(({ evt, outbound, inbound }) => {
+    const filtered = entries.filter((entry) => {
+      if (!entryMatchesFilters(entry, { month, type })) return false
       if (term) {
-        const haystack = [evt.label, evt.summary, evt.description]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
+        const haystack = [entry.title, entry.description].filter(Boolean).join(' ').toLowerCase()
         if (!haystack.includes(term)) return false
       }
-      const links = [...outbound, ...inbound]
+      const links = linksByKey.get(entry.key)
+      const all = links ? [...links.outbound, ...links.inbound] : []
       switch (linkFilter) {
         case 'linked':
-          return links.length > 0
+          return all.length > 0
         case 'causal':
-          return links.some((e) => e.type === 'causal')
+          return all.some((e) => e.type === 'causal')
         case 'sequence':
-          return links.some((e) => e.type === 'sequence')
+          return all.some((e) => e.type === 'sequence')
         case 'none':
-          return links.length === 0
+          return all.length === 0
         default:
           return true
       }
     })
-    return { rows: filtered, total: allRows.length, suppressed: data.suppressed ?? 0 }
-  }, [data, query, linkFilter])
+    return { entries, filtered, edges, labels, linksByKey, suppressed: globalData.suppressed ?? 0 }
+  }, [globalData, query, linkFilter, month, type])
 
-  // Complete a pending focus once the focused row is rendered on this page.
+  // Cross-window focus (Doc 05): a News Feed article asked us to open its
+  // event. Switch to the global corpus, clear filters, jump to its page.
   useEffect(() => {
-    if (!pendingFocus) return
-    const row = rows.find((r) => (r.evt.slug ?? '').slice(-8) === pendingFocus)
-    if (!row) return
-    const el = itemRefs.current.get(row.key)
-    if (!el) return
-    focusGuard.current = false
+    if (!focusEventKey || !global) return
+    const idx = global.entries.findIndex((e) => (e.slug ?? '').slice(-8) === focusEventKey)
+    if (idx === -1) return
+    const entry = global.entries[idx]
+    setAllEvents(true)
+    setQuery('')
+    setLinkFilter('any')
+    setMonth(null)
+    setType(null)
+    setPage(Math.floor(idx / PAGE_SIZE))
+    setPendingFocus(entry.key)
+  }, [focusEventKey, global])
+
+  // Complete the focus once the row is rendered on the current page.
+  useEffect(() => {
+    if (!pendingFocus || !global) return
+    const pageRows = global.filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+    if (!pageRows.some((e) => e.key === pendingFocus)) return
+    const el = itemRefs.current.get(pendingFocus)
     setPendingFocus(null)
+    if (!el) return
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    el.classList.add('timeline-focused')
-    const t = setTimeout(() => el.classList.remove('timeline-focused'), 4000)
+    setFocusHighlight(pendingFocus)
+    const t = setTimeout(() => setFocusHighlight(null), 4000)
     return () => clearTimeout(t)
-  }, [pendingFocus, rows])
+  }, [pendingFocus, global, page])
 
-  if (error) return <div className="notice error">Failed to load timeline: {error}</div>
-  if (!data) return <div className="notice">Loading timeline…</div>
+  // --- render ---------------------------------------------------------------
 
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  if (arcsError) return <div className="notice error">Failed to load story arcs: {arcsError}</div>
+  if (!arcs) return <div className="notice">Loading timeline…</div>
+
+  const scopeIsGlobal = allEvents || !selected
+  const entries = scopeIsGlobal ? (global?.filtered ?? []) : arcEntries.filter((e) => entryMatchesFilters(e, { month, type }))
+  const dateOptions = deriveDateOptions(scopeIsGlobal ? (global?.entries ?? []) : arcEntries)
+  const typeOptions = deriveTypeOptions(scopeIsGlobal ? (global?.entries ?? []) : arcEntries)
+
+  const counts = detail ? deriveEvidenceStates(detail.events, detail.milestones) : null
+  const missingScope = counts
+    ? missingScopeCopy({
+        pendingCount: counts.missing,
+        startedAt: selected?.started_at,
+        lastCheck: lastMilestoneCheck(detail.milestones),
+      })
+    : null
+  const uncertainty = detail ? pendingUncertainty(detail.milestones) : null
+
+  // Live footer counts (D6) — never literals. A failed connections read
+  // shows no number rather than a fabricated one.
+  const globalConnectionEdges = scopeIsGlobal
+    ? (global?.edges.filter((e) => entries.some((en) => en.key === e.source || en.key === e.target)) ?? [])
+    : []
+  const foot = scopeIsGlobal
+    ? footerCounts({ scope: ALL_EVENTS_SCOPE, entries: global?.entries ?? [], connections: globalConnectionEdges })
+    : footerCounts({
+        scope: selectedSlug,
+        articles: arcArticles ?? [],
+        connections: connections?.edges ?? [],
+      })
+
+  const pageCount = scopeIsGlobal ? Math.max(1, Math.ceil(entries.length / PAGE_SIZE)) : 1
   const safePage = Math.min(page, pageCount - 1)
-  const pageRows = rows.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
-  const first = rows.length === 0 ? 0 : safePage * PAGE_SIZE + 1
-  const last = Math.min(rows.length, safePage * PAGE_SIZE + PAGE_SIZE)
+  const visibleEntries = scopeIsGlobal
+    ? entries.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+    : entries
 
-  const toggleCard = (key) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
+  const registerRef = (key, el) => {
+    if (el) itemRefs.current.set(key, el)
+    else itemRefs.current.delete(key)
   }
-  const setAllCollapsed = (collapse) => {
-    setCollapsed(collapse ? new Set(rows.map((r) => r.key)) : new Set())
-  }
+
+  const connectionLabel = (key, labels) => labels?.get(key) ?? key
 
   return (
     <div className="timeline-view">
       <div className="timeline-intro">
-        <h2>Causal Timeline</h2>
-        <p>
-          Events mapped causally, not just chronologically. Institutional memory that survives the
-          news cycle.
-        </p>
-      </div>
+        <p className="ep-eyebrow">{SCREEN5_EYEBROW}</p>
+        <h2 className="ep-report-title">
+          {scopeIsGlobal ? 'All events — global corpus' : selected.title}
+        </h2>
+        <p>{SCREEN5_SUBTITLE}</p>
 
-      <div className="timeline-controls">
-        <input
-          type="search"
-          className="timeline-search"
-          placeholder="Search events…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search timeline events"
-        />
-        <div className="timeline-filter-chips" role="group" aria-label="Filter by link type">
-          {LINK_FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              className={`timeline-chip${linkFilter === f.id ? ' active' : ''}`}
-              aria-pressed={linkFilter === f.id}
-              onClick={() => setLinkFilter(f.id)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        <div className="timeline-bulk">
-          <button type="button" onClick={() => setAllCollapsed(false)}>Expand all</button>
-          <button type="button" onClick={() => setAllCollapsed(true)}>Collapse all</button>
-        </div>
-      </div>
-
-      <p className="timeline-count" aria-live="polite">
-        Showing {first}–{last} of {rows.length} events
-        {rows.length !== total && ` (filtered from ${total})`}
-        {suppressed > 0 &&
-          ` · ${suppressed} duplicate article mirrors suppressed (same article, same event: the evt- node is canonical)`}
-      </p>
-
-      <ol className="timeline">
-        {pageRows.map(({ evt, key, outbound, inbound }) => {
-          const isCollapsed = collapsed.has(key)
-          // Doc 05 pairs 1–2: cross-window chips. Honest degradation — each
-          // chip renders only when its join resolved (arc_id / article_id
-          // non-null) and the destination callback exists.
-          const arcTitle = evt.arc_id ? data.arcTitles?.get(evt.arc_id) : null
-          const showArc = Boolean(evt.arc_id && onOpenArc)
-          const showArticle = Boolean(evt.article_id && onOpenArticle)
-          return (
-            <li
-              key={key}
-              className="timeline-item"
-              ref={(el) => {
-                if (el) itemRefs.current.set(key, el)
-                else itemRefs.current.delete(key)
+        <div className="ep-tl-scope">
+          {!scopeIsGlobal || arcs.length > 0 ? (
+            <select
+              className="ep-tl-scope-select"
+              value={selectedSlug ?? ''}
+              disabled={scopeIsGlobal && arcs.length > 0}
+              onChange={(e) => {
+                setSelectedSlug(e.target.value)
+                setAllEvents(false)
               }}
+              aria-label="Choose story arc"
             >
-              <div className="timeline-marker" />
-              <div className="timeline-card">
-                <div className="timeline-card-head">
-                  <div>
-                    <div className="timeline-date">{evt.occurred_at ?? 'undated'}</div>
-                    <h3>{evt.label}</h3>
-                    {(showArc || showArticle) && (
-                      <div className="timeline-xlinks">
-                        {showArc && (
-                          <button
-                            type="button"
-                            className="timeline-xlink"
-                            onClick={() => onOpenArc(evt.arc_id)}
-                          >
-                            Story arc{arcTitle ? `: ${arcTitle}` : ''} →
-                          </button>
-                        )}
-                        {showArticle && (
-                          <button
-                            type="button"
-                            className="timeline-xlink"
-                            onClick={() => onOpenArticle(evt.article_id)}
-                          >
-                            Open in News Feed →
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
+              {arcs.map((a) => (
+                <option key={a.slug} value={a.slug}>
+                  {a.title}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <button
+            type="button"
+            className="ep-tl-scope-toggle"
+            onClick={() => setAllEvents((v) => !v)}
+          >
+            {scopeIsGlobal ? '← Back to the arc timeline' : 'All events (global corpus)'}
+          </button>
+        </div>
+
+        <div className="ep-tabs" role="tablist" aria-label="Timeline sections">
+          <button
+            role="tab"
+            aria-selected={activeTab === 'timeline'}
+            className={`ep-tab${activeTab === 'timeline' ? ' ep-tab-active' : ''}`}
+            onClick={() => setActiveTab('timeline')}
+          >
+            Timeline
+          </button>
+          <button
+            role="tab"
+            aria-selected={activeTab === 'connections'}
+            className={`ep-tab${activeTab === 'connections' ? ' ep-tab-active' : ''}`}
+            onClick={() => setActiveTab('connections')}
+          >
+            Connections
+          </button>
+          <button
+            role="tab"
+            aria-selected={activeTab === 'evidence'}
+            className={`ep-tab${activeTab === 'evidence' ? ' ep-tab-active' : ''}`}
+            onClick={() => setActiveTab('evidence')}
+          >
+            Evidence
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'timeline' && (
+        <>
+          <div className="ep-tl-filters">
+            <select
+              className="ep-tl-pill"
+              value={month ?? ''}
+              onChange={(e) => setMonth(e.target.value || null)}
+              aria-label="Filter by date range"
+            >
+              <option value="">All dates</option>
+              {dateOptions.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="ep-tl-pill"
+              value={type ?? ''}
+              onChange={(e) => setType(e.target.value || null)}
+              aria-label="Filter by event type"
+            >
+              <option value="">All event types</option>
+              {typeOptions.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <EpistemicBanner>{SCREEN5_BANNER}</EpistemicBanner>
+
+          {scopeIsGlobal && (
+            <div className="timeline-controls">
+              <input
+                type="search"
+                className="timeline-search"
+                placeholder="Search events…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="Search timeline events"
+              />
+              <div className="timeline-filter-chips" role="group" aria-label="Filter by link type">
+                {LINK_FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    className={`timeline-chip${linkFilter === f.id ? ' active' : ''}`}
+                    aria-pressed={linkFilter === f.id}
+                    onClick={() => setLinkFilter(f.id)}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              {groupedBeta && (
+                <div className="timeline-filter-chips" role="group" aria-label="Timeline layout">
                   <button
                     type="button"
-                    className="timeline-toggle"
-                    aria-expanded={!isCollapsed}
-                    aria-label={isCollapsed ? `Expand ${evt.label}` : `Collapse ${evt.label}`}
-                    onClick={() => toggleCard(key)}
+                    className={`timeline-chip${timelineMode === 'flat' ? ' active' : ''}`}
+                    aria-pressed={timelineMode === 'flat'}
+                    onClick={() => setTimelineMode('flat')}
                   >
-                    {isCollapsed ? '+' : '−'}
+                    Flat
+                  </button>
+                  <button
+                    type="button"
+                    className={`timeline-chip${timelineMode === 'grouped' ? ' active' : ''}`}
+                    aria-pressed={timelineMode === 'grouped'}
+                    onClick={() => setTimelineMode('grouped')}
+                  >
+                    Grouped by arc (Beta)
                   </button>
                 </div>
-                {!isCollapsed && (
-                  <>
-                    {evt.confidence != null && (
-                      <span
-                        className="timeline-confidence"
-                        style={{ color: confidenceColor(evt.confidence) }}
-                      >
-                        {evt.confidence}% documented
-                      </span>
-                    )}
-                    {(evt.summary ?? evt.description) && <p>{evt.summary ?? evt.description}</p>}
-                    {inbound.length > 0 && (
-                      <div className="timeline-links">
-                        {inbound.map((e) => (
-                          <span key={e.id} className="timeline-link inbound">
-                            ← {e.sourceLabel} <em>({edgePlainLabel(e)})</em>
-                            <b className={`timeline-badge ${e.type}`}>{e.type}</b>
-                            <i style={{ borderTopWidth: EDGE_WEIGHTS[e.weight] ?? 3 }} />
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {outbound.length > 0 && (
-                      <div className="timeline-links">
-                        {outbound.map((e) => (
-                          <span key={e.id} className="timeline-link outbound">
-                            → {e.targetLabel} <em>({edgePlainLabel(e)})</em>
-                            <b className={`timeline-badge ${e.type}`}>{e.type}</b>
-                            <i style={{ borderTopWidth: EDGE_WEIGHTS[e.weight] ?? 3 }} />
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </li>
-          )
-        })}
-      </ol>
+              )}
+            </div>
+          )}
 
-      {pageCount > 1 && (
-        <nav className="timeline-pager" aria-label="Timeline pages">
-          <button
-            type="button"
-            disabled={safePage === 0}
-            onClick={() => setPage(safePage - 1)}
-          >
-            ← Previous
-          </button>
-          <span>
-            Page {safePage + 1} of {pageCount}
-          </span>
-          <button
-            type="button"
-            disabled={safePage >= pageCount - 1}
-            onClick={() => setPage(safePage + 1)}
-          >
-            Next →
-          </button>
-        </nav>
+          {scopeIsGlobal && timelineMode === 'grouped' && groupedBeta ? (
+            <GroupedTimelineView
+              onOpenArc={onOpenArc}
+              onOpenArticle={onOpenArticle}
+              focusEventKey={focusEventKey}
+            />
+          ) : (
+            <>
+              {scopeIsGlobal && globalError && (
+                <div className="notice error">Failed to load timeline: {globalError}</div>
+              )}
+              {scopeIsGlobal && !global && !globalError && (
+                <div className="notice">Loading timeline…</div>
+              )}
+              {!scopeIsGlobal && detailError && (
+                <div className="notice error">Failed to load arc timeline: {detailError}</div>
+              )}
+              {!scopeIsGlobal && !detail && !detailError && (
+                <div className="notice">Loading arc timeline…</div>
+              )}
+              {((scopeIsGlobal && global) || (!scopeIsGlobal && detail)) && (
+                <>
+                  <p className="timeline-count" aria-live="polite">
+                    {entries.length} event{entries.length === 1 ? '' : 's'}
+                    {!scopeIsGlobal && entries.length !== arcEntries.length &&
+                      ` (filtered from ${arcEntries.length})`}
+                    {scopeIsGlobal && entries.length !== (global?.entries.length ?? 0) &&
+                      ` (filtered from ${global?.entries.length ?? 0})`}
+                    {scopeIsGlobal && (global?.suppressed ?? 0) > 0 &&
+                      ` · ${global.suppressed} duplicate article mirrors suppressed (same article, same event: the evt- node is canonical)`}
+                  </p>
+                  <ArcTimeline
+                    entries={visibleEntries}
+                    edges={scopeIsGlobal ? (global?.edges ?? []) : []}
+                    loadArticle={loadArticleExcerpt}
+                    registerRef={scopeIsGlobal ? registerRef : undefined}
+                    focusKey={focusHighlight}
+                    emptyText={
+                      scopeIsGlobal
+                        ? 'No events match these filters.'
+                        : 'No consequence events recorded yet for this arc.'
+                    }
+                  />
+                  {scopeIsGlobal && pageCount > 1 && (
+                    <nav className="timeline-pager" aria-label="Timeline pages">
+                      <button
+                        type="button"
+                        disabled={safePage === 0}
+                        onClick={() => setPage(safePage - 1)}
+                      >
+                        ← Previous
+                      </button>
+                      <span>
+                        Page {safePage + 1} of {pageCount}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={safePage >= pageCount - 1}
+                        onClick={() => setPage(safePage + 1)}
+                      >
+                        Next →
+                      </button>
+                    </nav>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </>
       )}
+
+      {activeTab === 'connections' && (
+        <section className="ap-section">
+          {scopeIsGlobal ? (
+            !global ? (
+              <div className="notice">Loading connections…</div>
+            ) : globalConnectionEdges.length === 0 ? (
+              <p className="arc-empty">
+                No graph connections touch the events currently in view.
+              </p>
+            ) : (
+              <ul className="ep-tl-connections">
+                {globalConnectionEdges.slice(0, 100).map((e) => (
+                  <li key={e.id} className="ep-tl-connection">
+                    <span className="ep-tl-connection-pair">
+                      {connectionLabel(e.source, global?.labels)}
+                      {' → '}
+                      {connectionLabel(e.target, global?.labels)}
+                    </span>
+                    <span className="ep-tl-connection-meta">
+                      {edgePlainLabel(e)}
+                      {e.doc_strength ? ` · ${e.doc_strength}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : connectionsError ? (
+            <div className="notice error">Failed to load connections: {connectionsError}</div>
+          ) : !connections ? (
+            <div className="notice">Loading connections…</div>
+          ) : connections.edges.length === 0 ? (
+            <p className="arc-empty">
+              No graph connections recorded for this arc's events in the current corpus.
+            </p>
+          ) : (
+            <ul className="ep-tl-connections">
+              {connections.edges.map((e) => (
+                <li key={e.id} className="ep-tl-connection">
+                  <span className="ep-tl-connection-pair">
+                    {connectionLabel(e.source, connections.labels)}
+                    {' → '}
+                    {connectionLabel(e.target, connections.labels)}
+                  </span>
+                  <span className="ep-tl-connection-meta">
+                    {edgePlainLabel(e)}
+                    {e.doc_strength ? ` · ${e.doc_strength}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {activeTab === 'evidence' && (
+        <>
+          {scopeIsGlobal ? (
+            <section className="ap-section">
+              <p className="arc-empty">
+                Evidence state is tracked per story arc. Choose an arc above to see its
+                supporting / contested / missing counts.
+              </p>
+              {global && foot.articles > 0 && (
+                <ul className="ap-sources">
+                  {global.entries
+                    .filter((e) => e.articleId)
+                    .map((e) => (
+                      <li key={e.key} className="ap-source">
+                        <button
+                          className="ap-source-headline ap-article-link"
+                          title="Open in News Feed"
+                          onClick={() => onOpenArticle?.(e.articleId)}
+                        >
+                          {e.title}
+                        </button>
+                        {e.date && <span className="ap-source-date">{e.date}</span>}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </section>
+          ) : detailError ? (
+            <div className="notice error">Failed to load arc detail: {detailError}</div>
+          ) : !detail ? (
+            <div className="notice">Loading evidence…</div>
+          ) : (
+            <>
+              <section className="ap-section">
+                <span className="ep-section-label">Evidence state</span>
+                <EvidenceStateBar
+                  supporting={counts.supporting}
+                  contested={counts.contested}
+                  missing={counts.missing}
+                  missingScope={missingScope}
+                />
+              </section>
+              {uncertainty && (
+                <RemainingUncertaintyBlock>
+                  Still unresolved: {uncertainty.join('; ')}.
+                </RemainingUncertaintyBlock>
+              )}
+              <ArcEvidencePanel
+                arc={selected}
+                detail={detail}
+                arcArticles={arcArticles ?? []}
+                onOpenArticle={onOpenArticle}
+              />
+            </>
+          )}
+        </>
+      )}
+
+      {/* Footer links with LIVE counts (D6) — never literals; they navigate
+          to the tab where the underlying records are listed. */}
+      <div className="ep-tl-footerlinks">
+        <button type="button" className="ep-tl-footerlink" onClick={() => setActiveTab('evidence')}>
+          View {foot.articles} related article{foot.articles === 1 ? '' : 's'}
+        </button>
+        <span className="ep-tl-footerlink-sep" aria-hidden="true" />
+        <button
+          type="button"
+          className="ep-tl-footerlink"
+          onClick={() => setActiveTab('connections')}
+        >
+          See {connectionsError && !scopeIsGlobal ? '' : `${foot.connections} `}graph connection
+          {foot.connections === 1 ? '' : 's'}
+        </button>
+      </div>
+
+      {/* Trust footer (addendum: bottom of every screen). The left slot
+          carries the closing footnote — the connector rule restated;
+          reviewedAt is null because no review date exists in the record
+          and one is never fabricated. */}
+      <TrustFooter
+        left={<span className="ep-tl-footnote">{TIMELINE_CLOSING_FOOTNOTE}</span>}
+        reviewedAt={null}
+      />
     </div>
   )
 }
