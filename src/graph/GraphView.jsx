@@ -644,7 +644,7 @@ export default function GraphView({
       cy.zoom({ level: Math.min(cy.maxZoom(), Math.max(cy.minZoom(), cy.zoom() * 1.2)), renderedPosition: center })
     } else if (e.key === '-' || e.key === '_') {
       e.preventDefault()
-      cy.zoom({ level: Math.max(cy.minZoom(), Math.max(cy.minZoom(), cy.zoom() / 1.2)), renderedPosition: center })
+      cy.zoom({ level: Math.max(cy.minZoom(), cy.zoom() / 1.2), renderedPosition: center })
     } else if (e.key === '0') {
       e.preventDefault()
       cy.fit(undefined, 80)
