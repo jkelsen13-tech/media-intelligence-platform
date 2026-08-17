@@ -299,3 +299,49 @@ wiring yet — items 4/5 consume it); first causal-branch proof carried
 entirely by fixtures because the live corpus has zero causal edges; first
 CI failure disclosure inside a step (split commit, root-caused and
 closed within the same item).
+
+## trackb3-v4 — 2026-08-18 — Timeline screen, Screen 5 (Track B Step 3 item 4)
+Measures: TimelineView rebuilt as the addendum's Screen 5 on the item-1
+kit + item-3 engine, arc-scoped by default (owner delegation 2026-08-18)
+with the global corpus behind an explicit "All events" opt-in — eyebrow /
+arc title / standing subtitle, arc selector, Timeline/Connections/
+Evidence tabs, date-range + event-type filter pills (real selects,
+data-derived options), verbatim epistemic banner, the shared ArcTimeline
+renderer (date axis, spine icon, pill, badge only for mapped confidence,
+source line only with a real outlet, chevron/caret expansion into the
+item-3 detail card with on-demand excerpt), connector between EVERY
+adjacent pair in BOTH scopes (arc scope honestly all "Sequence only" —
+arc_events are not nodes; global scope passes remapped edges with
+doc_strength so the causal branch can fire), footer links with LIVE
+counts navigating to their tabs, item-3 closing footnote via TrustFooter
+left slot, reviewedAt never fabricated. Reuse-not-rebuild: ArcsView's
+Evidence tab extracted verbatim into ArcEvidencePanel, consumed by both
+screens (static-guarded single source). Read-path only: doc_strength on
+both timeline edge selects; new loadArcConnections (both endpoints
+labeled, no raw-uuid leaks) and loadArticleExcerpt (null-safe). App
+wiring simplified — Flat/Grouped chips + grouped-beta flag moved inside
+TimelineView's global scope. Suite 332/332 (315 + 17 new); build clean;
+live-data smoke (dist + Chromium): arc scope renders 49-arc selector,
+footer counts live (e.g. 3 articles / 9 connections on the default arc),
+guardrail-4 missing-scope copy verbatim, global scope 337 events / 14
+pages / footer 336 articles / 80 connections, grouped mode behind its
+flag, mobile 390px, zero console errors. Byte-verified pushes (blobs
+1ee728f1, e808b916, 17eb0f70, 4a67cd29, 109def35, 6b319a5d, 58bca3d0,
+d60491d7, 623dbc09, 00cf9408, d7af1e04; criteria 1cab2fde).
+Disclosed: (1) commit 9fd5b843 carried ONLY the updated pagination guard
+under a message describing the full data layer, and landed one commit
+before the arcGroupedTimeline.js it guards — CI red on both workflows at
+that commit, green from 27b65923 onward; the item-3 rule (a test and
+every file it guards ride the SAME commit) was re-violated in the
+transcription pipeline and is now extended: the COMMIT MESSAGE must also
+be re-read against the actual file list before pushing. (2) commit
+e60ebeca carried two transcription slips in loadSkyVerificationForNode
+(spread on the Set constructor; .in('id') instead of .in('article_id'))
+caught by byte verification and corrected in fixup 49bbd2f1 (v14
+precedent); the slipped path is flag-gated off and unexercised by tests,
+which is why e60ebeca's CI was green despite the slip.
+Details: `trackb3-v4/trackb3-step3-item4.md`. Run log:
+`runs/2026-08-18-trackb-step3-item4.md`.
+Differs from prior version: first Screen 5 surface; first cross-screen
+component extraction (ArcEvidencePanel consumed by two views); first
+screen where the default scope is an arc rather than the global corpus.
