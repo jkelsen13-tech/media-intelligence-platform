@@ -398,3 +398,58 @@ Note this direction of failure: before any live pipeline run, the read path
 now behaves EXACTLY as it did pre-fix (3 outlets for the wire story), because
 there are no persisted clusters to count. The fix changes nothing in
 production until the write path has run. See the live-run decision below.
+
+---
+
+# Stage 2 — canonical URL / attribution vs citation (checkpoint 6, PROVISIONAL)
+
+Tests: `tests/golden/lineage_stage2.test.mjs` (15/15)
+Status: **heuristic pending owner review of the ambiguous sample.** Stage 2 is
+implemented and tested but deliberately NOT wired into the write path
+(`grep -c buildStage2Assertions index.ts` = 0), so nothing it decides can
+reach the database before the ruling.
+
+## What the live corpus actually contains
+
+Two findings that bound this stage:
+
+1. **Zero article-to-article hyperlinks.** Exactly one body in 752 contains a
+   URL and it is `http://schema.org` — markup residue, not a citation. Stage
+   2's stated premise ("an explicit link to another corpus article") has no
+   live instances at all.
+2. **The `citations` table is not article lineage.** Its 38 rows cite named
+   officials (20), anonymous officials (6), studies (6), court documents (5)
+   and an agency release — *sources*, not other corpus articles.
+
+So Stage 2, like Stage 1's dateline parser, is built correct and live-inert.
+The real judgment calls are in reference LANGUAGE, which is what the sample
+below exercises.
+
+## Three outcomes, not two
+
+`classifyReference` returns `derivation`, `reference`, or **`ambiguous`**.
+Ambiguity is tested FIRST, before the citation patterns — "first reported by"
+contains "reported", so a later check would silently capture it as `quotes`.
+
+An ambiguous reference **produces no assertion** and is returned in an
+`ambiguous` queue for human review. This is the one property that is not
+provisional and must survive any ruling: writing a coin flip as either class
+would put a fabricated derivation claim into the origin clusters E2 counts.
+
+Decided derivations cap at `confidence_band: 'medium'` — one sentence of an
+article's self-report is weaker evidence than Stage 3's byte-identical text,
+which is what earns `high`.
+
+## Three bugs the tests found
+
+1. **Trailing sentence punctuation swallowed the URL.** `https://…/original.`
+   matched with the period attached, so the canonical-URL lookup failed and a
+   link at the end of a sentence — the most common position — would never have
+   resolved to its corpus article. Stage 2 would have looked like it worked
+   and silently found nothing.
+2. **`scanOutletReferences` matched only canonical mastheads.** The live New
+   York Times case says "The Times", never "New York Times", so the scan
+   missed exactly the self-reference most worth surfacing. Now matches known
+   aliases.
+3. **Self-reference could have become lineage.** Caught by design rather than
+   accident, but the live NYT case proves it is not hypothetical.

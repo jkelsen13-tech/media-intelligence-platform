@@ -411,3 +411,241 @@ export function buildStage3Assertions(articles, syndicates, { corpusScope, check
   }
   return assertions
 }
+
+// ---- Stage 2: canonical URL / explicit source reference -----------------------------
+//
+// Brief Section 3 Stage 2: an article containing an explicit link or citation
+// to ANOTHER CORPUS ARTICLE. Distinguish by signal — an attribution phrase
+// ("originally reported by X") means derived_from; an inline citation or
+// hyperlink carrying no attribution claim means quotes (relationship_class
+// 'reference', never treated as derivation proof per the locked
+// schema-concepts decision).
+//
+// THIS STAGE REFUSES TO GUESS. Three outcomes, not two: derivation, reference,
+// and AMBIGUOUS. An ambiguous reference produces NO assertion and is returned
+// for human review instead. Writing a coin-flip as either class would put a
+// fabricated derivation claim (or a fabricated independence) into the origin
+// clusters that E2 counts.
+
+// The article says its OWN content comes from the other report.
+const DERIVATION_PHRASES = [
+  /\boriginally reported by\b/i,
+  /\bbased on reporting by\b/i,
+  /\bthis (?:story|article|report) (?:was )?originally (?:published|appeared)\b/i,
+  /\badapted from\b/i,
+  /\ba version of this (?:story|article) (?:first )?appeared\b/i,
+]
+
+// The article references another's report as a SOURCE while doing its own work.
+const CITATION_PHRASES = [
+  /\baccording to\b/i,
+  /\bciting\b/i,
+  /\btold\b/i,
+  /\bper\b/i,
+  /\b(?:reported|reports|said|says|wrote|noted|confirmed)\b/i,
+]
+
+// Genuinely undecidable from the phrase alone. Each of these is routinely used
+// BOTH as a derivation credit and as a priority-of-discovery courtesy by an
+// outlet doing entirely independent reporting.
+const AMBIGUOUS_PHRASES = [
+  { re: /\bfirst reported by\b/i, why: 'credits priority of discovery; does not state whether this article derives from that report' },
+  { re: /\bwas first to report\b/i, why: 'priority credit, not a derivation claim' },
+  { re: /\bas .{0,30}first reported\b/i, why: 'priority credit, not a derivation claim' },
+  { re: /\bfollowing a report by\b/i, why: 'sequence, not stated dependence' },
+  { re: /\bafter .{0,30} reported\b/i, why: 'sequence, not stated dependence' },
+  { re: /\bcited a report by\b/i, why: 'cites the report as evidence but may also be its source' },
+  { re: /\bconfirming a report by\b/i, why: 'independent confirmation and dependence are indistinguishable here' },
+]
+
+/**
+ * Classify one reference window.
+ * Returns { classification: 'derivation'|'reference'|'ambiguous', phrase, why }.
+ *
+ * Order matters and encodes the caution: ambiguity is checked FIRST, so a
+ * phrase that is undecidable never gets captured by a broad citation pattern
+ * and silently written as `quotes`.
+ */
+export function classifyReference(windowText) {
+  const text = String(windowText || '')
+
+  for (const { re, why } of AMBIGUOUS_PHRASES) {
+    const m = re.exec(text)
+    if (m) return { classification: 'ambiguous', phrase: m[0], why }
+  }
+  const derivation = DERIVATION_PHRASES.map((re) => re.exec(text)).find(Boolean)
+  const citation = CITATION_PHRASES.map((re) => re.exec(text)).find(Boolean)
+
+  // Both signals present and neither dominates -> undecidable, not a tiebreak.
+  if (derivation && citation) {
+    return {
+      classification: 'ambiguous',
+      phrase: derivation[0] + ' + ' + citation[0],
+      why: 'attribution and citation language both present in the same reference',
+    }
+  }
+  if (derivation) return { classification: 'derivation', phrase: derivation[0], why: 'states this article derives from the referenced report' }
+  if (citation) return { classification: 'reference', phrase: citation[0], why: 'references the report as a source without claiming derivation' }
+
+  // A bare link with no surrounding language. Brief Section 3: a hyperlink
+  // without an attribution claim is `quotes`.
+  return { classification: 'reference', phrase: null, why: 'bare link or citation with no attribution claim' }
+}
+
+// Outlet self-names. An outlet referring to its OWN masthead ("The Times
+// reported", in a New York Times article) is not lineage at all — without this
+// the corpus's live NYT case would produce an article derived from its own
+// outlet.
+export const OUTLET_SELF_NAMES = {
+  'New York Times': ['The Times', 'The New York Times', 'NYT'],
+  'The Guardian': ['The Guardian', 'the Guardian'],
+  'BBC': ['The BBC', 'BBC News'],
+  'South China Morning Post': ['the Post', 'the South China Morning Post', 'SCMP'],
+  'NPR': ['NPR'],
+  'Al Jazeera': ['Al Jazeera'],
+  'Fox News': ['Fox News'],
+  'Times of India': ['The Times of India', 'TOI'],
+  'CNN': ['CNN'],
+}
+
+export function isSelfReference(outlet, windowText) {
+  const names = OUTLET_SELF_NAMES[outlet] || []
+  return names.some((n) => new RegExp('\\b' + escapeRe(n) + '\\b').test(String(windowText || '')))
+}
+
+const REFERENCE_WINDOW = 90
+
+// A URL at the end of a sentence carries the sentence's punctuation into the
+// regex match ("…/original." ), and that trailing character defeats the
+// canonical-URL lookup entirely — a link in ordinary prose would never resolve
+// to its corpus article. Trim the characters that cannot end a real URL.
+// Caught by the Stage 2 tests, not by inspection.
+const URL_TRAILING_PUNCT = /[.,;:!?)\]}'"\u00bb\u201d\u2019]+$/
+
+export function trimUrlPunctuation(url) {
+  return String(url || '').replace(URL_TRAILING_PUNCT, '')
+}
+
+/**
+ * Stage 2 over a corpus slice.
+ *
+ * Returns { assertions, ambiguous, unresolvable }:
+ *   assertions   — decided cases with a RESOLVED corpus parent, ready to write
+ *   ambiguous    — flagged for human review; NEVER written as assertions
+ *   unresolvable — a reference to an outlet rather than to a specific article
+ *                  (and self-references), recorded so the fact is visible
+ *
+ * Parent resolution is by canonical URL only: a hyperlink in the body whose
+ * canonical URL matches a corpus article. An outlet-name reference ("The Times
+ * reported") identifies an OUTLET, not an article — picking one of that
+ * outlet's articles would be a guess dressed as evidence, so it never resolves.
+ */
+export function buildStage2Assertions(articles, { corpusScope, checkedAt } = {}) {
+  if (!corpusScope || typeof corpusScope.articles_scanned !== 'number') {
+    throw new Error('buildStage2Assertions: corpusScope.articles_scanned is required (locked guardrail 4)')
+  }
+  const scannedAt = checkedAt ?? new Date().toISOString()
+
+  const byCanonicalUrl = new Map()
+  for (const a of articles) {
+    const c = canonicalUrl(a.url)
+    if (c && !byCanonicalUrl.has(c)) byCanonicalUrl.set(c, a)
+  }
+
+  const assertions = []
+  const ambiguous = []
+  const unresolvable = []
+
+  for (const article of articles) {
+    const text = [article.body_text, article.summary].filter(Boolean).join('\n')
+    if (!text) continue
+
+    for (const m of text.matchAll(/https?:\/\/[^\s"'<>]+/g)) {
+      const rawUrl = trimUrlPunctuation(m[0])
+      const target = byCanonicalUrl.get(canonicalUrl(rawUrl))
+      if (!target || target.id === article.id) continue
+
+      const from = Math.max(0, m.index - REFERENCE_WINDOW)
+      const windowText = text.slice(from, m.index + m[0].length + REFERENCE_WINDOW)
+      const verdict = classifyReference(windowText)
+
+      const base = {
+        child_article_id: article.id,
+        parent_article_id: target.id,
+        matched_url: rawUrl,
+        window: windowText.trim(),
+        ...verdict,
+      }
+
+      if (verdict.classification === 'ambiguous') {
+        ambiguous.push({ ...base, child_outlet: article.outlet, parent_outlet: target.outlet })
+        continue
+      }
+      if (article.outlet === target.outlet || isSelfReference(article.outlet, windowText)) {
+        unresolvable.push({ ...base, reason: 'self_reference_same_outlet', child_outlet: article.outlet })
+        continue
+      }
+
+      const isDerivation = verdict.classification === 'derivation'
+      assertions.push({
+        child_article_id: article.id,
+        parent_article_id: target.id,
+        relationship_class: isDerivation ? 'derivation' : 'reference',
+        relationship_type: isDerivation ? 'derived_from' : 'quotes',
+        origin_status: null,
+        detection_method: 'canonical_url_match',
+        evidence_basis: {
+          matched_url: rawUrl,
+          matched_phrase: verdict.phrase,
+          classification_reason: verdict.why,
+          reference_window: windowText.trim(),
+          corpus_scope: corpusScope,
+          checked_at: scannedAt,
+        },
+        // A citation is evidence of a citation, never of derivation. Even a
+        // clearly-worded attribution phrase is one sentence of self-report, so
+        // derivation caps at medium here — Stage 3's byte-identical text is
+        // what earns 'high'.
+        confidence_band: 'medium',
+        review_status: 'unreviewed',
+        rule_version: LINEAGE_RULE_VERSION,
+      })
+    }
+  }
+  return { assertions, ambiguous, unresolvable }
+}
+
+/**
+ * Outlet-level reference scan — reporting only, produces NO assertions.
+ *
+ * Surfaces "X reported" style references to another OUTLET so the ambiguity
+ * they carry is visible to a reviewer rather than invisible. These can never
+ * become lineage rows: they name an outlet, not an article.
+ */
+export function scanOutletReferences(articles, knownOutlets) {
+  const outlets = [...new Set(knownOutlets)].filter(Boolean)
+  const found = []
+  for (const article of articles) {
+    const text = [article.body_text, article.summary].filter(Boolean).join('\n')
+    if (!text) continue
+    for (const outlet of outlets) {
+      // Match the masthead AND its known aliases: the live New York Times case
+      // says "The Times", never "New York Times", so a canonical-name-only
+      // scan would miss precisely the self-reference worth surfacing.
+      const aliases = [outlet, ...(OUTLET_SELF_NAMES[outlet] || [])]
+      const re = new RegExp('.{0,60}\\b(?:' + aliases.map(escapeRe).join('|') + ')\\b.{0,60}', 'i')
+      const m = re.exec(text)
+      if (!m) continue
+      const verdict = classifyReference(m[0])
+      found.push({
+        child_article_id: article.id,
+        child_outlet: article.outlet,
+        referenced_outlet: outlet,
+        self_reference: article.outlet === outlet || isSelfReference(article.outlet, m[0]),
+        window: m[0].trim(),
+        ...verdict,
+      })
+    }
+  }
+  return found
+}
