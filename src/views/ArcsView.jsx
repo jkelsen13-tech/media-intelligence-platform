@@ -1,11 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadArcs, loadArcDetail, loadArcArticles } from '../lib/supabase'
 import { filterArcs } from '../lib/listFilters'
+import EpistemicBanner from '../components/EpistemicBanner'
+import EvidenceStateBar from '../components/EvidenceStateBar'
+import LifecycleStrip from '../components/LifecycleStrip'
+import RemainingUncertaintyBlock from '../components/RemainingUncertaintyBlock'
+import TrustFooter from '../components/TrustFooter'
+import TypeIcon from '../components/TypeIcon'
+import TypePill from '../components/TypePill'
+import {
+  policyArcEyebrow,
+  deriveEvidenceStates,
+  missingScopeCopy,
+  lastMilestoneCheck,
+  pendingUncertainty,
+  distinctOutlets,
+} from '../lib/policyArcModel'
 
 // Story Arcs (concept doc §2.5): persistent longitudinal tracking through a
-// story's full consequence arc. Arc panel = status indicator, milestone
-// checklist, consequence timeline, coverage gap indicator — plus the
-// articles attached to the arc and a link back to its root graph node.
+// story's full consequence arc. Track B Step 3 item 2 rebuilt the detail
+// panel to the addendum's Screen 4 (Policy Arc) structure: eyebrow, report
+// title, status line, standing explanation, tabs (Overview / Evidence —
+// the Timeline tab arrives with the item-3/4 engine), Explore-connections
+// CTA, lifecycle strip, key developments, chronology banner, evidence-state
+// bar, remaining uncertainty, sources line, trust footer. The pre-existing
+// elements (milestone checklist, coverage-gap bar, arc-age bar, attached
+// articles) are folded into the Evidence tab, not retired (owner delegation
+// 2026-08-18). Sidebar, search, and cross-view entry are unchanged.
 
 // A4: status dots are wired to status derived from real signals
 // (arc_events recency + milestone state — see deriveArcStatus in
@@ -51,12 +72,6 @@ const MILESTONE_LEGACY = {
 function milestoneMeta(status) {
   const key = MILESTONE_META[status] ? status : MILESTONE_LEGACY[status] ?? 'pending'
   return MILESTONE_META[key]
-}
-
-const CONFIDENCE_META = {
-  confirmed: { color: 'var(--cat-green)', label: 'Confirmed' },
-  corroborated: { color: 'var(--cat-blue)', label: 'Corroborated' },
-  inferred: { color: 'var(--cat-amber)', label: 'Inferred' },
 }
 
 function arcAgeDays(startedAt) {
@@ -152,6 +167,10 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
   const [detail, setDetail] = useState(null)
   const [detailError, setDetailError] = useState(null)
   const [arcArticles, setArcArticles] = useState([])
+  // Screen 4 tabs. The addendum's third tab (Timeline) is added when the
+  // item-3/4 engine ships — a tab whose content does not exist is not
+  // rendered.
+  const [activeTab, setActiveTab] = useState('overview')
   // Mobile (<1024px): the list is full-width and selecting an arc pushes a
   // full-screen detail view. Desktop keeps the split-pane and ignores this.
   const [pushed, setPushed] = useState(false)
@@ -191,6 +210,11 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
     () => arcs?.find((a) => a.slug === selectedSlug) ?? null,
     [arcs, selectedSlug],
   )
+
+  // Selecting a different arc returns to the Overview tab.
+  useEffect(() => {
+    setActiveTab('overview')
+  }, [selectedSlug])
 
   // Filter affects only which rows the sidebar renders — selection and the
   // detail panel keep working against the full arc list, so a selected arc
@@ -236,6 +260,20 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
       : selected.status
     : null
   const statusMeta = statusKey ? STATUS_META[statusKey] : null
+
+  // Screen 4 derivations (pure seam: src/lib/policyArcModel.js). All are
+  // null-safe; null means the corresponding block is omitted, never
+  // fabricated.
+  const counts = detail ? deriveEvidenceStates(detail.events, detail.milestones) : null
+  const missingScope = counts
+    ? missingScopeCopy({
+        pendingCount: counts.missing,
+        startedAt: selected?.started_at,
+        lastCheck: lastMilestoneCheck(detail.milestones),
+      })
+    : null
+  const uncertainty = detail ? pendingUncertainty(detail.milestones) : null
+  const outlets = distinctOutlets(arcArticles)
 
   return (
     <div className={`arcs-view${pushed ? ' detail-open' : ''}`}>
@@ -287,23 +325,19 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
             <button className="arc-back-btn" onClick={() => setPushed(false)}>
               ← All story arcs
             </button>
-            <div className="arc-panel-title-row">
-              <h2>{selected.title}</h2>
-              {(() => {
-                const statusKey =
-                  selected.derived_status !== undefined ? selected.derived_status : selected.status
-                const meta = statusKey ? STATUS_META[statusKey] : null
-                if (!meta) return null
-                return (
-                  <span
-                    className="arc-status-badge"
-                    style={{ borderColor: meta.color, color: meta.color }}
-                  >
-                    {meta.label}
-                  </span>
-                )
-              })()}
-            </div>
+            <p className="ep-eyebrow">{policyArcEyebrow(selected.category)}</p>
+            <h2 className="ep-report-title">{selected.title}</h2>
+            {statusMeta && (
+              <div className="ep-statusline">
+                <span className="ep-statusline-dot" style={{ background: statusMeta.color }} />
+                <span className="ep-statusline-label" style={{ color: statusMeta.color }}>
+                  {statusMeta.label}
+                </span>
+                {selected.last_update_at && (
+                  <span>· updated {String(selected.last_update_at).slice(0, 10)}</span>
+                )}
+              </div>
+            )}
             <span className="arc-category" style={categoryStyle(selected.category)}>
               {categoryLabel(selected.category)}
             </span>
@@ -312,62 +346,148 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
                 Classifier declined — below confidence floor.
               </span>
             )}
+            <p className="arc-summary">
+              A story arc follows one policy or event through its full consequence — not its
+              coverage arc. This view shows what changed, what followed, and what is still
+              unreported.
+            </p>
             {selected.summary && <p className="arc-summary">{selected.summary}</p>}
 
             {selected.root_node_id && onOpenNode && (
-              <button
-                className="news-chip graph-link arc-graph-btn"
-                onClick={() => onOpenNode(selected.root_node_id)}
-              >
-                ◈ Open root event in knowledge graph
+              <button className="ep-cta" onClick={() => onOpenNode(selected.root_node_id)}>
+                <svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true" focusable="false">
+                  <circle cx="3" cy="11" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.3" />
+                  <circle cx="11" cy="3" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.3" />
+                  <circle cx="11" cy="11" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.3" />
+                  <path d="M4.4 9.6 9.6 4.4M4.7 11h4.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+                Explore connections
               </button>
             )}
 
-            <div className="arc-age-row">
-              <span className="ap-label">Arc age</span>
-              <div className="arc-age-bar">
-                <div
-                  className="arc-age-fill"
-                  style={{ width: `${Math.min(100, ((ageDays ?? 0) / 365) * 100)}%` }}
-                />
-              </div>
-              <span className="arc-age-label">
-                <span className="num">{ageDays ?? '—'}</span> days
-              </span>
+            <div className="ep-tabs" role="tablist" aria-label="Arc sections">
+              <button
+                role="tab"
+                aria-selected={activeTab === 'overview'}
+                className={`ep-tab${activeTab === 'overview' ? ' ep-tab-active' : ''}`}
+                onClick={() => setActiveTab('overview')}
+              >
+                Overview
+              </button>
+              <button
+                role="tab"
+                aria-selected={activeTab === 'evidence'}
+                className={`ep-tab${activeTab === 'evidence' ? ' ep-tab-active' : ''}`}
+                onClick={() => setActiveTab('evidence')}
+              >
+                Evidence
+              </button>
             </div>
-
           </header>
 
-          {/* Spec §2.5.4 — Arc Status interface: one coherent status panel
-              composing (1) derived status, (2) coverage-gap indicator,
-              (3) milestone checklist, (4) consequence timeline. */}
-          <section className="arc-status-panel">
-            <div className="arc-status-head">
-              <span className="ap-label">Arc status</span>
-              {statusMeta && (
-                <span className="arc-status-value" style={{ color: statusMeta.color }}>
-                  <span className="arc-status-dot" style={{ background: statusMeta.color }} />
-                  <span className="num">{statusMeta.label}</span>
-                </span>
+          {detailError && (
+            <div className="notice error">Failed to load arc detail: {detailError}</div>
+          )}
+          {!detail && !detailError && <div className="notice">Loading arc detail…</div>}
+
+          {activeTab === 'overview' && detail && (
+            <>
+              <section className="ap-section">
+                <span className="ep-section-label">Policy lifecycle</span>
+                <LifecycleStrip />
+              </section>
+
+              <section className="ap-section">
+                <span className="ep-section-label">Key developments</span>
+                {detail.events.length === 0 ? (
+                  <p className="arc-empty">No consequence events recorded yet.</p>
+                ) : (
+                  <ol className="ep-keydevs">
+                    {detail.events.map((e, i) => (
+                      <li key={e.id} className="ep-keydev">
+                        <TypeIcon type={e.category} />
+                        <div className="ep-keydev-body">
+                          <div className="ep-keydev-toprow">
+                            <span className="ep-keydev-date">{e.occurred_at ?? 'undated'}</span>
+                            <TypePill type={e.category} />
+                            {i === 0 && (
+                              <span className="arc-event-trigger">Triggering event</span>
+                            )}
+                          </div>
+                          <span className="ep-keydev-title">{e.title}</span>
+                          {e.description && (
+                            <p className="ep-keydev-desc" title={e.description}>
+                              {e.description}
+                            </p>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+
+              <EpistemicBanner>
+                Chronology shows sequence. Causal links appear only when supported by evidence.
+              </EpistemicBanner>
+
+              <section className="ap-section">
+                <span className="ep-section-label">Evidence state</span>
+                <EvidenceStateBar
+                  supporting={counts.supporting}
+                  contested={counts.contested}
+                  missing={counts.missing}
+                  missingScope={missingScope}
+                />
+              </section>
+
+              {uncertainty && (
+                <RemainingUncertaintyBlock>
+                  Still unresolved: {uncertainty.join('; ')}.
+                </RemainingUncertaintyBlock>
               )}
-            </div>
 
-            <CoverageGapBar articles={arcArticles} startedAt={selected.started_at} />
+              {outlets.length > 0 && (
+                <p className="ep-sources-line">
+                  <svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true" focusable="false">
+                    <path d="M6 8a2.5 2.5 0 0 0 3.5.4l1.6-1.6a2.5 2.5 0 0 0-3.5-3.5l-.9.9" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                    <path d="M8 6a2.5 2.5 0 0 0-3.5-.4L2.9 7.2a2.5 2.5 0 0 0 3.5 3.5l.9-.9" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                  </svg>
+                  Sources: {outlets.join(', ')}
+                </p>
+              )}
+            </>
+          )}
 
-            {selected.coverage_gap && (
-              <div className="arc-coverage-gap">
-                ⚠ Coverage gap — real-world developments are outpacing media coverage. The story
-                is still unfolding; the media has moved on.
-              </div>
-            )}
+          {activeTab === 'evidence' && detail && (
+            <>
+              {/* Pre-existing §2.5.4 elements folded into the Evidence tab
+                  (owner delegation 2026-08-18): arc-age bar, coverage-gap
+                  indicator, coverage-gap warning, milestone checklist,
+                  attached articles. None retired. */}
+              <section className="arc-status-panel">
+                <div className="arc-age-row">
+                  <span className="ap-label">Arc age</span>
+                  <div className="arc-age-bar">
+                    <div
+                      className="arc-age-fill"
+                      style={{ width: `${Math.min(100, ((ageDays ?? 0) / 365) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="arc-age-label">
+                    <span className="num">{ageDays ?? '—'}</span> days
+                  </span>
+                </div>
 
-            {detailError && (
-              <div className="notice error">Failed to load arc detail: {detailError}</div>
-            )}
-            {!detail && !detailError && <div className="notice">Loading arc detail…</div>}
+                <CoverageGapBar articles={arcArticles} startedAt={selected.started_at} />
 
-            {detail && (
-              <>
+                {selected.coverage_gap && (
+                  <div className="arc-coverage-gap">
+                    ⚠ Coverage gap — real-world developments are outpacing media coverage. The
+                    story is still unfolding; the media has moved on.
+                  </div>
+                )}
+
                 <div className="arc-status-subsection">
                   <span className="ap-label">
                     Milestone checklist — did anything actually happen?
@@ -400,68 +520,42 @@ export default function ArcsView({ focusArcId, onOpenArticle, onOpenNode }) {
                     </ul>
                   )}
                 </div>
+              </section>
 
-                {/* Consequence timeline branching from the triggering event.
-                    Simplification: arc_events carries no branch/type column,
-                    so events render as a single chronological spine anchored
-                    on the earliest (triggering) event. */}
-                <div className="arc-status-subsection">
-                  <span className="ap-label">Consequence timeline</span>
-                  {detail.events.length === 0 ? (
-                    <p className="arc-empty">No consequence events recorded yet.</p>
-                  ) : (
-                    <ol className="arc-events">
-                      {detail.events.map((e, i) => {
-                        const conf = CONFIDENCE_META[e.confidence] ?? CONFIDENCE_META.confirmed
-                        return (
-                          <li key={e.id} className="arc-event">
-                            <div className="timeline-marker" />
-                            <div className="arc-event-body">
-                              <span className="arc-event-date">{e.occurred_at ?? 'undated'}</span>
-                              <span className="arc-event-title">{e.title}</span>
-                              <span className="arc-event-meta">
-                                {i === 0 && (
-                                  <span className="arc-event-trigger">Triggering event</span>
-                                )}
-                                <span className="arc-event-category">{e.category}</span>
-                                <span style={{ color: conf.color }}>{conf.label}</span>
-                              </span>
-                              {e.description && <p className="arc-event-desc">{e.description}</p>}
-                            </div>
-                          </li>
-                        )
-                      })}
-                    </ol>
-                  )}
-                </div>
-              </>
-            )}
-          </section>
-
-          {arcArticles.length > 0 && (
-            <section className="ap-section">
-              <span className="ap-label">
-                Attached articles (<span className="num">{arcArticles.length}</span>)
-              </span>
-              <ul className="ap-sources">
-                {arcArticles.map((a) => (
-                  <li key={a.id} className="ap-source">
-                    <span className="ap-source-outlet">{a.outlet}</span>
-                    <button
-                      className="ap-source-headline ap-article-link"
-                      title="Open in News Feed"
-                      onClick={() => onOpenArticle?.(a.id)}
-                    >
-                      {a.title}
-                    </button>
-                    {a.published_at && (
-                      <span className="ap-source-date">{String(a.published_at).slice(0, 10)}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
+              {arcArticles.length > 0 && (
+                <section className="ap-section">
+                  <span className="ap-label">
+                    Attached articles (<span className="num">{arcArticles.length}</span>)
+                  </span>
+                  <ul className="ap-sources">
+                    {arcArticles.map((a) => (
+                      <li key={a.id} className="ap-source">
+                        <span className="ap-source-outlet">{a.outlet}</span>
+                        <button
+                          className="ap-source-headline ap-article-link"
+                          title="Open in News Feed"
+                          onClick={() => onOpenArticle?.(a.id)}
+                        >
+                          {a.title}
+                        </button>
+                        {a.published_at && (
+                          <span className="ap-source-date">
+                            {String(a.published_at).slice(0, 10)}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
           )}
+
+          {/* Trust footer (addendum: bottom of every screen). reviewedAt is
+              null — story_arcs.last_update_at is a machine update timestamp,
+              not a human review date, and a review date is never fabricated;
+              the Reviewed line appears when a real one exists. */}
+          <TrustFooter left={null} reviewedAt={null} />
         </section>
       )}
     </div>

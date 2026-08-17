@@ -76,6 +76,33 @@ export function typePillLabel(type) {
   return humanized.charAt(0).toUpperCase() + humanized.slice(1)
 }
 
+// --- Event type icons --------------------------------------------------------
+// Circular type-icon vocabulary (addendum, Screen 5 timeline entry):
+// scales = legislation, gavel = ruling, shield = incident, microphone =
+// coverage & review. These icons are load-bearing type channels and must
+// only be applied where the mapping is true. The live arc_events.category
+// vocabulary (verified 2026-08-18: accountability / geopolitical /
+// economic / legislative) only honestly intersects at legislation — every
+// other live category returns null and the renderer shows a neutral
+// circular marker rather than an icon that asserts a type the record
+// does not have.
+export const EVENT_TYPE_ICONS = Object.freeze({
+  legislation: 'scales',
+  legislative: 'scales',
+  ruling: 'gavel',
+  incident: 'shield',
+  coverage: 'mic',
+})
+
+/**
+ * Icon key for an event type, or null when the type has no honest mapping
+ * into the locked icon vocabulary (=> neutral marker, never a guess).
+ */
+export function eventTypeIcon(type) {
+  if (typeof type !== 'string') return null
+  return EVENT_TYPE_ICONS[type.trim().toLowerCase()] ?? null
+}
+
 // --- Evidence-state counts ---------------------------------------------------
 // The evidence-state bar shows Supporting / Contested / Missing as three
 // separate counts (Amendment A applied to this component: never summed,
