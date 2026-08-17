@@ -51,3 +51,21 @@ Byte verification: all 10 remote blob SHAs match locally computed
 - tests/epistemicComponents.test.mjs f4b30364f97a6a0d80f78cb837c69fc3d51220ea MATCH
 Commit 2 (verifier docs): this file + trackb3-v1 criteria + README index
 entry. Blob SHAs and CI verdicts appended after landing.
+
+## Final push record (appended after landing)
+- Commit 1 (code + tests): d1e1abaa9ba56f0114e706310788f6efd59505e0 —
+  Golden regression suite SUCCESS. Deploy run CANCELLED (superseded by
+  b4db9510 within a minute; workflow concurrency, not a failure).
+- Commit 2 (verifier criteria + run log): b4db951004ac133722e2da0e5810c5c88fde66c0 —
+  Golden suite SUCCESS, Deploy SUCCESS. Blobs: criteria
+  0a2ba137b75b346e4493989d899ba0e2e14b5095 MATCH, run log
+  9793096ec25a3f988845ee99e59422d38f42c865 MATCH.
+- Commit 3 (verifier README index entry): a9b3fc2cc1b4d6cdc67bf802e925797eba54e91d —
+  Golden suite SUCCESS, Deploy SUCCESS (tip).
+- DISCLOSED transcription slip, README index entry push: one blank line
+  dropped between the v3 run-log line and its "Differs" line (cosmetic,
+  doc-only). Caught by post-push blob-hash verification (remote d8879132
+  vs local c123cc1c); adopted remote as canonical per the v11 precedent
+  and synced the local copy; no content change.
+- Item 1 verdict: ALL CRITERIA PASS. Kit is inert on production (not yet
+  imported by any screen) — consumed from item 2 onward.
