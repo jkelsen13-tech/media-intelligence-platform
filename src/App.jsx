@@ -20,6 +20,7 @@ import { loadSourceComparisonBetaFlag } from './lib/sourceComparisonReadPath'
 import { buildNavViews, buildMoreEntries, isMoreViewKey } from './lib/navViews'
 import { loadGraph, loadTopics } from './lib/supabase'
 import { computeHubs } from './lib/hubs'
+import { resolveFocal } from './lib/desktopFocus'
 import AccountPanel from './panels/AccountPanel'
 import { loadAccountUiFlag } from './lib/auth'
 
@@ -102,6 +103,10 @@ export default function App() {
   const [moreOpen, setMoreOpen] = useState(false)
   // Mobile graph entry: 'hubs' (ranked list) -> 'sub' (hub subgraph) / 'all'.
   const [graphScreen, setGraphScreen] = useState('hubs')
+  // Track B Step 2 item 3: desktop defaults to the top hub's focused
+  // subgraph; the full graph is an explicit opt-in (this flag). Mobile is
+  // out of scope — it already enters through the hub list.
+  const [desktopShowAll, setDesktopShowAll] = useState(false)
   // Step 9 (§8): focus stack. Each crumb is
   // { kind: 'node', id, label } or { kind: 'topic', id, label, memberIds }.
   // Non-empty stack = the graph renders the focal node's depth-2
@@ -186,7 +191,13 @@ export default function App() {
 
   const focusBack = useCallback(() => setFocusStack((s) => s.slice(0, -1)), [])
   const focusTo = useCallback((index) => setFocusStack((s) => s.slice(0, index + 1)), [])
-  const clearFocus = useCallback(() => setFocusStack([]), [])
+  // "Show full graph" is the explicit full-graph opt-in on desktop: it
+  // clears any focus AND suppresses the desktop default focus until the
+  // user explicitly returns via the toolbar's "Focused view" control.
+  const clearFocus = useCallback(() => {
+    setFocusStack([])
+    setDesktopShowAll(true)
+  }, [])
 
   const handleSelect = useCallback(
     (data) => {
@@ -329,8 +340,14 @@ export default function App() {
   // --- Mobile graph entry: ranked hubs by degree centrality ---
   const hubs = useMemo(() => (graph ? computeHubs(graph.nodes, graph.edges, HUB_LIST_SIZE) : []), [graph])
 
-  // Step 9: the active focal crumb drives the rendered subgraph.
-  const focal = focusStack.length > 0 ? focusStack[focusStack.length - 1] : null
+  // Step 9 + item 3: the active focal crumb drives the rendered subgraph.
+  // On desktop with no explicit focus and no full-graph opt-in, the focal
+  // is the synthetic top-hub default (see lib/desktopFocus.js).
+  const topHub = hubs.length > 0 ? hubs[0].node : null
+  const focal = useMemo(
+    () => resolveFocal({ isMobile, desktopShowAll, focusStack, topHub }),
+    [isMobile, desktopShowAll, focusStack, topHub],
+  )
   const subgraph = useMemo(() => {
     if (!graph || !focal) return null
     if (focal.kind === 'topic') return topicSubgraph(graph.nodes, graph.edges, focal.memberIds)
@@ -540,18 +557,37 @@ export default function App() {
                     >
                       Review status
                     </button>
-                  </div>
-                  {focusStack.length > 0 && (
-                    <nav className="focus-trail" aria-label="Focus path">
+                    {!isMobile && desktopShowAll && focusStack.length === 0 && topHub && (
                       <button
                         type="button"
-                        className="focus-back"
-                        onClick={focusBack}
-                        aria-label="Back to previous focus"
+                        className="graph-toolbar-btn graph-toolbar-focus-btn"
+                        title={`Return to the default focused subgraph (${topHub.label})`}
+                        onClick={() => setDesktopShowAll(false)}
                       >
-                        ←
+                        Focused view: {topHub.label}
                       </button>
+                    )}
+                  </div>
+                  {focal && (
+                    <nav className="focus-trail" aria-label="Focus path">
+                      {focusStack.length > 0 && (
+                        <button
+                          type="button"
+                          className="focus-back"
+                          onClick={focusBack}
+                          aria-label="Back to previous focus"
+                        >
+                          ←
+                        </button>
+                      )}
                       <ol className="focus-crumbs">
+                        {focusStack.length === 0 && focal.synthetic && (
+                          <li className="focus-crumb">
+                            <span className="focus-crumb-static">
+                              Default focus: {focal.label}
+                            </span>
+                          </li>
+                        )}
                         {focusStack.map((crumb, i) => (
                           <li key={`${crumb.kind}-${crumb.id}-${i}`} className="focus-crumb">
                             {i > 0 && <span className="focus-sep" aria-hidden="true">›</span>}
@@ -567,7 +603,7 @@ export default function App() {
                         ))}
                       </ol>
                       <button type="button" className="focus-show-all" onClick={clearFocus}>
-                        Show all
+                        Show full graph (<span className="num">{graph.nodes.length}</span> nodes)
                       </button>
                     </nav>
                   )}
