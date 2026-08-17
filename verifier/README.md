@@ -205,3 +205,33 @@ Differs from prior version: first language/semantics criterion set;
 asserts meaning carried by words under accent removal rather than by
 color or line style, and documents the first cytoscape stylesheet-
 ordering defect.
+
+## v16 — 2026-08-17 — Docked relationship panel with honest empty states (Track B Step 2 item 5)
+Measures: the floating edge-evidence popover is replaced by a docked
+panel (desktop flex sibling — no canvas overlap, stage 960px + panel
+320px; mobile fixed 60vh bottom sheet) showing named sources, grounding
+excerpt, and all six G2 axes with explicit toned states
+(value/unverified/unavailable). Sourced edge renders real data
+("Federal Register", grounding blockquote, "Reviewed — human
+confirmed", falsification, corrections); unsourced edge renders honest
+states ("No sources documented yet", "Awaiting review", "Not archived —
+authentication not yet available"); no-explanation edge renders "No
+provenance recorded yet"; every section carries visible content
+(intentional, not broken); popover fully retired (no .edge-evidence,
+relationship list opens the same docked panel, Escape closes); item-4
+meaning line + raw Relation preserved in-panel; locked corrections in
+the pure seam (count never strength, independence always unverified
+without lineage, missing != contradicting); suite 264/264 (253 + 11
+new); v14/v13/v12 suites re-run green; v15 six pre-popover checks PASS
+(popover-era checks superseded, substance re-verified here); disclosed
+fixes: provenance-fetch timing race in the checker, corrected axis
+expectation, one transcription slip (29bfbb03, fixed de2c7b3b);
+byte-verified pushes (four commits, tip de2c7b3b); CI green on tips.
+Blob SHAs: criteria bd4acfce, checker 15b124d7.
+Details: `v16/docked-relationship-panel.md`. Run log:
+`runs/2026-08-17-trackb-step2-item5.md`. Verifier script:
+`v16/check_item5.py`.
+Differs from prior version: first docked-panel criterion set; supersedes
+v15's popover-era checks while preserving v15 unchanged as history; adds
+the first async-loading timing-race disclosure and the first honest-
+tones (three-tone) assertion pattern.
