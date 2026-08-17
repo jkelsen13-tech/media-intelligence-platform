@@ -140,3 +140,21 @@ Details: `v12/graph-chrome-overlap-fix.md`. Run log:
 Differs from prior version: first layout-geometry criterion set; introduces
 the clip-aware overlap checker (ancestor overflow clipping, so scrollable
 rail content is not misreported as overlay).
+
+## v13 — 2026-08-17 — Graph canvas/token restyle (Track B Step 2 item 2)
+Measures: plain view controls (+/−/Fit/Reset, zero joystick DOM, desktop
++ mobile); light canvas live with --graph-grid ink rgba(26, 26, 23, 0.08);
+white node fill with type colored borders; neutral edges at rest with
+type color on selection (programmatic proof: selected sequence edge
+computed line-color rgb(109,40,217), width 2.5px); EDGE_TYPES extended
+to the live 2026-08-17 vocabulary (sequence, constrained_by) so selection
+coloring fires on real data; v7 accent-removal bar extended to Graph
+(grayscale screenshot + 20 labeled legend rows); suite 240/240; byte-
+verified pushes (four commits, tip 43bca1b0); CI green on all tips.
+Blob SHAs: criteria 30c4ad76, checker 687601ab, run log 8e45fb89.
+Details: `v13/graph-canvas-restyle.md`. Run log:
+`runs/2026-08-17-trackb-step2-item2.md`. Verifier script:
+`v13/check_item2.py`.
+Differs from prior version: first canvas-visual-encoding criterion set;
+adds computed-style assertions on cytoscape elements and extends the v7
+accent-removal bar to the Graph tab.
