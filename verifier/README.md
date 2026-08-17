@@ -266,8 +266,18 @@ distinct canonical URLs reports 1 corroborating origin and E4 rather than 3
 and E2, with the pre-fix behavior pinned as a live test; and Stage 2
 attribution-vs-citation, held PROVISIONAL pending owner review of its
 ambiguous sample and deliberately unwired from the write path.
-Suite 297/297 green; every push byte-verified against the committed ref.
-Details: `lineage-v1/lineage-schema-migration.md`. Live Stage 1 run:
+Also covers the read-only Graph projection view (checkpoint 7a): a
+security_invoker view over the assertions table, confirmed from
+pg_class.reloptions rather than assumed, with shadow/unreviewed/rejected and
+superseded-verified exclusion proven by direct query as role `anon` (six
+probe rows in, two out), rollback drilled with an identical viewdef
+fingerprint before and after. Checkpoint 7 was split after a file-collision
+check against Track B item 5: 7a adds only NET-NEW files and modifies none,
+so it cannot conflict with the docked relationship panel; 7b (Graph lineage
+mode rendering) is deferred until item 5 lands.
+Suite 308/308 green; every push byte-verified against the committed ref.
+Details: `lineage-v1/lineage-schema-migration.md` and
+`lineage-v1/graph-projection-view.md`. Live Stage 1 run:
 `lineage-v1/stage1_live_corpus_run.mjs`.
 Renamed from the contested `v14`/`v15` flat-sequence slots on 2026-08-17;
 this track leaves that sequence entirely.
