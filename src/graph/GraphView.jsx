@@ -193,12 +193,21 @@ export default function GraphView({
       // manually on the connected collection below.
       layout: runBand
         ? { name: 'preset' }
-        : fcoseOptions({
-            firstRun: true,
-            positions: deterministicLayoutRequested()
-              ? seedPositions(nodes.map((n) => String(n.id ?? n.slug)))
-              : undefined,
-          }),
+        : {
+            ...fcoseOptions({
+              firstRun: true,
+              positions: deterministicLayoutRequested()
+                ? seedPositions(nodes.map((n) => String(n.id ?? n.slug)))
+                : undefined,
+            }),
+            // fit:false here — fcose's own end-fit fires before the
+            // simulation has fully settled, so it fits the pre-settle
+            // positions and leaves the settled graph outside the viewport
+            // (focused subgraphs rendered at zoom ~2.5-2.9, mostly
+            // off-canvas). The one-shot layoutstop handler below fits the
+            // settled graph instead (mirrors the band path's own fit).
+            fit: false,
+          },
       minZoom: 0.2,
       maxZoom: 3,
       // Tier 5: cytoscape never sees wheel events (they are intercepted in
@@ -244,6 +253,14 @@ export default function GraphView({
     // The band-placement layoutstop handler is registered BEFORE the
     // declutter section's captureRest handler, so rest positions are
     // captured only after band positions are set (never mid-flight).
+    // Item 3: without a band, fit once when the initial layout settles
+    // (constructor fcose runs with fit:false; see above). One-shot, so
+    // later drag-reheat layoutstops never yank the user's viewport.
+    if (!runBand) {
+      cy.one('layoutstop', () => {
+        if (!cy.destroyed()) cy.fit(undefined, 80)
+      })
+    }
     const updateBandLabel = () => {
       const el = bandLabelRef.current
       if (!el) return
@@ -301,7 +318,7 @@ export default function GraphView({
           (cy.height() / minZoom - (bb.y2 - bb.y1) - 220) / 48,
         )
         const maxCols = Math.floor(
-          (cy.width() / minZoom - (bb.x2 - bb.x1) - 220) / 48,
+          (cy.width() / minZoom - (bb.x1 * 0 + bb.x1) - 220) / 48,
         )
         const placed = placeDisconnectedBand(bandIds, {
           clusterBox: { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2, w: bb.w, h: bb.h },
@@ -542,8 +559,8 @@ export default function GraphView({
             .union(cy.edges())
         : cy.elements()
       eles
-        .layout(
-          fcoseOptions({
+        .layout({
+          ...fcoseOptions({
             firstRun: true,
             positions: deterministicLayoutRequested()
               ? seedPositions(
@@ -551,8 +568,15 @@ export default function GraphView({
                 )
               : undefined,
           }),
-        )
+          // Non-band: fit on settle (one-shot), same as the initial layout.
+          fit: runBand,
+        })
         .run()
+      if (!runBand) {
+        cy.one('layoutstop', () => {
+          if (!cy.destroyed()) cy.fit(undefined, 80)
+        })
+      }
     }
 
     redrawGrid()
@@ -620,7 +644,7 @@ export default function GraphView({
       cy.zoom({ level: Math.min(cy.maxZoom(), Math.max(cy.minZoom(), cy.zoom() * 1.2)), renderedPosition: center })
     } else if (e.key === '-' || e.key === '_') {
       e.preventDefault()
-      cy.zoom({ level: Math.max(cy.minZoom(), cy.zoom() / 1.2), renderedPosition: center })
+      cy.zoom({ level: Math.max(cy.minZoom(), Math.max(cy.zoom() / 1.2)), renderedPosition: center })
     } else if (e.key === '0') {
       e.preventDefault()
       cy.fit(undefined, 80)
