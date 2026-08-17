@@ -9,8 +9,6 @@ import TopicBrowser from './graph/TopicBrowser'
 import ArticlePanel from './panels/ArticlePanel'
 import PolicyPanel from './panels/PolicyPanel'
 import TimelineView from './views/TimelineView'
-import GroupedTimelineView from './views/GroupedTimelineView'
-import { loadTimelineGroupedBetaFlag } from './lib/arcGroupedTimeline'
 import ArcsView from './views/ArcsView'
 import NewsView from './views/NewsView'
 import Phase3View from './views/Phase3View'
@@ -134,12 +132,8 @@ export default function App() {
   // 03_BACKLOG Item 1: source comparison beta flag. Same withhold posture:
   // false until pipeline_config.source_comparison_beta === true.
   const [sourceComparisonBeta, setSourceComparisonBeta] = useState(false)
-  // 04-ADD Step 3: arc-grouped timeline beta flag. Same withhold posture:
-  // false until pipeline_config.timeline_grouped_beta === true. The flat
-  // timeline stays the default; the toggle below only exists while the flag
-  // is true, and the flat view's code path is unchanged either way.
-  const [timelineGroupedBeta, setTimelineGroupedBeta] = useState(false)
-  const [timelineMode, setTimelineMode] = useState('flat')
+  // 04-ADD Step 3 item 4: the arc-grouped timeline beta flag moved inside
+  // TimelineView (the mode toggle is a Screen 5 control, not App chrome).
   // 16_ACCOUNT_PIPELINE: account UI flag. Same withhold posture: false
   // until pipeline_config.account_ui === true; rollback = flip flag false,
   // the entry point disappears without touching accounts or data.
@@ -169,9 +163,6 @@ export default function App() {
     loadSourceComparisonBetaFlag()
       .then((on) => setSourceComparisonBeta(on === true))
       .catch(() => setSourceComparisonBeta(false))
-    loadTimelineGroupedBetaFlag()
-      .then((on) => setTimelineGroupedBeta(on === true))
-      .catch(() => setTimelineGroupedBeta(false))
     loadAccountUiFlag()
       .then((on) => setAccountUi(on === true))
       .catch(() => setAccountUi(false))
@@ -728,33 +719,7 @@ export default function App() {
           </>
         )}
 
-        {view === 'timeline' && timelineGroupedBeta && (
-          <div className="timeline-mode-toggle" role="group" aria-label="Timeline layout">
-            <button
-              type="button"
-              className={`timeline-chip${timelineMode === 'flat' ? ' active' : ''}`}
-              aria-pressed={timelineMode === 'flat'}
-              onClick={() => setTimelineMode('flat')}
-            >
-              Flat
-            </button>
-            <button
-              type="button"
-              className={`timeline-chip${timelineMode === 'grouped' ? ' active' : ''}`}
-              aria-pressed={timelineMode === 'grouped'}
-              onClick={() => setTimelineMode('grouped')}
-            >
-              Grouped by arc (Beta)
-            </button>
-          </div>
-        )}
-        {view === 'timeline' && timelineMode === 'grouped' && timelineGroupedBeta ? (
-          <GroupedTimelineView
-            onOpenArc={openArcInView}
-            onOpenArticle={openArticleInNews}
-            focusEventKey={focusTimelineEvent}
-          />
-        ) : view === 'timeline' && (
+        {view === 'timeline' && (
           <TimelineView
             onOpenArc={openArcInView}
             onOpenArticle={openArticleInNews}
