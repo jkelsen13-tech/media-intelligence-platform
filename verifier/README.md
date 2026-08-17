@@ -345,3 +345,38 @@ Details: `trackb3-v4/trackb3-step3-item4.md`. Run log:
 Differs from prior version: first Screen 5 surface; first cross-screen
 component extraction (ArcEvidencePanel consumed by two views); first
 screen where the default scope is an arc rather than the global corpus.
+
+## trackb3-v5 — 2026-08-18 — ArcsView Timeline tab (Track B Step 3 item 5, final)
+Measures: the addendum's third tab (Overview / Timeline / Evidence)
+shipped on Screen 4 consuming the shared ArcTimeline renderer and the
+item-3 connector engine through the item-4 seams — zero reimplementation
+(static-guarded: no buildConnectors, no TimelineConnector, no
+TimelineEntryDetail, no ep-tl-* class definitions in ArcsView); entries
+via normalizeArcEvent over the SAME arc_events detail the Overview tab
+lists, so Screen 4 and Screen 5 can never disagree about an arc's
+chronology; edges={[]} by construction, every connector between every
+adjacent pair honestly "Sequence only" (behavior-pinned via the item-3
+engine over the normalized shape); closing footnote imported via the
+timelineScreenModel seam (never re-typed) in the TrustFooter left slot,
+gated on the Timeline tab; stale "tab deferred" comments removed.
+Acceptance pass: grayscale/accent-removal legibility verified on BOTH
+screens (Confirmed/Contested/Inferred states carry icon + text label,
+never color alone; sequence-vs-causal is structural — dashed chip +
+"Sequence only" label vs solid line + link icon + "Source-supported
+causal link"); AA contrast audit on all touched pairs (tab active
+16.25, tab inactive 6.28, connector label 5.15, footnote 6.28, date
+4.87, title 16.25, description 9.86, Confirmed badge 5.79 — all ≥ 4.5);
+live smoke: 12 entries / 11 connectors all "Sequence only" on the
+China — military escalation arc, footnote present only on the Timeline
+tab, zero console errors; mobile 390px + desktop capture set. Suite
+338/338 (332 + 6 new); build clean. One code commit (6c03efae:
+ArcsView.jsx + its guard test together, item-3 rule; message re-read
+against the actual two-file list BEFORE pushing per the trackb3
+disclosure-1 rule — match confirmed, no hold needed); byte-verified
+blobs (5e30010d, a5380567); CI green per commit on both workflows.
+Details: `trackb3-v5/trackb3-step3-item5.md`. Run log:
+`runs/2026-08-18-trackb-step3-item5.md`.
+Differs from prior version: completes Track B Step 3 — both addendum
+screens now ship the shared timeline engine; first footer slot gated on
+tab state; first item closed with the disclosure-1 pre-push rule
+active (message-vs-file-list re-read) and zero disclosures needed.
