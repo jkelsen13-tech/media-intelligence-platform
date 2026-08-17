@@ -7,7 +7,7 @@ import './edge-list.css'
 // component exposes the same relationships as a keyboard-navigable,
 // screen-reader-readable table. It mirrors the canvas filters
 // (reliability threshold + hypothesis toggle) so the list always matches
-// what the canvas shows, and activating a row opens the SAME EdgeEvidence
+// what the canvas shows, and activating a row opens the SAME docked relationship panel
 // dialog used by canvas edge taps — non-pointer users receive identical
 // information, per 02B Phase 2A acceptance.
 export default function EdgeList({

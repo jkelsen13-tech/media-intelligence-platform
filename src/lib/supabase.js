@@ -314,6 +314,60 @@ export async function loadSources(nodeKey) {
   return data
 }
 
+// Track B Step 2 item 5: resolve an explanation row's source_ids into a
+// NAMED source list for the docked relationship panel. Ids may point at
+// articles or policy_documents (the explanations table does not record
+// which), so both tables are probed. Ids that resolve nowhere are kept as
+// explicit unresolved entries — a dropped id would silently understate the
+// recorded sourcing, and fabrication is worse than an honest gap.
+export async function loadEdgeSources(sourceIds) {
+  const ids = (sourceIds ?? []).filter(Boolean)
+  if (!supabase || ids.length === 0) return []
+  const quoted = ids.map((id) => `"${id}"`).join(',')
+  const [articlesRes, docsRes] = await Promise.all([
+    supabase
+      .from('articles')
+      .select('id, outlet, title, url, published_at')
+      .filter('id', 'in', `(${quoted})`),
+    supabase
+      .from('policy_documents')
+      .select('id, title, url, source, published_at')
+      .filter('id', 'in', `(${quoted})`),
+  ])
+  if (articlesRes.error) throw articlesRes.error
+  if (docsRes.error) throw docsRes.error
+  const byId = new Map()
+  for (const a of articlesRes.data ?? []) {
+    byId.set(a.id, {
+      kind: 'article',
+      id: a.id,
+      name: a.outlet ?? 'Unknown outlet',
+      title: a.title ?? '(untitled)',
+      url: a.url ?? null,
+      publishedAt: a.published_at ? String(a.published_at).slice(0, 10) : null,
+    })
+  }
+  for (const d of docsRes.data ?? []) {
+    byId.set(d.id, {
+      kind: 'document',
+      id: d.id,
+      name: d.source ? humanizeSourceName(d.source) : 'Source document',
+      title: d.title ?? '(untitled)',
+      url: d.url ?? null,
+      publishedAt: d.published_at ? String(d.published_at).slice(0, 10) : null,
+    })
+  }
+  // Preserve the recorded order; unresolved ids stay visible as honest gaps.
+  return ids.map((id) => byId.get(id) ?? { kind: 'unresolved', id })
+}
+
+function humanizeSourceName(source) {
+  return String(source)
+    .split('_')
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(' ')
+}
+
 // A4 — Arc status derivation. The stored story_arcs.status column is a weak
 // signal; the UI dot is wired to status derived from real signals instead:
 //   - resolved: the arc has milestones and every milestone is in a

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import GraphView from './graph/GraphView'
 import Legend from './graph/Legend'
 import EdgeControls from './graph/EdgeControls'
-import EdgeEvidence from './graph/EdgeEvidence'
+import RelationshipPanel from './panels/RelationshipPanel'
 import EdgeList from './graph/EdgeList'
 import ReviewStatusPanel from './panels/ReviewStatusPanel'
 import TopicBrowser from './graph/TopicBrowser'
@@ -271,18 +271,20 @@ export default function App() {
     setPinned(false)
   }, [])
 
-  // Escape closes the article / policy panel (§4.4 close affordance).
+  // Escape closes the article / policy / relationship panel (§4.4 close
+  // affordance; item 5 extends it to the docked relationship panel).
   useEffect(() => {
-    if (!selected && !policyNode) return
+    if (!selected && !policyNode && !edgeEvidence) return
     const onKey = (e) => {
       if (e.key === 'Escape') {
         handleClose()
         closePolicyPanel()
+        setEdgeEvidence(null)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selected, policyNode, handleClose, closePolicyPanel])
+  }, [selected, policyNode, edgeEvidence, handleClose, closePolicyPanel])
 
   // --- Cross-view navigation ---
   const openNodeInGraph = useCallback(
@@ -646,7 +648,7 @@ export default function App() {
                         nodes={displayNodes}
                         edges={displayEdges}
                         onSelect={handleSelect}
-                        panelOpen={!!(selected || policyNode) && !isMobile}
+                        panelOpen={!!(selected || policyNode || edgeEvidence) && !isMobile}
                         controlsDimmed={isMobile && !!(selected || policyNode)}
                         minReliability={minReliability}
                         showInferred={showInferred}
@@ -665,20 +667,26 @@ export default function App() {
                       {reviewStatusOpen && (
                         <ReviewStatusPanel onClose={() => setReviewStatusOpen(false)} />
                       )}
-                      {edgeEvidence && (
-                        <EdgeEvidence
-                          edge={edgeEvidence.edge}
-                          position={edgeEvidence.position}
-                          sourceLabel={
-                            graph.nodes.find((n) => (n.id ?? n.slug) === edgeEvidence.edge.source)?.label
-                          }
-                          targetLabel={
-                            graph.nodes.find((n) => (n.id ?? n.slug) === edgeEvidence.edge.target)?.label
-                          }
-                          onClose={() => setEdgeEvidence(null)}
-                        />
-                      )}
                     </div>
+                    {/* Item 5: docked relationship panel — flex sibling of the
+                        stage on desktop (canvas shrinks beside it, never
+                        covered); bottom sheet on mobile with a scrim. */}
+                    {edgeEvidence && isMobile && (
+                      <div className="ap-scrim" onClick={() => setEdgeEvidence(null)} aria-hidden="true" />
+                    )}
+                    {edgeEvidence && (
+                      <RelationshipPanel
+                        edge={edgeEvidence.edge}
+                        sourceLabel={
+                          graph.nodes.find((n) => (n.id ?? n.slug) === edgeEvidence.edge.source)?.label
+                        }
+                        targetLabel={
+                          graph.nodes.find((n) => (n.id ?? n.slug) === edgeEvidence.edge.target)?.label
+                        }
+                        isMobile={isMobile}
+                        onClose={() => setEdgeEvidence(null)}
+                      />
+                    )}
                   </div>
                 </div>
                 {/* Mobile: scrim behind the bottom sheet (tap to close). */}

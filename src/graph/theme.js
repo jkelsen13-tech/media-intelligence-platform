@@ -63,8 +63,9 @@ export const EDGE_TYPES = {
 // the ingestion pipeline: sequence = temporal connective or weak
 // citation, never a causal claim). `plain` is the verb phrase drawn on
 // the canvas, in the relationship list, in both timeline views, and in
-// the evidence popover. The raw DB label (e.g. "sequence: after") stays
-// visible as the "Relation" row in EdgeEvidence — it is extraction
+// the docked relationship panel (item 5). The raw DB label (e.g.
+// "sequence: after") stays
+// visible as the "Relation" row in the relationship panel — it is extraction
 // detail, not the display label.
 export function edgePlainLabel(edge) {
   if (!edge) return ''
