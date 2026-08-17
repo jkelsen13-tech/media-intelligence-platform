@@ -1,4 +1,4 @@
-# v14 — article_lineage_assertions migration (20_IDEA capability 1, checkpoint 2)
+# v15 — article_lineage_assertions migration (20_IDEA capability 1, checkpoint 2)
 
 Created 2026-08-17. Records the schema validation, guardrail probes, and the
 live rollback drill for 20_IDEA capability 1's storage artifact, per the
@@ -126,7 +126,7 @@ fresh environment).
 
 Module: `supabase/functions/source-comparison-run/lineage.js`
 Tests: `tests/golden/lineage_stage1.test.mjs` (15/15)
-Live run: `verifier/v14/stage1_live_corpus_run.mjs`
+Live run: `verifier/v15/stage1_live_corpus_run.mjs`
 
 ## Live corpus result (752 articles, 2026-08-17)
 
