@@ -77,12 +77,13 @@ export default function Legend() {
         <h3>Edges</h3>
         <p className="legend-note">
           Edges are neutral grey until selected — a selected or hovered
-          relationship shows its type color:
+          relationship shows its type color. The label in quotes is the
+          plain-language phrase drawn on the canvas:
         </p>
-        {Object.entries(EDGE_TYPES).map(([key, { cssVar, label }]) => (
+        {Object.entries(EDGE_TYPES).map(([key, { cssVar, label, plain }]) => (
           <div key={key} className="legend-row">
             <span className="legend-line" style={{ background: `var(${cssVar})` }} />
-            {label}
+            {label} — “{plain}”
           </div>
         ))}
         {/* Step 7 (§3.3): line style encodes provenance. */}
@@ -94,6 +95,12 @@ export default function Legend() {
           <span className="legend-line legend-line--dashed" />
           MIP hypothesis
         </div>
+        {/* Item 4: the causal/sequence distinction stated in words, so
+            it never depends on color or line style alone. */}
+        <p className="legend-note">
+          Causal claims one event led to another. Sequence claims only
+          that one happened before the other — no causation is claimed.
+        </p>
       </section>
       <section>
         <h3>Weight</h3>

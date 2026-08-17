@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { EDGE_TYPES, INFERRED_CLAIMED_BY } from './theme'
+import { INFERRED_CLAIMED_BY, edgePlainLabel } from './theme'
 import './edge-list.css'
 
 // 02B Phase 2 final acceptance — accessibility alternative.
@@ -82,7 +82,9 @@ export default function EdgeList({
               const inferred = e.claimed_by === INFERRED_CLAIMED_BY
               const sLabel = labelById.get(e.source) ?? e.source
               const tLabel = labelById.get(e.target) ?? e.target
-              const relLabel = e.label ?? EDGE_TYPES[e.type]?.label ?? e.type
+              // Item 4: plain-language relationship phrase ("led to" /
+              // "happened before"), never the raw DB label.
+              const relLabel = edgePlainLabel(e) || e.type
               return (
                 <tr key={e.id ?? `${e.source}->${e.target}:${e.type}`}>
                   <td>{sLabel}</td>

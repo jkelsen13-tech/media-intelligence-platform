@@ -1,4 +1,4 @@
-import { EDGE_TYPES, INFERRED_CLAIMED_BY } from './theme'
+import { EDGE_TYPES, INFERRED_CLAIMED_BY, edgePlainLabel } from './theme'
 
 // Step 7 (§6): edge evidence popover. Shown when an edge is tapped on the
 // canvas or from the "evidence" affordance on connected-node lists. Renders
@@ -58,6 +58,19 @@ export default function EdgeEvidence({ edge, sourceLabel, targetLabel, position,
           </p>
         )}
         <Row label="Type" value={meta?.label ?? edge.type} />
+        {/* Item 4: the plain-language meaning in words — causal claims
+            causation, sequence claims temporal order only. The raw DB
+            label stays below as extraction detail ("Relation"). */}
+        <Row
+          label="Meaning"
+          value={
+            edge.type === 'sequence'
+              ? `${edgePlainLabel(edge)} — temporal order only, no causation claimed`
+              : edge.type === 'causal'
+                ? `${edgePlainLabel(edge)} — a causation claim`
+                : edgePlainLabel(edge)
+          }
+        />
         {edge.label && <Row label="Relation" value={edge.label} />}
         <Row label="Signal source" value={edge.signal_source} />
         <Row label="Doc strength" value={edge.doc_strength} />
