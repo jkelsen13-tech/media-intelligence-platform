@@ -158,3 +158,26 @@ Details: `v13/graph-canvas-restyle.md`. Run log:
 Differs from prior version: first canvas-visual-encoding criterion set;
 adds computed-style assertions on cytoscape elements and extends the v7
 accent-removal bar to the Graph tab.
+
+## v14 — 2026-08-17 — Desktop default to focused subgraph (Track B Step 2 item 3)
+Measures: desktop first paint renders the top hub's depth-2 focused
+subgraph (20 of 750 nodes live), not the full graph; full graph is an
+explicit, discoverable opt-in ("Show full graph (750 nodes)" in the
+focus trail) with a discoverable toolbar return ("Focused view: Middle
+East"); user focus semantics unchanged (search still pushes a real
+crumb); mobile unchanged (hub-list entry, no synthetic focus) with two
+side effects disclosed (stale-fit fix also repairs mobile openHub
+fitting; trail label now "Show full graph (N nodes)" on all viewports);
+stale-fit fix verified live (pre-fix zoom 2.54 static, post-fix 0.526
+vs Fit 0.544); suite 246/246; v12/v13 suites re-run green; byte-
+verified pushes (four commits, tip 916bd7db — includes fixup 524c3de2
+for two transcription slips in 4e9c2e5c, caught by post-push hash
+verification); CI green on all tips.
+Blob SHAs: criteria 17bfa9a5, checker 7a0c604b.
+Details: `v14/desktop-focused-subgraph-default.md`. Run log:
+`runs/2026-08-17-trackb-step2-item3.md`. Verifier script:
+`v14/check_item3.py`.
+Differs from prior version: first navigation-default criterion set;
+asserts rendered-graph cardinality via the cytoscape registry (no debug
+globals) and adds the first mobile-unchanged invariant with explicit
+side-effect disclosure.
