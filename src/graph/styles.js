@@ -5,6 +5,7 @@ import {
   DEFAULT_NODE_SHAPE,
   cssToken,
   typeColor,
+  edgePlainLabel,
 } from './theme'
 
 // Track B Step 2 item 2 (2026-08-17): light-canvas vocabulary.
@@ -102,12 +103,6 @@ export const graphStylesheet = [
     },
   },
   {
-    selector: 'edge.lbl',
-    style: {
-      label: 'data(label)',
-    },
-  },
-  {
     selector: 'node:selected',
     style: {
       'background-color': cssToken('--bg-selected', '#dce9f7'),
@@ -134,6 +129,18 @@ export const graphStylesheet = [
       'text-background-color': cssToken('--bg-page', '#F7F7F4'),
       'text-background-opacity': 0.7,
       'text-background-padding': 2,
+    },
+  },
+  {
+    // Item 4: canvas edge labels use the plain-language phrase
+    // ("led to" / "happened before"), never the raw DB label
+    // ("sequence: after") — the distinction must not rely on line
+    // style or color alone. NOTE: this rule must sit AFTER the base
+    // `edge` rule — cytoscape resolves the `label` conflict in file
+    // order here, and with `edge.lbl` first the base `label: ''` wins.
+    selector: 'edge.lbl',
+    style: {
+      label: (ele) => edgePlainLabel(ele.data()),
     },
   },
   {

@@ -44,15 +44,36 @@ export const RELIABILITY_MIN = 1
 export const RELIABILITY_MAX = 4
 
 export const EDGE_TYPES = {
-  causal: { color: '#4d9aff', cssVar: '--cat-blue', label: 'Causal' }, // blue
-  actor: { color: '#9ca3af', cssVar: '--cat-grey', label: 'Actor' }, // grey
-  financial: { color: '#ffb01f', cssVar: '--cat-amber', label: 'Financial' }, // amber
-  conflict: { color: '#ff5252', cssVar: '--cat-red', label: 'Conflict' }, // red
-  documentary: { color: '#2fdc6f', cssVar: '--cat-green', label: 'Documentary' }, // green
+  causal: { color: '#4d9aff', cssVar: '--cat-blue', label: 'Causal', plain: 'led to' }, // blue
+  actor: { color: '#9ca3af', cssVar: '--cat-grey', label: 'Actor', plain: 'involves' }, // grey
+  financial: { color: '#ffb01f', cssVar: '--cat-amber', label: 'Financial', plain: 'funded' }, // amber
+  conflict: { color: '#ff5252', cssVar: '--cat-red', label: 'Conflict', plain: 'in conflict with' }, // red
+  documentary: { color: '#2fdc6f', cssVar: '--cat-green', label: 'Documentary', plain: 'documented in' }, // green
   // Live edge vocabulary (2026-08-17 census: 330 actor / 80 sequence /
   // 1 constrained_by). Colors show only on selection/hover (item 2).
-  sequence: { color: '#a78bfa', cssVar: '--cat-violet', label: 'Sequence' }, // violet
-  constrained_by: { color: '#2dd4bf', cssVar: '--cat-teal', label: 'Constrained by' }, // teal
+  sequence: { color: '#a78bfa', cssVar: '--cat-violet', label: 'Sequence', plain: 'happened before' }, // violet
+  constrained_by: { color: '#2dd4bf', cssVar: '--cat-teal', label: 'Constrained by', plain: 'constrained by' }, // teal
+}
+
+// Track B Step 2 item 4 (2026-08-17): plain-language edge labels.
+// The causal-vs-sequence distinction must read from WORDS, not line
+// style or color alone: causal claims one event LED TO another;
+// sequence claims temporal order only — the source happened before the
+// target, explicitly no causation (see the Tier 3 three-way branch in
+// the ingestion pipeline: sequence = temporal connective or weak
+// citation, never a causal claim). `plain` is the verb phrase drawn on
+// the canvas, in the relationship list, in both timeline views, and in
+// the evidence popover. The raw DB label (e.g. "sequence: after") stays
+// visible as the "Relation" row in EdgeEvidence — it is extraction
+// detail, not the display label.
+export function edgePlainLabel(edge) {
+  if (!edge) return ''
+  const meta = EDGE_TYPES[edge.type]
+  if (meta?.plain) return meta.plain
+  // Unknown type: humanize the raw label (strip a "type: " prefix) so
+  // the canvas never shows machine vocabulary; last resort is the key.
+  const raw = edge.label != null ? String(edge.label).replace(/^[a-z_]+:\s*/i, '').trim() : ''
+  return raw || String(edge.type ?? '')
 }
 
 // Story-arc categories (§4.4 category tag). Colors come from the same token
