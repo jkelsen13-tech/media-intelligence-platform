@@ -21,6 +21,8 @@ import { buildNavViews, buildMoreEntries, isMoreViewKey } from './lib/navViews'
 import { loadGraph, loadTopics } from './lib/supabase'
 import { computeHubs } from './lib/hubs'
 import { resolveFocal } from './lib/desktopFocus'
+import { loadLineageGraph, hydrateLineageArticles } from './lib/lineageGraphReadPath'
+import { buildLineageElements, lineageEmptyState } from './graph/lineageElements'
 import AccountPanel from './panels/AccountPanel'
 import { loadAccountUiFlag } from './lib/auth'
 
@@ -120,6 +122,11 @@ export default function App() {
   const [edgeEvidence, setEdgeEvidence] = useState(null)
   // 02B final acceptance: nonvisual (screen-reader/keyboard) relationship list.
   const [edgeListOpen, setEdgeListOpen] = useState(false)
+  // 20_IDEA capability 1: Graph lineage mode. Withhold posture — the toggle
+  // does not exist unless pipeline_config.lineage_graph_mode is exactly true.
+  const [lineageMode, setLineageMode] = useState(false)
+  const [lineage, setLineage] = useState(null)
+  const [lineageArticles, setLineageArticles] = useState(new Map())
   const [reviewStatusOpen, setReviewStatusOpen] = useState(false)
   // Step 10 (§7.4): policy consequence view — set when a policy node is
   // tapped (replaces the article panel for policy nodes).
@@ -157,6 +164,13 @@ export default function App() {
 
   useEffect(() => {
     loadGraph().then(setGraph).catch((err) => setError(err.message))
+    loadLineageGraph()
+      .then(async (projection) => {
+        setLineage(projection)
+        if (projection.enabled) setLineageArticles(await hydrateLineageArticles(projection))
+      })
+      // Lineage is additive: a failure here must never take down the graph.
+      .catch(() => setLineage({ enabled: false, edges: [], originAnnotations: [] }))
     loadTopics()
       .then((data) => {
         // Only expose the affordance when the tables exist AND carry data.
@@ -363,8 +377,19 @@ export default function App() {
     setPinned(false)
   }, [])
 
-  const displayNodes = subgraph ? subgraph.nodes : graph?.nodes
-  const displayEdges = subgraph ? subgraph.edges : graph?.edges
+  const lineageElements = useMemo(
+    () => (lineage?.enabled ? buildLineageElements(lineage, lineageArticles) : null),
+    [lineage, lineageArticles],
+  )
+  const lineageAvailable = !!lineage?.enabled
+  const lineageActive = lineageMode && lineageAvailable
+  const lineageEmpty = lineageActive ? lineageEmptyState(lineage) : null
+
+  // Lineage mode SWAPS the element set rather than overlaying: the live node
+  // population is event/actor/policy only, so article-to-article lineage has
+  // nothing on the default canvas to attach to.
+  const displayNodes = lineageActive ? lineageElements.nodes : (subgraph ? subgraph.nodes : graph?.nodes)
+  const displayEdges = lineageActive ? lineageElements.edges : (subgraph ? subgraph.edges : graph?.edges)
   // On desktop the graph screen is always the full canvas.
   const showHubList = isMobile && graphScreen === 'hubs' && focusStack.length === 0
 
@@ -611,7 +636,7 @@ export default function App() {
                   )}
                   <div className="graph-body">
                     <div className="graph-rail">
-                      <Legend />
+                      <Legend lineageMode={lineageActive} />
                       <EdgeControls
                         minReliability={minReliability}
                         onMinReliabilityChange={setMinReliability}
@@ -643,8 +668,24 @@ export default function App() {
                           )}
                         </div>
                       )}
+                      {lineageAvailable && (
+                        <button
+                          type="button"
+                          className="graph-toolbar-btn lineage-mode-btn"
+                          aria-pressed={lineageActive}
+                          onClick={() => setLineageMode((v) => !v)}
+                        >
+                          {lineageActive ? 'Exit lineage mode' : 'Lineage mode'}
+                        </button>
+                      )}
+                      {lineageEmpty && (
+                        <div className="lineage-empty" role="status">
+                          <h3>{lineageEmpty.title}</h3>
+                          <p>{lineageEmpty.body}</p>
+                        </div>
+                      )}
                       <GraphView
-                        key={focal ? `focus-${focal.kind}-${focal.id}` : 'all'}
+                        key={lineageActive ? 'lineage' : (focal ? `focus-${focal.kind}-${focal.id}` : 'all')}
                         nodes={displayNodes}
                         edges={displayEdges}
                         onSelect={handleSelect}

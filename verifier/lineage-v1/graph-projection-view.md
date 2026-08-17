@@ -213,3 +213,51 @@ Legend — is NOT in this commit. The data and element layers are complete and
 tested; the wiring touches `src/App.jsx` and `src/graph/Legend.jsx`, both
 heavily K3-owned, and is kept as its own focused change rather than bundled
 here.
+
+## 7b part 2 — canvas wiring
+
+App-level mode toggle, element swap, Legend lineage section, CSS.
+Tests: two static wiring guards added (15/15 in the elements suite).
+
+**Footprint in K3-owned files, audited line by line.** 110 insertions, 6
+deletions across `App.jsx`, `Legend.jsx`, `index.css`. Every one of the six
+removed lines is a line this change replaced with an extended version, with
+the original behavior preserved inside it:
+
+| Removed | Replaced by |
+|---|---|
+| `displayNodes = subgraph ? …` | same ternary, nested under the lineage branch |
+| `displayEdges = subgraph ? …` | same ternary, nested under the lineage branch |
+| `<Legend />` | `<Legend lineageMode={lineageActive} />` |
+| `key={focal ? … : 'all'}` | same expression, nested under the lineage branch |
+| Legend theme import | same import plus two lineage symbols |
+| `function Legend()` | `function Legend({ lineageMode = false })` |
+
+No K3 logic was deleted. `theme.js` remains purely additive (zero removed
+lines).
+
+**Withhold posture.** `loadLineageGraph` self-gates on
+`lineage_graph_mode`, so with the flag false the view is never read, the
+toggle does not render, and lineage state stays inert. A lineage load failure
+is caught and downgraded to disabled — lineage is additive and must never take
+down the graph.
+
+**Element swap, not overlay**, for the reason above: there are no article
+nodes on the default canvas. The GraphView `key` changes with the mode so
+cytoscape rebuilds rather than diffing two unrelated element sets.
+
+**Legend** gains a lineage section ONLY in lineage mode, stating the withhold
+rationale to the reader ("shadow-mode candidates … excluded on purpose") and
+listing the origin-state vocabulary with its hedge ("absence of a detected
+origin is never evidence of independence"). The default legend is unchanged.
+
+**Static wiring guards** (15A precedent) assert the integration itself: the
+toggle is gated on availability, the element swap is present, the failure
+path is caught, and the lineage legend section is conditional.
+
+## Still outstanding for Section 7 acceptance
+
+The screenshot evidence cannot be produced from live data: the table holds 0
+rows and `lineage_graph_mode` is false. Rendering a `syndicated_from` edge and
+an `independent_origin_candidate` state needs either the deferred pipeline run
+or seeded verified rows, plus a flag flip — both owner decisions.

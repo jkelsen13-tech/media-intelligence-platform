@@ -2586,3 +2586,42 @@ body {
   color: var(--text-secondary, #9ca3af);
   letter-spacing: 0.02em;
 }
+
+/* 20_IDEA capability 1: Graph lineage mode.
+   The toggle reuses .graph-toolbar-btn wholesale; only the pressed state is
+   added, mirroring the existing [aria-expanded='true'] convention so the
+   active state is announced by aria-pressed AND visible without color. */
+.lineage-mode-btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Honest empty state — lineage mode with nothing verified to draw must read
+   as deliberate, not broken (same discipline as the relationship panel). */
+.lineage-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 420px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  text-align: center;
+  z-index: 2;
+}
+
+.lineage-empty h3 {
+  margin: 0 0 8px;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.lineage-empty p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}

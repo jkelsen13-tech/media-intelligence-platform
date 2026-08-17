@@ -179,3 +179,37 @@ test('empty lineage mode reads as deliberate, not broken', () => {
   // Disabled -> the mode is not shown at all, so no empty state either.
   assert.equal(lineageEmptyState({ enabled: false, edges: [], originAnnotations: [] }), null)
 })
+
+// ---------------------------------------------------------------------------
+// Static wiring guards — 15A precedent: assert the integration itself, not
+// just the pure helpers, so a future edit cannot quietly undo the posture.
+// ---------------------------------------------------------------------------
+
+import { readFileSync } from 'node:fs'
+
+test('WIRING: lineage mode is withhold-gated and swaps the element set', () => {
+  const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8')
+
+  // The toggle must not exist unless the flag enabled the projection.
+  assert.match(app, /lineageAvailable\s*=\s*!!lineage\?\.enabled/)
+  assert.match(app, /lineageActive\s*=\s*lineageMode\s*&&\s*lineageAvailable/)
+  assert.match(app, /\{lineageAvailable\s*&&\s*\(/, 'toggle must be gated on availability')
+
+  // Element swap, not overlay: lineage elements replace the default set.
+  assert.match(app, /displayNodes\s*=\s*lineageActive\s*\?\s*lineageElements\.nodes/)
+  assert.match(app, /displayEdges\s*=\s*lineageActive\s*\?\s*lineageElements\.edges/)
+
+  // A lineage load failure must never take down the graph.
+  assert.match(app, /\.catch\(\(\)\s*=>\s*setLineage\(/)
+})
+
+test('WIRING: the lineage legend section appears only in lineage mode', () => {
+  const legend = readFileSync(new URL('../../src/graph/Legend.jsx', import.meta.url), 'utf8')
+  assert.match(legend, /\{lineageMode\s*&&\s*\(/, 'lineage legend must be conditional')
+  assert.match(legend, /LINEAGE_EDGE_TYPES/)
+  assert.match(legend, /ORIGIN_STATUS_LABELS/)
+  // The withhold rationale must be stated to the reader, not just enforced.
+  assert.match(legend, /shadow-mode candidates, are excluded on purpose/)
+  // And the default legend must still render the unchanged edge vocabulary.
+  assert.match(legend, /Object\.entries\(EDGE_TYPES\)/)
+})
