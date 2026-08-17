@@ -180,3 +180,65 @@ Stage 1 derivation.
 This run is detection evidence only — no rows were written to
 `article_lineage_assertions`. Persistence happens through the
 source-comparison-run write path (checkpoints 4-5) and is reported there.
+
+---
+
+# RLS policy correction (owner-approved 2026-08-17)
+
+Migration: `supabase/migrations/20260817_article_lineage_assertions_rls_correction.sql`
+
+## The defect
+
+The policy shipped at checkpoint 2 was `review_status = 'verified' and
+is_current`. It conflated brief Section 5 (the **Graph projection view** is
+filtered to `verified`) with Section 6 (**shadow-mode** assertions never
+surface in the Graph projection or Source Comparison counts). Section 6 names
+shadow, not unreviewed.
+
+Stage 1-3 assertions are born `unreviewed`; promoting them to `verified`
+automatically is the exact move reversed on 2026-08-07 and was not
+reintroduced. So every assertion was invisible to the anon client serving
+Source Comparison, and the thread (i) fix would have counted zero origin
+clusters — silently changing nothing in production while its unit tests
+passed. Rule 7, "no success by absence".
+
+## Proof of effect — the same row, before and after
+
+Probe rows are the real Stage 1 detector output for
+`2e4fd9b8-…` (outlet Reuters, host `billingsgazette.com`), inserted inside a
+transaction, queried after `set local role anon`, then rolled back.
+
+| State | Querying as | Reuters assertion visible |
+|---|---|---|
+| Before correction | `anon` | **0** |
+| After correction | `anon` | **1** |
+| After rollback drill | `anon` | **0** |
+| After re-apply | `anon` | **1** |
+
+The "after correction" probe inserted **three** rows on the same article —
+`unreviewed`, `shadow`, `rejected` — and `anon` returned exactly one:
+
+```
+querying_as       anon
+review_status     unreviewed
+detection_method  byline_attribution
+relationship_type syndicated_from
+confidence_band   high
+wire_service      Reuters
+published_host    billingsgazette.com
+```
+
+Shadow and rejected stayed invisible. Guardrail 6 holds at the row level,
+independent of any WHERE clause a caller may forget.
+
+## Rollback drill
+
+| Fingerprint | Before | After |
+|---|---|---|
+| Policy | `a7083c4eb4a317afb58639a754676f35` | `a7083c4eb4a317afb58639a754676f35` |
+| Constraints | `73d564bc44b1ba67c740b6f7cf8b73e8` | `73d564bc44b1ba67c740b6f7cf8b73e8` |
+| Indexes | `67b20d3b5d8918c94260e5417dbd5f11` | `67b20d3b5d8918c94260e5417dbd5f11` |
+
+`rows_persisted` = 0 (every probe transaction rolled back). `anon` grants:
+`SELECT` only. Core census unchanged: articles 752, nodes 750, edges 411,
+explanations 1892.
