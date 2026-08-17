@@ -272,3 +272,30 @@ Differs from prior version: first user-facing Screen 4 surface; the
 pre-existing §2.5.4 elements (milestone checklist, coverage-gap bar,
 arc-age bar, attached-articles list) are folded into the Evidence tab per
 owner delegation 2026-08-18, not retired.
+
+## trackb3-v3 — 2026-08-18 — Timeline connector + expanded-detail engine (Track B Step 3 item 3)
+Measures: the connector rule made precise and unit-pinned — "Source-
+supported causal link" iff type causal + direction earlier→later +
+doc_strength documented/corroborated, else "Sequence only" (circum-
+stantial, absent strength, backward direction, non-causal types all
+withhold); exactly n−1 connectors for n entries, never dropped; verbatim
+locked copy (both labels + closing footnote) static-guarded; expanded
+detail card on the shared AXIS_TONES vocabulary with article excerpt
+rendered only when attribution legs (outlet + date) resolve; zero
+hardcoded hex in new/changed files. Live-data basis (read-only,
+2026-08-18): 411 edges, ZERO causal; arc_events are not nodes so arc
+timelines honestly render "Sequence only" on every connector. Suite
+315/315 (301 + 14 new); build clean; byte-verified pushes (blobs
+5fbfd49d, cb6d883d, fe786344, 645afe5f, 1d409245; criteria c88aeac5).
+Disclosed: commit f8a080d4 (seam + components + tests) failed CI because
+the CSS static guard landed one commit later in b5cb22b9 (split-push
+error, reproduced locally: exactly the line-treatment guard fails against
+the pre-css tree); HEAD b5cb22b9 green on both workflows, full suite
+re-run green against the pushed tree.
+Details: `trackb3-v3/trackb3-step3-item3.md`. Run log:
+`runs/2026-08-18-trackb-step3-item3.md`.
+Differs from prior version: first shared timeline engine (no screen
+wiring yet — items 4/5 consume it); first causal-branch proof carried
+entirely by fixtures because the live corpus has zero causal edges; first
+CI failure disclosure inside a step (split commit, root-caused and
+closed within the same item).
