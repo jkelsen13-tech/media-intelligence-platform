@@ -1,10 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadArticles, loadOutlets, loadArticleDetail, loadArticleGraphLinks, loadSkyVerification, loadArticleTimelineKey, loadArticleComparisonEvents } from '../lib/supabase'
+import {
+  loadArticles,
+  loadOutlets,
+  loadArticleDetail,
+  loadArticleGraphLinks,
+  loadSkyVerification,
+  loadArticleTimelineKey,
+  loadArticleComparisonEvents,
+  loadCorpusMeta,
+  loadNewSinceCount,
+  loadArticleCitationMap,
+  loadEventGrouping,
+  loadOutletRegions,
+} from '../lib/supabase'
+import {
+  PROVENANCE_LABELS,
+  groupArticlesByEvent,
+  provenanceBasis,
+  readThenAdvanceLastVisit,
+} from '../lib/newsFeedModel'
+import EpistemicBanner from '../components/EpistemicBanner'
+import SourceAttributionLine from '../components/SourceAttributionLine'
 import SkyBadge from '../panels/SkyBadge'
 
-// News Feed: the live ingested article stream across all outlets — search,
-// outlet filter, and arc-assignment status. Integrated with the knowledge
-// graph: arc badges jump to Story Arcs, citation links jump to graph nodes.
+// News Feed (Track B Step 4, addendum Screen 1): title block with the
+// browser-local last-visit count, epistemic banner, wired outlet/status
+// chips alongside the spec's visibly-INERT Region/Evidence/Topic pills
+// (owner ruling #2 — no pill may imply filtering it does not do), event
+// grouping ("N outlets reporting" instead of duplicate cards), and a
+// per-article provenance footer driven by the real citations.cited_type
+// discriminator (owner ruling #6). Status badges are omitted from card
+// faces (owner ruling #9).
 
 const PAGE_SIZE = 30
 
@@ -13,6 +39,14 @@ const STATUS_FILTERS = [
   { key: 'arc', label: 'Attached to arc' },
   { key: 'unattributed', label: 'Unattributed' },
   { key: 'monoculture', label: 'Monoculture flagged' },
+]
+
+// Addendum Screen 1 filter row — UI-only per 04_NOTE; rendered disabled with
+// an honest tooltip (owner ruling #2).
+const INERT_PILLS = [
+  { key: 'region', label: 'Region' },
+  { key: 'evidence', label: 'Evidence' },
+  { key: 'topic', label: 'Topic' },
 ]
 
 function fmtDate(iso) {
@@ -67,6 +101,15 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
   const [comparisonEvents, setComparisonEvents] = useState([])
   // Mobile: filters collapse into a bottom sheet behind a single button.
   const [filtersOpen, setFiltersOpen] = useState(false)
+  // Step 4 display-model inputs (read-path joins; each degrades to an empty
+  // Map/null on failure so a join outage never blanks the feed).
+  const [citationMap, setCitationMap] = useState(() => new Map())
+  const [eventMap, setEventMap] = useState(() => new Map())
+  const [outletRegions, setOutletRegions] = useState(() => new Map())
+  const [corpusMeta, setCorpusMeta] = useState(null)
+  // Owner ruling #1: browser-local last-visit marker; null on first visit or
+  // private-mode storage failure → the count line then does not render.
+  const [newSinceCount, setNewSinceCount] = useState(null)
   const debounceRef = useRef(null)
   // Tier 5: request-sequence guard. Every query captures a monotonically
   // increasing token; a response whose token is no longer current is dropped
@@ -78,6 +121,21 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
 
   useEffect(() => {
     loadOutlets().then(setOutlets).catch(() => {})
+  }, [])
+
+  // Step 4 mount loads: corpus meta, the last-visit count, and the three
+  // feed-wide join maps. Each is independent and failure-isolated.
+  useEffect(() => {
+    loadCorpusMeta().then(setCorpusMeta).catch(() => {})
+    loadArticleCitationMap().then(setCitationMap).catch(() => {})
+    loadEventGrouping().then(setEventMap).catch(() => {})
+    loadOutletRegions().then(setOutletRegions).catch(() => {})
+    const prev = readThenAdvanceLastVisit(window.localStorage, Date.now())
+    if (prev != null) {
+      loadNewSinceCount(new Date(prev).toISOString())
+        .then(setNewSinceCount)
+        .catch(() => {})
+    }
   }, [])
 
   useEffect(() => {
@@ -192,6 +250,13 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
     }
   }, [detail])
 
+  // Step 4 event grouping: multi-article events collapse into one group
+  // card; singles and eventless articles stay flat, feed order preserved.
+  const feedEntries = useMemo(
+    () => groupArticlesByEvent(articles, eventMap),
+    [articles, eventMap],
+  )
+
   // If a focused article isn't in the current page, still render its detail.
   const focusedMissing =
     expanded && !articles.some((a) => a.id === expanded) ? expanded : null
@@ -226,8 +291,220 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
     </div>
   )
 
+  // Per-card provenance footer (owner ruling #6): the label is derived from
+  // the real cited_type discriminator via the seam; no basis → no line.
+  const provenanceLine = (a) => {
+    const basis = provenanceBasis(a, citationMap.get(a.id)?.citedTypes)
+    if (!basis) return null
+    return <div className="news-prov">{PROVENANCE_LABELS[basis]}</div>
+  }
+
+  // Per-card cross-nav chips (addendum: shown ONLY when the link exists).
+  const cardChips = (a) => {
+    const cit = citationMap.get(a.id)
+    const hasArc = Boolean(a.arc_id)
+    const hasGraph = Boolean(cit?.hasGraphLink && cit.firstNodeId)
+    if (!hasArc && !hasGraph) return null
+    return (
+      <div className="news-card-chips">
+        {hasArc && (
+          <span
+            className="news-badge arc clickable"
+            role="link"
+            title={`Open story arc “${a.arc_title ?? ''}”`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenArc?.(a.arc_id)
+            }}
+          >
+            Arc{a.arc_title ? `: ${a.arc_title}` : ''} →
+          </span>
+        )}
+        {hasGraph && (
+          <span
+            className="news-badge graph clickable"
+            role="link"
+            title="Open the cited node in the knowledge graph"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenNode?.(cit.firstNodeId)
+            }}
+          >
+            ◈ Graph →
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  const articleCard = (a, { inGroup = false } = {}) => (
+    <button
+      className={`news-card${inGroup ? ' in-group' : ''}`}
+      onClick={() => toggleExpand(a.id)}
+    >
+      <div className="news-card-top">
+        {/* Addendum: date leads in blue; outlet + region carry the
+            attribution line. */}
+        <span className="news-date accent">{fmtDate(a.published_at)}</span>
+      </div>
+      <h3>{a.title}</h3>
+      <SourceAttributionLine
+        outlet={a.outlet}
+        region={outletRegions.get(a.outlet) ?? null}
+        badge={null}
+      />
+      {a.summary && <p className="news-summary">{a.summary}</p>}
+      {cardChips(a)}
+      {provenanceLine(a)}
+    </button>
+  )
+
+  const expandedDetail = (
+    <div className="news-detail">
+      {detailError && <div className="notice error">{detailError}</div>}
+      {!detail && !detailError && <div className="news-detail-loading">Loading detail…</div>}
+      {detail && (
+        <>
+          {graphLinks.length > 0 && (
+            <div className="news-graph-links">
+              <span className="ap-label">Knowledge graph connections</span>
+              <div className="news-filter-row">
+                {graphLinks.map((g, i) => (
+                  <button
+                    key={i}
+                    className="news-chip graph-link"
+                    title={`Open “${g.label}” in the knowledge graph`}
+                    onClick={() => onOpenNode?.(g.nodeId)}
+                  >
+                    ◈ {g.label}
+                    {g.type ? ` · ${g.type}` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {crossWindowChips}
+          {/* Location corroboration (formerly Sky verification; 02A
+              Amendment B): renders only when a corroboration exists. */}
+          <SkyBadge verification={sky} />
+          {!sky && detail.image_url && (
+            <p className="sky-companion-hint">
+              Location corroboration available in the MIP companion app
+            </p>
+          )}
+          <div className="news-detail-grid">
+            <div>
+              <span className="ap-label">Substantive claims</span>
+              {claims.substantive.length === 0 && (
+                <span className="ap-muted">None extracted.</span>
+              )}
+              <ul className="news-claims">
+                {claims.substantive.map((c, i) => (
+                  <li key={i}>{c.text}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <span className="ap-label">Framing markers</span>
+              {claims.framing.length === 0 && <span className="ap-muted">None detected.</span>}
+              <ul className="news-claims framing">
+                {claims.framing.map((c, i) => (
+                  <li key={i}>{c.text}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          {/* Status badges live on the EXPANDED detail only (owner ruling
+              #9 — card faces carry no status badge). Source row is the list
+              record, whose shape is pinned by loadArticles. */}
+          {(() => {
+            const src = articles.find((x) => x.id === expanded)
+            if (!src) return null
+            return (
+              <div className="news-badges">
+                {src.author_name && <span className="news-badge">by {src.author_name}</span>}
+                {src.unattributed && <span className="news-badge muted">unattributed</span>}
+                {src.monoculture && <span className="news-badge mono">monoculture</span>}
+                {sky && <span className="news-badge sky">◈ location-corroborated</span>}
+              </div>
+            )
+          })()}
+          <span className="ap-label">Citations</span>
+          {detail.citations.length === 0 && (
+            <span className="ap-muted">No citations extracted.</span>
+          )}
+          <ul className="news-citations">
+            {detail.citations.map((c, i) => (
+              <li key={i}>
+                <span className="news-cit-entity">{c.cited_entity}</span>
+                <span className="news-cit-type">{c.cited_type}</span>
+                {strengthBadge(c.documentation_strength)}
+              </li>
+            ))}
+          </ul>
+          {detail.url && (
+            <a className="news-read-link" href={detail.url} target="_blank" rel="noreferrer">
+              Read original at {detail.outlet ?? 'source'} →
+            </a>
+          )}
+        </>
+      )}
+    </div>
+  )
+
+  const outletRow = (
+    <div className="news-filter-row">
+      <button
+        className={`news-chip${outlet === null ? ' active' : ''}`}
+        onClick={() => setOutlet(null)}
+      >
+        All outlets
+      </button>
+      {outlets.map((o) => (
+        <button
+          key={o}
+          className={`news-chip${outlet === o ? ' active' : ''}`}
+          onClick={() => setOutlet(o)}
+        >
+          {o}
+        </button>
+      ))}
+    </div>
+  )
+  const statusRow = (
+    <div className="news-filter-row">
+      {STATUS_FILTERS.map((f) => (
+        <button
+          key={f.key}
+          className={`news-chip${status === f.key ? ' active' : ''}`}
+          onClick={() => setStatus(f.key)}
+        >
+          {f.label}
+        </button>
+      ))}
+    </div>
+  )
+
   return (
     <div className="news-view">
+      {/* Addendum Screen 1 title block. Owner ruling #1: the count is
+          browser-local and says so; first visit / private mode → no line. */}
+      <div className="news-title-block">
+        <h2 className="news-title">
+          News <span className="news-title-dot" aria-hidden="true" />
+        </h2>
+        {newSinceCount != null && (
+          <p className="news-title-sub">
+            New since your last visit on this device ·{' '}
+            <span className="num">{newSinceCount}</span>
+          </p>
+        )}
+      </div>
+
+      <EpistemicBanner>
+        Missing evidence is recorded, not treated as contradiction.
+      </EpistemicBanner>
+
       <div className="news-controls">
         <div className="news-result-row">
           <span className="news-count">
@@ -272,35 +549,23 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <div className="news-desktop-filters">
-          <div className="news-filter-row">
+        {/* Spec filter row — visibly inert (owner ruling #2): disabled, with
+            a tooltip stating these do not filter yet. */}
+        <div className="news-filter-row news-inert-row" aria-label="Planned filters (not yet active)">
+          {INERT_PILLS.map((p) => (
             <button
-              className={`news-chip${outlet === null ? ' active' : ''}`}
-              onClick={() => setOutlet(null)}
+              key={p.key}
+              className="news-chip inert"
+              disabled
+              title={`${p.label} filtering is planned but not yet wired — shown for orientation only.`}
             >
-              All outlets
+              {p.label}
             </button>
-            {outlets.map((o) => (
-              <button
-                key={o}
-                className={`news-chip${outlet === o ? ' active' : ''}`}
-                onClick={() => setOutlet(o)}
-              >
-                {o}
-              </button>
-            ))}
-          </div>
-          <div className="news-filter-row">
-            {STATUS_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                className={`news-chip${status === f.key ? ' active' : ''}`}
-                onClick={() => setStatus(f.key)}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          ))}
+        </div>
+        <div className="news-desktop-filters">
+          {outletRow}
+          {statusRow}
         </div>
       </div>
 
@@ -323,35 +588,9 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
               </button>
             </div>
             <span className="ap-label">Outlet</span>
-            <div className="news-filter-row">
-              <button
-                className={`news-chip${outlet === null ? ' active' : ''}`}
-                onClick={() => setOutlet(null)}
-              >
-                All outlets
-              </button>
-              {outlets.map((o) => (
-                <button
-                  key={o}
-                  className={`news-chip${outlet === o ? ' active' : ''}`}
-                  onClick={() => setOutlet(o)}
-                >
-                  {o}
-                </button>
-              ))}
-            </div>
+            {outletRow}
             <span className="ap-label">Status</span>
-            <div className="news-filter-row">
-              {STATUS_FILTERS.map((f) => (
-                <button
-                  key={f.key}
-                  className={`news-chip${status === f.key ? ' active' : ''}`}
-                  onClick={() => setStatus(f.key)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
+            {statusRow}
             <button className="sheet-done" onClick={() => setFiltersOpen(false)}>
               Done
             </button>
@@ -365,115 +604,36 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
       )}
 
       <ol className="news-list">
-        {articles.map((a) => (
-          <li key={a.id} className="news-item">
-            <button className="news-card" onClick={() => toggleExpand(a.id)}>
-              <div className="news-card-top">
-                <span className="news-outlet">{a.outlet ?? 'unknown outlet'}</span>
-                <span className="news-date">{fmtDate(a.published_at)}</span>
-              </div>
-              <h3>{a.title}</h3>
-              {a.summary && <p>{a.summary}</p>}
-              <div className="news-badges">
-                {a.author_name && <span className="news-badge">by {a.author_name}</span>}
-                {a.arc_title && (
-                  <span
-                    className="news-badge arc clickable"
-                    role="link"
-                    title="Open this story arc"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onOpenArc?.(a.arc_id)
-                    }}
-                  >
-                    arc: {a.arc_title} →
+        {feedEntries.map((entry) =>
+          entry.kind === 'group' ? (
+            <li key={`ev-${entry.eventId}`} className="news-item">
+              <div className="news-group-card">
+                <div className="news-group-head">
+                  <span className="news-date accent">{fmtDate(entry.latest)}</span>
+                  <span className="news-group-outlets num">
+                    {entry.outlets.length} outlet{entry.outlets.length === 1 ? '' : 's'} reporting
                   </span>
-                )}
-                {a.unattributed && <span className="news-badge muted">unattributed</span>}
-                {a.monoculture && <span className="news-badge mono">monoculture</span>}
-                {expanded === a.id && sky && <span className="news-badge sky">◈ location-corroborated</span>}
-              </div>
-            </button>
-
-            {expanded === a.id && (
-              <div className="news-detail">
-                {detailError && <div className="notice error">{detailError}</div>}
-                {!detail && !detailError && <div className="news-detail-loading">Loading detail…</div>}
-                {detail && (
-                  <>
-                    {graphLinks.length > 0 && (
-                      <div className="news-graph-links">
-                        <span className="ap-label">Knowledge graph connections</span>
-                        <div className="news-filter-row">
-                          {graphLinks.map((g, i) => (
-                            <button
-                              key={i}
-                              className="news-chip graph-link"
-                              title={`Open “${g.label}” in the knowledge graph`}
-                              onClick={() => onOpenNode?.(g.nodeId)}
-                            >
-                              ◈ {g.label}
-                              {g.type ? ` · ${g.type}` : ''}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {crossWindowChips}
-                    {/* Location corroboration (formerly Sky verification; 02A
-                        Amendment B): renders only when a corroboration exists. */}
-                    <SkyBadge verification={sky} />
-                    {!sky && detail.image_url && (
-                      <p className="sky-companion-hint">
-                        Location corroboration available in the MIP companion app
-                      </p>
-                    )}
-                    <div className="news-detail-grid">
-                      <div>
-                        <span className="ap-label">Substantive claims</span>
-                        {claims.substantive.length === 0 && (
-                          <span className="ap-muted">None extracted.</span>
-                        )}
-                        <ul className="news-claims">
-                          {claims.substantive.map((c, i) => (
-                            <li key={i}>{c.text}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <span className="ap-label">Framing markers</span>
-                        {claims.framing.length === 0 && <span className="ap-muted">None detected.</span>}
-                        <ul className="news-claims framing">
-                          {claims.framing.map((c, i) => (
-                            <li key={i}>{c.text}</li>
-                          ))}
-                        </ul>
-                      </div>
+                </div>
+                <h3 className="news-group-title">
+                  {entry.title ?? entry.articles[0]?.title ?? 'Untitled event'}
+                </h3>
+                <div className="news-group-members">
+                  {entry.articles.map((a) => (
+                    <div key={a.id} className="news-group-member">
+                      {articleCard(a, { inGroup: true })}
+                      {expanded === a.id && expandedDetail}
                     </div>
-                    <span className="ap-label">Citations</span>
-                    {detail.citations.length === 0 && (
-                      <span className="ap-muted">No citations extracted.</span>
-                    )}
-                    <ul className="news-citations">
-                      {detail.citations.map((c, i) => (
-                        <li key={i}>
-                          <span className="news-cit-entity">{c.cited_entity}</span>
-                          <span className="news-cit-type">{c.cited_type}</span>
-                          {strengthBadge(c.documentation_strength)}
-                        </li>
-                      ))}
-                    </ul>
-                    {detail.url && (
-                      <a className="news-read-link" href={detail.url} target="_blank" rel="noreferrer">
-                        Read original at {detail.outlet ?? 'source'} →
-                      </a>
-                    )}
-                  </>
-                )}
+                  ))}
+                </div>
               </div>
-            )}
-          </li>
-        ))}
+            </li>
+          ) : (
+            <li key={entry.article.id} className="news-item">
+              {articleCard(entry.article)}
+              {expanded === entry.article.id && expandedDetail}
+            </li>
+          ),
+        )}
       </ol>
 
       {focusedMissing && (
@@ -516,6 +676,15 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
         <button className="news-load-more" onClick={loadMore}>
           Load more (<span className="num">{total - articles.length}</span> remaining)
         </button>
+      )}
+
+      {/* Screen footer: corpus scale from the live count token; freshness is
+          carried by the app-header line (App.jsx) so it is never duplicated
+          with a stale copy here. */}
+      {corpusMeta?.count != null && (
+        <p className="news-corpus-foot ap-muted">
+          Live corpus — <span className="num">{corpusMeta.count}</span> articles
+        </p>
       )}
     </div>
   )

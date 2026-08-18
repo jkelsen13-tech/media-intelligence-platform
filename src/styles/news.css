@@ -443,3 +443,136 @@
     min-height: 48px;
   }
 }
+
+/* ---------- Track B Step 4 (addendum Screen 1) ---------- */
+
+/* Title block: "News" + blue dot + browser-local last-visit line. */
+.news-title-block {
+  margin-bottom: 10px;
+}
+
+.news-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.news-title-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.news-title-sub {
+  margin-top: 2px;
+  font-size: var(--fs-meta);
+  color: var(--text-secondary);
+}
+
+/* Inert spec pills (owner ruling #2): visibly disabled so no pill implies
+   active filtering it does not perform. */
+.news-chip.inert,
+.news-chip.inert:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.news-inert-row {
+  margin-bottom: 4px;
+}
+
+/* Card date leads in blue (addendum card anatomy). */
+.news-date.accent {
+  color: var(--accent-soft);
+}
+
+/* Summary clamp: 2–3 lines per spec. */
+.news-card .news-summary {
+  -webkit-line-clamp: 3;
+}
+
+/* Per-card cross-nav chips (Arc / Graph) — shown only when the link exists. */
+.news-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.news-badge.graph {
+  color: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* Provenance footer line (owner ruling #6) — distinct per article. */
+.news-prov {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-color);
+  font-size: var(--fs-label);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Event group card ("N outlets reporting"). */
+.news-group-card {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--card-radius);
+  padding: var(--card-pad-y) var(--card-pad-x);
+  background: var(--bg-panel);
+}
+
+.news-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.news-group-outlets {
+  font-size: var(--fs-label);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent-soft);
+}
+
+.news-group-title {
+  font-size: var(--fs-title);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.news-group-members {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.news-card.in-group {
+  background: var(--bg-inset);
+}
+
+/* Honest static-corpus footer line. */
+.news-corpus-foot {
+  margin-top: 14px;
+  font-size: var(--fs-meta);
+}
+
+@media (max-width: 767px) {
+  .news-title-sub,
+  .news-prov,
+  .news-group-outlets,
+  .news-corpus-foot {
+    font-size: 15px;
+  }
+}

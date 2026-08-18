@@ -16,7 +16,8 @@ import SourceComparisonView from './views/SourceComparisonView'
 import { loadPhase3BetaFlag } from './lib/phase3ReadPath'
 import { loadSourceComparisonBetaFlag } from './lib/sourceComparisonReadPath'
 import { buildNavViews, buildMoreEntries, isMoreViewKey } from './lib/navViews'
-import { loadGraph, loadTopics } from './lib/supabase'
+import { loadGraph, loadTopics, loadCorpusMeta } from './lib/supabase'
+import { liveCorpusLabel } from './lib/newsFeedModel'
 import { computeHubs } from './lib/hubs'
 import { resolveFocal, focusDepth } from './lib/desktopFocus'
 import AccountPanel from './panels/AccountPanel'
@@ -65,8 +66,8 @@ function localSubgraph(nodes, edges, hubId, depth = 2) {
           next.push(nb)
         }
       }
+      frontier = next
     }
-    frontier = next
   }
   const subNodes = nodes.filter((n) => seen.has(n.id ?? n.slug))
   const subEdges = edges.filter((e) => seen.has(e.source) && seen.has(e.target))
@@ -84,7 +85,7 @@ function topicSubgraph(nodes, edges, memberIds) {
   })
   return {
     nodes: nodes.filter((n) => keep.has(n.id ?? n.slug)),
-    edges: edges.filter((e) => keep.has(e.source) && keep.has(e.target)),
+    edges: edges.filter((e) => seen.has(e.source) && seen.has(e.target)),
   }
 }
 
@@ -148,6 +149,15 @@ export default function App() {
   const [focusComparisonEvent, setFocusComparisonEvent] = useState(null)
 
   const isMobile = useMediaQuery('(max-width: 767px)')
+
+  // Step 4: live-corpus header line (addendum carried-forward requirement)
+  // replaces the machine-facing "data: supabase" label. Failure-isolated —
+  // a corpus-meta outage must never block the graph load.
+  const [corpusMeta, setCorpusMeta] = useState(null)
+  useEffect(() => {
+    loadCorpusMeta().then(setCorpusMeta).catch(() => {})
+  }, [])
+  const corpusLine = liveCorpusLabel(corpusMeta?.count, corpusMeta?.latestFetchedAt, Date.now())
 
   useEffect(() => {
     loadGraph().then(setGraph).catch((err) => setError(err.message))
@@ -393,7 +403,13 @@ export default function App() {
             </button>
           ))}
         </nav>
-        {graph && <span className="data-source">data: {graph.source}</span>}
+        {/* Step 4: live corpus line. Falls back to the honest source label
+            only while the corpus count is unknown — never a stale number. */}
+        {corpusLine ? (
+          <span className="data-source">{corpusLine}</span>
+        ) : (
+          graph && <span className="data-source">data: {graph.source}</span>
+        )}
         {accountUi && (
           <button
             className="account-btn"
