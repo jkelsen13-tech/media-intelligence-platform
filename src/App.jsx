@@ -18,7 +18,7 @@ import { loadSourceComparisonBetaFlag } from './lib/sourceComparisonReadPath'
 import { buildNavViews, buildMoreEntries, isMoreViewKey } from './lib/navViews'
 import { loadGraph, loadTopics } from './lib/supabase'
 import { computeHubs } from './lib/hubs'
-import { resolveFocal } from './lib/desktopFocus'
+import { resolveFocal, focusDepth } from './lib/desktopFocus'
 import AccountPanel from './panels/AccountPanel'
 import { loadAccountUiFlag } from './lib/auth'
 
@@ -344,8 +344,8 @@ export default function App() {
   const subgraph = useMemo(() => {
     if (!graph || !focal) return null
     if (focal.kind === 'topic') return topicSubgraph(graph.nodes, graph.edges, focal.memberIds)
-    return localSubgraph(graph.nodes, graph.edges, focal.id, 2)
-  }, [graph, focal])
+    return localSubgraph(graph.nodes, graph.edges, focal.id, focusDepth(isMobile))
+  }, [graph, focal, isMobile])
 
   const openHub = useCallback((node) => {
     setFocusStack([{ kind: 'node', id: node.id ?? node.slug, label: node.label }])
@@ -644,6 +644,8 @@ export default function App() {
                         minReliability={minReliability}
                         showInferred={showInferred}
                         onEdgeSelect={setEdgeEvidence}
+                        allNodes={graph?.nodes ?? null}
+                        focused={subgraph != null}
                       />
                       {edgeListOpen && (
                         <EdgeList
