@@ -630,6 +630,106 @@ export async function loadTimeline({ supabaseClient } = {}) {
 
 // ---------- News Feed ----------
 
+// Track B Step 4 (Screen 1): corpus metadata for the header label replacing
+// "data: supabase" — exact article count + latest fetch timestamp, both
+// live tokens (owner ruling: real relative age, absolute date past 24h —
+// a static corpus must never read as freshly updated).
+export async function loadCorpusMeta({ supabaseClient } = {}) {
+  const client = supabaseClient ?? supabase
+  if (!client) return { count: null, latestFetchedAt: null }
+  const [countRes, latestRes] = await Promise.all([
+    client.from('articles').select('id', { count: 'exact', head: true }),
+    client
+      .from('articles')
+      .select('fetched_at')
+      .order('fetched_at', { ascending: false, nullsFirst: false })
+      .limit(1),
+  ])
+  if (countRes.error) throw countRes.error
+  if (latestRes.error) throw latestRes.error
+  return {
+    count: countRes.count ?? null,
+    latestFetchedAt: latestRes.data?.[0]?.fetched_at ?? null,
+  }
+}
+
+// Track B Step 4 (owner ruling #1): exact count of articles fetched after a
+// browser-local last-visit marker. Head-only exact-count request.
+export async function loadNewSinceCount(isoTs, { supabaseClient } = {}) {
+  const client = supabaseClient ?? supabase
+  if (!client || !isoTs) return null
+  const { count, error } = await client
+    .from('articles')
+    .select('id', { count: 'exact', head: true })
+    .gt('fetched_at', isoTs)
+  if (error) throw error
+  return count ?? null
+}
+
+// Track B Step 4 (Screen 1 cards): one citations read serving BOTH the
+// provenance footer (cited_type discriminator — court_doc/agency_release =
+// primary filing, per owner ruling #6) and the per-card Graph chip existence
+// signal (any citation with resolved_node_id). Keyset-paginated (Doc 13).
+// Returns Map<articleId, { citedTypes: string[], hasGraphLink: boolean,
+// firstNodeId: string|null }> — firstNodeId is the first citation-resolved
+// node, so the per-card Graph chip can open the graph AT that node rather
+// than implying a link it cannot navigate to.
+export async function loadArticleCitationMap({ supabaseClient } = {}) {
+  const client = supabaseClient ?? supabase
+  if (!client) return new Map()
+  const { data, error } = await keysetAll(client, 'citations', 'id, article_id, cited_type, resolved_node_id')
+  if (error) throw error
+  const map = new Map()
+  for (const c of data ?? []) {
+    if (!c.article_id) continue
+    if (!map.has(c.article_id)) map.set(c.article_id, { citedTypes: [], hasGraphLink: false, firstNodeId: null })
+    const entry = map.get(c.article_id)
+    if (c.cited_type) entry.citedTypes.push(c.cited_type)
+    if (c.resolved_node_id) {
+      entry.hasGraphLink = true
+      if (!entry.firstNodeId) entry.firstNodeId = c.resolved_node_id
+    }
+  }
+  return map
+}
+
+// Track B Step 4 (event grouping, "N outlets reporting"): article -> event
+// membership. event_articles has no id column — composite-key pagination
+// (Doc 13). Returns Map<articleId, { eventId, title }>; title null when the
+// event row is unreadable (honest degradation — group still renders).
+export async function loadEventGrouping({ supabaseClient } = {}) {
+  const client = supabaseClient ?? supabase
+  if (!client) return new Map()
+  const [membersRes, eventsRes] = await Promise.all([
+    keysetAllComposite(client, 'event_articles', 'event_id, article_id', { keyCols: ['event_id', 'article_id'] }),
+    keysetAll(client, 'events', 'id, canonical_title'),
+  ])
+  if (membersRes.error) throw membersRes.error
+  if (eventsRes.error) throw eventsRes.error
+  const titleByEvent = new Map((eventsRes.data ?? []).map((e) => [e.id, e.canonical_title ?? null]))
+  const map = new Map()
+  for (const m of membersRes.data ?? []) {
+    if (!m.article_id || !m.event_id) continue
+    map.set(m.article_id, { eventId: m.event_id, title: titleByEvent.get(m.event_id) ?? null })
+  }
+  return map
+}
+
+// Track B Step 4 (source attribution line): outlet name -> region (country)
+// from the outlets table; articles carry no region column. Bounded table,
+// keyset-paginated anyway per Doc 13 discipline.
+export async function loadOutletRegions({ supabaseClient } = {}) {
+  const client = supabaseClient ?? supabase
+  if (!client) return new Map()
+  const { data, error } = await keysetAll(client, 'outlets', 'id, name, country')
+  if (error) throw error
+  const map = new Map()
+  for (const o of data ?? []) {
+    if (o.name && o.country) map.set(o.name, o.country)
+  }
+  return map
+}
+
 // Distinct outlet names present in the article stream (for filter chips).
 export async function loadOutlets({ supabaseClient } = {}) {
   const client = supabaseClient ?? supabase
@@ -856,7 +956,7 @@ export async function loadSkyVerificationForNode(nodeId) {
     const { data, error } = await supabase
       .from('sky_verifications')
       .select(SKY_COLUMNS)
-      .in('article_id', [...ids])
+      .in('id', [...ids])
       .order('captured_at', { ascending: false, nullsFirst: false })
       .limit(1)
     if (error) return null
