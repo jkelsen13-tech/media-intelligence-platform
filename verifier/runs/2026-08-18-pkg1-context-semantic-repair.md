@@ -185,6 +185,8 @@ Commits (main, in push order), all via GitHub MCP push_files; byte-verification
 | 20dd1a48  | src/views/GroupedTimelineView.jsx, src/styles/timeline.css, tests/arcGroupedTimelinePagination.test.mjs (disclosed FIX, D8) | MATCH 38c6c8f8 / b9f49f86 / 7aca16ee | RED (expected — see D8) |
 | d2687863  | src/views/TimelineView.jsx (disclosed FIX completing the set, D8) | MATCH ba0bf90b | GREEN (expected) |
 | 0dda6d3e  | src/lib/arcGroupedTimeline.js (disclosed comment-transcription FIX, D9) | MATCH 36aa1d6f | GREEN (expected) |
+| 4f59242b  | verifier Amendment A2: pkg1-v1/README.md, check_pkg1.py, this run record (3 of 4 intended files — see D10) | MATCH b84ab1a3 / 3be9bcf6 / 2752d14e | doc-only |
+| d9389696  | verifier/README.md index (disclosed FIX completing the A2 set, D10) | MATCH 7518b621 | doc-only |
 
 All 11 code/test blobs byte-verified MATCH after their final commits.
 HEAD 9b34c178: build success, test success.
@@ -193,6 +195,12 @@ Amendment A1 addition: all 6 addition blobs byte-verified MATCH after their
 final commits (ac0a633c's lib blob only after the 0dda6d3e correction — D9).
 HEAD 0dda6d3e tree = the tree the 400/400 suite, the green build, and the
 7 pass / 0 fail / 1 note verifier re-run were executed against.
+
+Amendment A2: all 4 verifier blobs byte-verified MATCH (this run record's
+A2 text lands in 4f59242b; the present push-record/D10 lines ride the
+follow-up amendment commit, whose own blob is verified after push). The
+8 pass / 0 fail / 0 note re-run executed against HEAD 0dda6d3e's app tree —
+Amendment A2 changed verifier files only, no app code.
 
 ### Push-time disclosures
 
@@ -234,3 +242,16 @@ HEAD 0dda6d3e tree = the tree the 400/400 suite, the green build, and the
   comment-only, no code/behavior change). Corrected to the verified local
   bytes in 0dda6d3e and re-verified MATCH 36aa1d6f. Caught by
   byte-verification, not CI — same detection channel as D6.
+- **D10 — split-push of the Amendment A2 verifier commit (recurring class,
+  same as D8):** 4f59242b's message described four files (criteria, checker,
+  run record, index) but the push carried three — verifier/README.md was
+  omitted. Caught by the post-push file-list re-read against the message
+  (the disclosure-1 rule doing its job, one step too late — it must fire
+  BEFORE the push call, not after). Landed verbatim in disclosed FIX
+  d9389696; all four blobs byte-verified MATCH. Doc-only; no CI impact.
+  Root-cause note: three split-push recurrences in one day (D8, D10, and
+  the earlier trackb3-v4 instance) share one mechanism — the files array
+  is assembled separately from the message text and never mechanically
+  cross-checked; the correct fix is procedural (count the array against
+  the message before the call), recorded here for the owner's process
+  decision.
