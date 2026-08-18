@@ -225,8 +225,7 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
         setError(err.message)
       })
       .finally(() => {
-        if (seq !== requestRef.current) return
-        setLoading(false)
+        loadingMoreRef.current = false
       })
   }
 
