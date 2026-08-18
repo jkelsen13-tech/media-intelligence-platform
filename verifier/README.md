@@ -439,3 +439,18 @@ the real cited_type discriminator, event grouping, live-corpus header with
 honest static-corpus date, grayscale + AA contrast, mobile 390px.
 Details: `trackb4-v1/README.md`. Run log:
 `runs/2026-08-18-trackb-step4-news-feed.md`.
+
+---
+
+## pkg1-v1 — Package 1: Context and Semantic Integrity Repair (2026-08-18)
+
+22_NOTE_DEEP_READINESS_REVIEW Package 1 items 1–4, implement order 1→4→3→2:
+Graph jump-reset seam (Arc→Graph leaves no stale relationship panel / focus
+stack), lineage-safe Source Comparison wording ("Also reported by … lineage
+not verified", E2 multi-outlet), truthful Timeline footer tab labels
+("Open Evidence"/"Open Connections"), and the explicit
+arcId/eventKey/nodeId/relationshipId/articleId navigation contract including
+the News→Timeline return-to-origin case (lands on the originating arc, never
+the global corpus when an arc is known).
+Details: `pkg1-v1/README.md`. Run log:
+`runs/2026-08-18-pkg1-context-semantic-repair.md`.
