@@ -11,7 +11,7 @@
 //   - Unclassified bucket is a first-class section, pinned LAST after all arc
 //     sections, never sorted into them, never silently dropped.
 //   - Pagination is by ARC SECTION (5 sections/page), not by event; the
-//     Unclassified section carries its own internal 25-event internal pager.
+//     Unclassified section carries its own internal 25-event pager.
 //   - A category filter cannot match Unclassified (no category to match) —
 //     it collapses to a one-line placeholder with a toggle, never vanishes.
 
