@@ -73,7 +73,7 @@ def rgb_of(page, selector, prop="color"):
         """([sel, prop]) => {
           const el = document.querySelector(sel);
           if (!el) return null;
-          const m = getComputedStyle(el)[prop].match(/[\d.]+/g).map(Number);
+          const m = getComputedStyle(el)[prop].match(/[\\d.]+/g).map(Number);
           return m;
         }""",
         [selector, prop],
@@ -92,7 +92,7 @@ def bg_of(page, selector):
             node = node.parentElement;
             bg = getComputedStyle(node).backgroundColor;
           }
-          return bg.match(/[\d.]+/g).map(Number).slice(0, 3);
+          return bg.match(/[\\d.]+/g).map(Number).slice(0, 3);
         }""",
         selector,
     )
@@ -241,7 +241,7 @@ def run():
         # 9. No status badges on card faces.
         face_badges = page.evaluate(
             "() => [...document.querySelectorAll('.news-card .news-badge')]"
-            ".map(e => e.className).filter(c => /\b(mono|muted)\b/.test(c)).length")
+            ".map(e => e.className).filter(c => /\\b(mono|muted)\\b/.test(c)).length")
         ok &= record("desktop/no-status-badge-on-cards", face_badges == 0,
                      f"{face_badges} status badges on card faces")
 
