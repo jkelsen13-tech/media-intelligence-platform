@@ -6,6 +6,22 @@ import GraphViewControls from './GraphViewControls'
 import { cssToken } from './theme'
 import { seedPositions } from '../analysis/layoutSeed'
 import { splitByConnectivity, placeDisconnectedBand } from './bandPlacement'
+import {
+  CARD_W,
+  CARD_H,
+  CARD_ZOOM_MIN,
+  MAX_CARDS,
+  FOCAL_RELAX_RADIUS_PX,
+  REGION_META,
+  regionOf,
+  cardTypeInfo,
+  cardName,
+  regionBoundaries,
+  collapsedCounts,
+  relaxCards,
+  separateRegions,
+  cardRegime,
+} from './cardRegions'
 
 cytoscape.use(fcose)
 
@@ -159,9 +175,17 @@ export default function GraphView({
   onEdgeSelect,
   // Fade the view controls while a mobile bottom sheet is open.
   controlsDimmed = false,
+  // Step 2b: full-corpus node list (for region "+N" collapsed counts) and
+  // whether this render is a focused view (region boundaries are
+  // focused-view-only, owner-ruled adjustment 4).
+  allNodes = null,
+  focused = false,
 }) {
   const containerRef = useRef(null)
   const gridRef = useRef(null)
+  const regionCanvasRef = useRef(null)
+  const cardsLayerRef = useRef(null)
+  const regionLabelLayerRef = useRef(null)
   const bandLabelRef = useRef(null)
   const cyRef = useRef(null)
   // Item 2: Reset button re-runs the initial layout (assigned in effect).
@@ -358,12 +382,21 @@ export default function GraphView({
     const applyLabels = () => {
       const z = cy.zoom()
       cy.elements().removeClass('lbl')
-      if (z >= 1.2) {
+      // Step 2b: cards engage only in FOCUSED views (owner-ruled adjustments
+      // 2+4). The full-corpus opt-in keeps the shipped label policy at every
+      // zoom — compact shapes, hub labels 0.6-1.2x, all labels above 1.2x.
+      const cardMode = focused && z >= CARD_ZOOM_MIN
+      if (cardMode) {
+        // DOM cards carry node text; canvas node labels stay off so text
+        // never double-renders. Edges keep their shipped 1.2x gating.
+        if (z >= 1.2) cy.edges().addClass('lbl')
+      } else if (z >= 1.2) {
         cy.elements().addClass('lbl')
       } else if (z >= 0.6) {
         topHubs.forEach((n) => n.addClass('lbl'))
       }
       manualLabels.forEach((id) => {
+        if (cardMode) return // card zoom in a focused view: card carries it
         const n = cy.getElementById(id)
         if (n.nonempty()) n.addClass('lbl')
       })
@@ -478,6 +511,238 @@ export default function GraphView({
     cy.on('zoom pan', scheduleDeclutter)
     cy.on('layoutstop', scheduleDeclutter)
 
+    // --- Step 2b: DOM card layer + dashed region boundaries ---------------
+    // Cards and region labels are DOM (owner-ruled adjustment 1): browser
+    // text scaling applies natively, which canvas text cannot do. Boundary
+    // dashes are drawn on a canvas UNDER the cytoscape canvas (same layer as
+    // the grid), so a boundary can never obscure an edge (adjustment: edges
+    // take priority). Boundaries render in focused views only (adjustment 4).
+    const TYPE_ICONS = {
+      diamond: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 1.5 L14.5 8 L8 14.5 L1.5 8 Z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
+      document: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3.5 1.5 h6.5 l2.5 2.5 v10.5 h-9 Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 1.5 v2.5 h2.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+      octagon: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M5 1.5 h6 L14.5 5 v6 L11 14.5 H5 L1.5 11 V5 Z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
+      circle: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="5.4" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2.8 14.2 c0.6-3 2.8-4.4 5.2-4.4 s4.6 1.4 5.2 4.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
+    }
+
+    const cardEls = new Map() // node id -> card div (reused across frames)
+
+    const clearCards = () => {
+      cardEls.forEach((el) => el.remove())
+      cardEls.clear()
+    }
+
+    const buildCard = (node) => {
+      const d = node.data()
+      const info = cardTypeInfo(d)
+      const el = document.createElement('div')
+      el.className = 'graph-card'
+      el.dataset.nodeId = node.id()
+      // Visual duplicate of the canvas node; the EdgeList table is the
+      // nonvisual equivalent (02B acceptance), so the card is aria-hidden.
+      el.setAttribute('aria-hidden', 'true')
+      const date = d.occurred_at ? String(d.occurred_at).slice(0, 10) : ''
+      el.innerHTML =
+        `<span class="graph-card-icon">${TYPE_ICONS[info.icon] ?? TYPE_ICONS.document}</span>` +
+        `<span class="graph-card-name"></span>` +
+        (date ? `<span class="graph-card-date"></span>` : '') +
+        `<span class="graph-card-type"></span>`
+      el.querySelector('.graph-card-name').textContent = cardName(d.label)
+      if (date) el.querySelector('.graph-card-date').textContent = date
+      el.querySelector('.graph-card-type').textContent = info.typeLabel
+      el.addEventListener('click', () => {
+        if (cy.destroyed()) return
+        if (onEdgeSelect) onEdgeSelect(null)
+        node.select()
+        if (onSelect) onSelect(node.data())
+      })
+      return el
+    }
+
+    const drawRegions = () => {
+      const canvas = regionCanvasRef.current
+      const labelLayer = regionLabelLayerRef.current
+      if (!canvas || !labelLayer) return
+      const ctx = canvas.getContext('2d')
+      const dpr = window.devicePixelRatio || 1
+      const w = canvas.clientWidth
+      const h = canvas.clientHeight
+      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+        canvas.width = w * dpr
+        canvas.height = h * dpr
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, w, h)
+      labelLayer.textContent = ''
+      if (!focused) return // adjustment 4: focused views only
+      const zoom = cy.zoom()
+      const pan = cy.pan()
+      const members = []
+      cy.nodes().forEach((n) => {
+        const region = regionOf(n.data())
+        if (!region) return
+        const p = n.position()
+        members.push({ id: n.id(), x: p.x, y: p.y, region })
+      })
+      const shownIds = new Set(members.map((m) => m.id))
+      const collapsed = collapsedCounts(allNodes ?? nodes, shownIds)
+      const regions = regionBoundaries(members)
+      for (const r of regions) {
+        const meta = REGION_META[r.region]
+        if (!meta) continue
+        const color = cssToken(meta.cssVar, meta.color)
+        // Dashed, thin, no fill — dashes + label carry the region with all
+        // accent color removed (universal design test).
+        ctx.strokeStyle = color
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([6, 5])
+        ctx.beginPath()
+        r.points.forEach((p, i) => {
+          const x = p.x * zoom + pan.x
+          const y = p.y * zoom + pan.y
+          if (i === 0) ctx.moveTo(x, y)
+          else ctx.lineTo(x, y)
+        })
+        ctx.closePath()
+        ctx.stroke()
+        ctx.setLineDash([])
+        // Region label — always visible, DOM so text scaling applies.
+        const label = document.createElement('div')
+        label.className = 'graph-region-label'
+        label.textContent = meta.label
+        label.style.transform = `translate(${r.labelAnchor.x * zoom + pan.x}px, ${r.labelAnchor.y * zoom + pan.y - 22}px)`
+        labelLayer.appendChild(label)
+        // "+N" badge at the region's top-right for collapsed members.
+        const hidden = collapsed.get(r.region) ?? 0
+        if (hidden > 0) {
+          const maxX = Math.max(...r.points.map((p) => p.x))
+          const minY = Math.min(...r.points.map((p) => p.y))
+          const badge = document.createElement('div')
+          badge.className = 'graph-region-badge'
+          badge.textContent = `+${hidden}`
+          badge.title = `${hidden} more ${meta.label} nodes not shown in this focused view`
+          // Right of the top-right vertex, vertically centered on the hull
+          // edge — never collides with the top-left region label, even on
+          // narrow hulls.
+          badge.style.transform = `translate(${maxX * zoom + pan.x + 8}px, ${minY * zoom + pan.y - 10}px)`
+          labelLayer.appendChild(badge)
+        }
+      }
+    }
+
+    const updateCards = () => {
+      const layer = cardsLayerRef.current
+      if (!layer) return
+      const z = cy.zoom()
+      const { regime } = cardRegime(z)
+      if (!focused || regime !== 'cards') {
+        if (cardEls.size > 0) clearCards()
+        return
+      }
+      const cw = cy.width()
+      const ch = cy.height()
+      const pad = 60 // rendered-px margin so cards entering the viewport don't pop
+      const pan = cy.pan()
+      const visible = []
+      cy.nodes().forEach((n) => {
+        const rp = n.renderedPosition()
+        if (rp.x < -pad || rp.x > cw + pad || rp.y < -pad || rp.y > ch + pad) return
+        visible.push(n)
+      })
+      // Safety cap: beyond MAX_CARDS the densest nodes by degree keep cards;
+      // the rest stay compact shapes (their text is unreadable at that
+      // density anyway — the relationship list remains the full equivalent).
+      visible.sort((a, b) => b.degree(false) - a.degree(false))
+      const carded = visible.slice(0, MAX_CARDS)
+      const keep = new Set(carded.map((n) => n.id()))
+      cardEls.forEach((el, id) => {
+        if (!keep.has(id)) {
+          el.remove()
+          cardEls.delete(id)
+        }
+      })
+      for (const n of carded) {
+        let el = cardEls.get(n.id())
+        if (!el) {
+          el = buildCard(n)
+          cardEls.set(n.id(), el)
+          layer.appendChild(el)
+        }
+        const rp = n.renderedPosition()
+        el.style.transform = `translate(${rp.x}px, ${rp.y}px) translate(-50%, -50%) scale(${Math.min(z, 1.6)})`
+        el.classList.toggle('selected', n.selected())
+      }
+    }
+
+    // relaxCards wiring (adjustment 3): on settle, separate the carded set;
+    // on pan/zoom, debounced, scoped to visible cards — focal-scoped at
+    // max-zoom hub views where the visible set can still be hundreds.
+    const runRelax = () => {
+      const z = cy.zoom()
+      const { regime, relaxScope } = cardRegime(z)
+      if (!focused || regime !== 'cards' || relaxScope === 'none') return
+      const cw = cy.width()
+      const ch = cy.height()
+      const cx = cw / 2
+      const cyC = ch / 2
+      let scope = []
+      cy.nodes().forEach((n) => {
+        const rp = n.renderedPosition()
+        if (relaxScope === 'focal') {
+          if (Math.hypot(rp.x - cx, rp.y - cyC) > FOCAL_RELAX_RADIUS_PX) return
+        } else {
+          const pad = 60
+          if (rp.x < -pad || rp.x > cw + pad || rp.y < -pad || rp.y > ch + pad) return
+        }
+        scope.push(n)
+      })
+      if (scope.length > MAX_CARDS) scope = scope.sort((a, b) => b.degree(false) - a.degree(false)).slice(0, MAX_CARDS)
+      if (scope.length < 2) return
+      separateVisible(scope)
+    }
+
+    // Card separation, then inter-region separation (hull purity), then a
+    // final card pass — region nudges can re-open card overlaps.
+    const separateVisible = (scope) => {
+      relaxCards(scope)
+      separateRegions(scope)
+      relaxCards(scope)
+      updateCards()
+      drawRegions()
+    }
+
+    // Region boundaries need pure geometry at EVERY zoom, not just card
+    // zooms — so in focused views the separation pass runs at layout settle
+    // regardless of the card regime (cards themselves stay zoom-gated).
+    const runSettleSeparation = () => {
+      if (!focused) return
+      let scope = cy.nodes().toArray()
+      if (scope.length > MAX_CARDS) {
+        scope = scope.sort((a, b) => b.degree(false) - a.degree(false)).slice(0, MAX_CARDS)
+      }
+      if (scope.length < 2) return
+      separateVisible(scope)
+    }
+
+    let relaxTimer = null
+    const scheduleRelax = () => {
+      clearTimeout(relaxTimer)
+      relaxTimer = setTimeout(runRelax, 140)
+    }
+
+    const updateOverlays = () => {
+      updateCards()
+      drawRegions()
+      applyLabels()
+    }
+    cy.on('zoom pan resize', updateOverlays)
+    cy.on('zoom pan', scheduleRelax)
+    cy.on('layoutstop', () => {
+      updateOverlays()
+      runSettleSeparation()
+    })
+    cy.on('select unselect', 'node', updateCards)
+
+
     if (onSelect) {
       // Node taps select the node; edge taps are routed to the docked
       // relationship panel (item 5) instead of the article panel.
@@ -585,6 +850,8 @@ export default function GraphView({
       resetLayoutRef.current = null
       graphContainer.removeEventListener('wheel', onWheelZoom, { capture: true })
       clearTimeout(declutterTimer)
+      clearTimeout(relaxTimer)
+      clearCards()
       resizeObserver?.disconnect()
       cy.destroy()
     }
@@ -660,6 +927,7 @@ export default function GraphView({
   return (
     <div className="graph-canvas-wrap">
       <canvas ref={gridRef} className="graph-grid" aria-hidden="true" />
+      <canvas ref={regionCanvasRef} className="graph-regions" aria-hidden="true" />
       <div
         ref={containerRef}
         className="graph-canvas"
@@ -668,6 +936,8 @@ export default function GraphView({
         aria-label="Knowledge graph canvas. Plus and minus keys zoom, zero fits the graph."
         onKeyDown={onGraphKeyDown}
       />
+      <div ref={regionLabelLayerRef} className="graph-region-labels" aria-hidden="true" />
+      <div ref={cardsLayerRef} className="graph-cards" aria-hidden="true" />
       <div
         ref={bandLabelRef}
         className="graph-band-label"

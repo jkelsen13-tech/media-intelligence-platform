@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { INFERRED_CLAIMED_BY, edgePlainLabel } from './theme'
+import { REGION_META, regionOf } from './cardRegions'
 import './edge-list.css'
 
 // 02B Phase 2 final acceptance — accessibility alternative.
@@ -23,6 +24,18 @@ export default function EdgeList({
   const labelById = useMemo(() => {
     const m = new Map()
     nodes.forEach((n) => m.set(n.id ?? n.slug, n.label ?? (n.id ?? n.slug)))
+    return m
+  }, [nodes])
+
+  // Step 2b: cluster membership in the nonvisual equivalent. Region
+  // boundaries are a focused-view visual; the same membership must be
+  // readable without the canvas (addendum Screen 6 requirement).
+  const regionById = useMemo(() => {
+    const m = new Map()
+    nodes.forEach((n) => {
+      const r = regionOf(n)
+      if (r) m.set(n.id ?? n.slug, REGION_META[r]?.label ?? r)
+    })
     return m
   }, [nodes])
 
@@ -72,6 +85,7 @@ export default function EdgeList({
               <th scope="col">Source</th>
               <th scope="col">Relationship</th>
               <th scope="col">Target</th>
+              <th scope="col">Regions</th>
               <th scope="col">Reliability</th>
               <th scope="col">Evidence</th>
             </tr>
@@ -93,6 +107,12 @@ export default function EdgeList({
                     {inferred ? ' (hypothesis)' : ''}
                   </td>
                   <td>{tLabel}</td>
+                  <td>
+                    {[regionById.get(e.source), regionById.get(e.target)]
+                      .filter(Boolean)
+                      .filter((v, i, arr) => arr.indexOf(v) === i)
+                      .join(' → ') || '—'}
+                  </td>
                   <td>{Number.isFinite(rel) ? `${rel} of 4` : '—'}</td>
                   <td>
                     <button
@@ -109,7 +129,7 @@ export default function EdgeList({
             })}
             {visibleEdges.length === 0 && (
               <tr>
-                <td colSpan={5} className="edge-list-empty">
+                <td colSpan={6} className="edge-list-empty">
                   No relationships match the current filters.
                 </td>
               </tr>
