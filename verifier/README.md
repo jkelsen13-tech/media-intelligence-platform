@@ -380,3 +380,33 @@ Differs from prior version: completes Track B Step 3 — both addendum
 screens now ship the shared timeline engine; first footer slot gated on
 tab state; first item closed with the disclosure-1 pre-push rule
 active (message-vs-file-list re-read) and zero disclosures needed.
+
+## trackb2b-v1 — 2026-08-18 — Step 2b pre-build clearance (three outstanding 2026-08-08 tests)
+Measures: card-node + dashed-region-boundary design modeled headlessly against
+the live 750-node corpus BEFORE any implementation, per the owner's gate.
+T1 mobile reflow (390/360px viewports, focused depth-1/2), T2 200% text
+scaling (canvas-vs-DOM decision forced with numbers), T3 dense states
+(full-corpus card feasibility + zoom-gated reading model). Fixed pass
+criteria in `trackb2b-v1/README.md` set before first run; findings +
+owner-ruling adjustments in `trackb2b-v1/findings-2026-08-18.md`.
+Differs from prior version: first PRE-BUILD design-clearance verifier (no
+production code exists to test); first use of a deterministic
+rect-separation pass (`relaxCards`) as a measured design element; first
+experimental proof that cytoscape-fcose 2.2.0 ignores nodeSeparation.
+Run log: `runs/2026-08-18-trackb-step2b-prebuild.md`. Prefixed namespace per
+the 2026-08-17 collision fix; no schema or source changes.
+
+## trackb2b-v2 — 2026-08-18 — Step 2b final-implementation re-confirmation
+Measures: the same three tests (T1 mobile reflow, T2 200% text scaling,
+T3 dense states) re-run against the ACTUAL shipped modules
+(`src/graph/cardRegions.js`, `src/lib/desktopFocus.js`,
+`src/graph/GraphView.jsx`) per the owner's re-confirmation rule — 11 checks
+T1.a–T3.d, fixed criteria in `trackb2b-v2/README.md` set before first run.
+Plus browser smoke (puppeteer, live preview): six scenarios incl. grayscale
+accent-removal review.
+Differs from prior version: v1 cleared a DESIGN pre-build; v2 verifies the
+SHIPPED implementation (imports production modules directly, no re-model).
+Includes root-cause record of a smoke-script artifact (fixed 3-press zoom
+straddling CARD_ZOOM_MIN=1.0 from fit ≈0.578) resolved by adaptive zoom —
+no app code change.
+Run log: `runs/2026-08-18-trackb-step2b-final.md`. No schema or source changes.
