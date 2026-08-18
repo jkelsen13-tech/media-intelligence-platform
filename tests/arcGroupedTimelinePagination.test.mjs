@@ -2,7 +2,10 @@
 // 4ca5b0f): the grouped timeline loader runs the SAME read set as the flat
 // timeline loader plus arc_events/arc_milestones — all seven keyset reads
 // must return complete sets past the PostgREST 1000-row ceiling so the two
-// views can never disagree. The fake emulates PostgREST exactly on the
+// views can never disagree. (2026-08-18 Package 1 arc-grouped addition:
+// articles now also selects outlet, and event_articles joined the read set
+// via keysetAllComposite — eight reads total — for the per-event outlet
+// count; the completeness bar is unchanged.) The fake emulates PostgREST exactly on the
 // failure axis: every response is capped at 1000 rows unconditionally.
 // Assertions name SPECIFIC rows beyond position 1000 (Doc 13 acceptance bar).
 
@@ -138,7 +141,7 @@ test('site 4: flat and grouped views agree on deep rows (identical read set)', a
   }
 })
 
-test('structure: grouped loader keyset-paginates all seven reads', () => {
+test('structure: grouped loader keyset-paginates all eight reads', () => {
   const src = readFileSync(new URL('../src/lib/arcGroupedTimeline.js', import.meta.url), 'utf8')
   assert.match(src, /keysetAll\(supabase, 'nodes', 'id, slug, label, description, confidence, summary, occurred_at, arc_id'/)
   // doc_strength added 2026-08-18 (Track B Step 3 item 4, read-path only):
@@ -146,8 +149,13 @@ test('structure: grouped loader keyset-paginates all seven reads', () => {
   // any gap may be labeled "Source-supported causal link".
   assert.match(src, /keysetAll\(supabase, 'edges', 'id, source_id, target_id, type, weight, label, doc_strength'/)
   assert.match(src, /keysetAll\(supabase, 'nodes', 'id, slug, label'\)/)
-  assert.match(src, /keysetAll\(supabase, 'articles', 'id, arc_id'\)/)
+  // outlet added 2026-08-18 (Package 1 arc-grouped addition): per-event
+  // outlet counts on grouped cards.
+  assert.match(src, /keysetAll\(supabase, 'articles', 'id, arc_id, outlet'\)/)
   assert.match(src, /keysetAll\(supabase, 'story_arcs', 'id, title, category, started_at'\)/)
   assert.match(src, /keysetAll\(supabase, 'arc_events', 'id, arc_id, occurred_at'\)/)
   assert.match(src, /keysetAll\(supabase, 'arc_milestones', 'id, arc_id, status'\)/)
+  // Package 1 arc-grouped addition: event memberships for the outlet index,
+  // composite-PK keyset (same helper as loadEventGrouping).
+  assert.match(src, /keysetAllComposite\(supabase, 'event_articles', 'event_id, article_id'/)
 })

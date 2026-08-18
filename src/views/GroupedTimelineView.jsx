@@ -37,6 +37,10 @@ function confidenceColor(score) {
 // One event card — same structure as the flat view's card so the two modes
 // stay visually consistent; arc chip is omitted inside an arc section (the
 // section header IS the arc context) but the News Feed chip is kept.
+// Package 1 arc-grouped addition: when the event resolves to the
+// events/event_articles store, the card shows how many distinct outlets
+// reported it ("N outlets reporting"); when the join does not resolve the
+// line is withheld entirely (never a fabricated count).
 function EventCard({ evt, outbound, inbound, isCollapsed, onToggle, onOpenArticle, registerRef }) {
   const key = evt.id ?? evt.slug
   const showArticle = Boolean(evt.article_id && onOpenArticle)
@@ -48,6 +52,11 @@ function EventCard({ evt, outbound, inbound, isCollapsed, onToggle, onOpenArticl
           <div>
             <div className="timeline-date">{evt.occurred_at ?? 'undated'}</div>
             <h3>{evt.label}</h3>
+            {evt.outletCount > 0 && (
+              <span className="timeline-outlets">
+                {evt.outletCount} outlet{evt.outletCount === 1 ? '' : 's'} reporting
+              </span>
+            )}
             {showArticle && (
               <div className="timeline-xlinks">
                 <button type="button" className="timeline-xlink" onClick={() => onOpenArticle(evt.article_id)}>
@@ -103,7 +112,12 @@ function EventCard({ evt, outbound, inbound, isCollapsed, onToggle, onOpenArticl
   )
 }
 
-export default function GroupedTimelineView({ onOpenArc, onOpenArticle, focusEventKey }) {
+// Package 1 arc-grouped addition (owner-directed 2026-08-18): arcId restricts
+// the view to ONE arc's section — used for arc-scope Timeline landings so the
+// return-to-origin jump renders the richer grouped cards (with per-event
+// outlet counts) instead of the flat list. Additive: arcId null is the
+// original global behavior, untouched.
+export default function GroupedTimelineView({ onOpenArc, onOpenArticle, focusEventKey, arcId = null }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [query, setQuery] = useState('')
@@ -158,7 +172,7 @@ export default function GroupedTimelineView({ onOpenArc, onOpenArticle, focusEve
 
   const filtered = useMemo(() => {
     if (!data) return null
-    return filterGrouped(
+    const base = filterGrouped(
       data.grouped,
       {
         term: query.trim().toLowerCase(),
@@ -169,7 +183,19 @@ export default function GroupedTimelineView({ onOpenArc, onOpenArticle, focusEve
       },
       linksByKey,
     )
-  }, [data, query, linkFilter, dateFrom, dateTo, category, linksByKey])
+    // Arc scope: only the landing arc's section, never the section pager or
+    // Unclassified. The section header still renders (arc context + meta).
+    if (arcId) {
+      return {
+        ...base,
+        sections: base.sections.filter((s) => s.arcId === arcId),
+        unclassifiedEvents: [],
+        unclassifiedTotal: 0,
+        unclassifiedPlaceholder: false,
+      }
+    }
+    return base
+  }, [data, query, linkFilter, dateFrom, dateTo, category, linksByKey, arcId])
 
   const categories = useMemo(() => {
     if (!data) return []
@@ -288,13 +314,15 @@ export default function GroupedTimelineView({ onOpenArc, onOpenArticle, focusEve
 
   return (
     <div className="timeline-view timeline-grouped">
-      <div className="timeline-intro">
-        <h2>Causal Timeline — grouped by story arc</h2>
-        <p>
-          Events mapped causally, not just chronologically — grouped into the story arcs they
-          belong to, each arc its own bounded sub-timeline.
-        </p>
-      </div>
+      {!arcId && (
+        <div className="timeline-intro">
+          <h2>Causal Timeline — grouped by story arc</h2>
+          <p>
+            Events mapped causally, not just chronologically — grouped into the story arcs they
+            belong to, each arc its own bounded sub-timeline.
+          </p>
+        </div>
+      )}
 
       <div className="timeline-controls">
         <input
@@ -327,17 +355,19 @@ export default function GroupedTimelineView({ onOpenArc, onOpenArticle, focusEve
             To{' '}
             <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </label>
-          <label>
-            Category{' '}
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="">All categories</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
+          {!arcId && (
+            <label>
+              Category{' '}
+              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                <option value="">All categories</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
         <div className="timeline-bulk">
           <button type="button" onClick={() => setAllCollapsed(false)}>Expand all</button>
@@ -345,21 +375,38 @@ export default function GroupedTimelineView({ onOpenArc, onOpenArticle, focusEve
         </div>
       </div>
 
-      <p className="timeline-count" aria-live="polite">
-        {counts.total} events · {counts.sectionCount} arc sections + {counts.unclassified}{' '}
-        unclassified ({counts.direct} direct, {counts.derivable} via article arc) — every event
-        shown exactly once
-        {countCheck && !countCheck.ok && (
-          <strong className="timeline-count-error">
-            {' '}— COUNT CHECK FAILED: rendered {countCheck.rendered} of {countCheck.expected}
-          </strong>
-        )}
-        {filtered.shownEvents !== counts.total && ` · filters active: showing ${filtered.shownEvents}`}
-        {data.suppressed > 0 &&
-          ` · ${data.suppressed} duplicate article mirrors suppressed (same article, same event: the evt- node is canonical)`}
-      </p>
+      {arcId ? (
+        <p className="timeline-count" aria-live="polite">
+          {filtered.sections.reduce((n, s) => n + s.events.length, 0)} event
+          {filtered.sections.reduce((n, s) => n + s.events.length, 0) === 1 ? '' : 's'} in this arc
+          — grouped view{query || linkFilter !== 'any' || dateFrom || dateTo ? ' · filters active' : ''}
+        </p>
+      ) : (
+        <p className="timeline-count" aria-live="polite">
+          {counts.total} events · {counts.sectionCount} arc sections + {counts.unclassified}{' '}
+          unclassified ({counts.direct} direct, {counts.derivable} via article arc) — every event
+          shown exactly once
+          {countCheck && !countCheck.ok && (
+            <strong className="timeline-count-error">
+              {' '}— COUNT CHECK FAILED: rendered {countCheck.rendered} of {countCheck.expected}
+            </strong>
+          )}
+          {filtered.shownEvents !== counts.total && ` · filters active: showing ${filtered.shownEvents}`}
+          {data.suppressed > 0 &&
+            ` · ${data.suppressed} duplicate article mirrors suppressed (same article, same event: the evt- node is canonical)`}
+        </p>
+      )}
 
-      {filtered.sections.length === 0 && filtered.unclassifiedEvents.length === 0 && (
+      {arcId && filtered.sections.length === 0 && (
+        <p className="notice">
+          No graph-resolved events for this arc in the grouped view
+          {query || linkFilter !== 'any' || dateFrom || dateTo
+            ? ' match the current filters.'
+            : ' — the Flat layout shows this arc\u2019s recorded chronology.'}
+        </p>
+      )}
+
+      {!arcId && filtered.sections.length === 0 && filtered.unclassifiedEvents.length === 0 && (
         <p className="notice">No events match the current filters.</p>
       )}
 
@@ -393,7 +440,7 @@ export default function GroupedTimelineView({ onOpenArc, onOpenArticle, focusEve
         </section>
       ))}
 
-      {isLastPage && (filtered.unclassifiedTotal > 0 || filtered.unclassifiedEvents.length > 0) && (
+      {!arcId && isLastPage && (filtered.unclassifiedTotal > 0 || filtered.unclassifiedEvents.length > 0) && (
         <section className="timeline-arc-section timeline-unclassified" aria-label="Unclassified events">
           <header className="timeline-arc-header">
             <h3>Unclassified</h3>
@@ -445,7 +492,7 @@ export default function GroupedTimelineView({ onOpenArc, onOpenArticle, focusEve
         </section>
       )}
 
-      {pageCount > 1 && (
+      {!arcId && pageCount > 1 && (
         <nav className="timeline-pager" aria-label="Arc section pages">
           <button type="button" disabled={safePage === 0} onClick={() => setSectionPage(safePage - 1)}>
             ← Previous

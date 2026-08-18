@@ -308,3 +308,14 @@
   gap: 0.5rem;
   padding: 0.5rem 1rem 0;
 }
+
+/* Package 1 arc-grouped addition: per-event outlet count on grouped cards.
+   Token colors only (Step 1 bar); labeled text, never color-carried. */
+.timeline-outlets {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+}
