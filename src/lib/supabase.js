@@ -123,7 +123,11 @@ export async function loadGraph({ supabaseClient } = {}) {
 
   // Doc 13 site 2: both reads keyset-paginate past the 1000-row ceiling.
   let [nodesRes, edgesRes] = await Promise.all([
-    keysetAll(client, 'nodes', 'id, slug, label, type, description, confidence, summary, occurred_at, arc_id'),
+    // metadata added 2026-08-18 (mapping-fix track): cardTypeInfo/regionOf
+    // read metadata.entity_type; without it every actor fell to the
+    // missing-metadata default and rendered "Person" in Civil society
+    // regardless of the stored value. Read-path only.
+    keysetAll(client, 'nodes', 'id, slug, label, type, description, confidence, summary, occurred_at, arc_id, metadata'),
     keysetAll(client, 'edges', EDGE_BASE + EDGE_EVIDENCE),
   ])
   if (edgesRes.error) {
