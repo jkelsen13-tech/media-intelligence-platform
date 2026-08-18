@@ -458,5 +458,12 @@ Timeline landings (return-to-origin) render the grouped view (event cards with
 per-event outlet counts) instead of the flat list; Flat remains available at
 both scopes. Criteria C6 (arc-scope grouped landing) + C7 (small-arc
 degradation) added before the covering re-run: 7 pass / 0 fail / 1 note.
+Amendment A2 (2026-08-18, owner-directed C3 closure requirement): C3
+upgraded from unit-pinned NOTE to a required LIVE exercise against a real
+corpus fixture (arc-less Al Jazeera article, event-node suffix join, no
+synthetic data) — landed on the declared global fallback with event focus
+resolving; C3 NOTE → PASS on live proof. C6 fixture rule clarified
+(zero-outlet-line landings are honest withhold, recorded not failed).
+Final: 8 pass / 0 fail / 0 note.
 Details: `pkg1-v1/README.md`. Run log:
 `runs/2026-08-18-pkg1-context-semantic-repair.md`.
