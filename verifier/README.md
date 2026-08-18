@@ -430,3 +430,12 @@ the post-correction mapping against corrected data and re-frames T3.c —
 criterion change forced by the owner's ungrouped ruling, not by a failure
 sweep under the rug (v2's failing T3.c against the new mapping is preserved
 in this run log's trajectory).
+
+## trackb4-v1 (2026-08-18)
+Track B Step 4 — News Feed (addendum Screen 1). 25/25 PASS. Title block with
+browser-local last-visit count, epistemic banner, inert Region/Evidence/Topic
+pills beside wired chips, restructured cards with per-article provenance from
+the real cited_type discriminator, event grouping, live-corpus header with
+honest static-corpus date, grayscale + AA contrast, mobile 390px.
+Details: `trackb4-v1/README.md`. Run log:
+`runs/2026-08-18-trackb-step4-news-feed.md`.
