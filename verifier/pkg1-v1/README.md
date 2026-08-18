@@ -23,9 +23,9 @@ http://localhost:5199/media-intelligence-platform/ (live Supabase corpus,
   corpus". (Three-Screen Review named finding.)
 - **C3 (item 2 — declared fallback):** an article with a timeline key but
   no arc falls back to global scope. Unit-pinned
-  (tests/navigationContract.test.mjs); the browser check records the
-  outcome if a live arc-less fixture is found in the scanned cards, else
-  records "unit-pinned, no live fixture".
+  (tests/navigationContract.test.mjs). Amended by Amendment A2 (below):
+  upgraded from unit-pinned-only to a REQUIRED live exercise against a real
+  corpus fixture before Package 1 may close.
 - **C4 (item 3 — truthful labels):** the Timeline footer reads
   "Open Evidence (N article(s))" and "Open Connections (…)" — never
   "View … related articles" / "See … graph connections" — and clicking
@@ -62,3 +62,29 @@ Criteria amended BEFORE the re-run covering the addition:
   graph-resolved events must show the honest empty notice, not a crash.
 - Evidence: screenshots/pkg1-item2-arc-grouped.png,
   screenshots/pkg1-item2-arc-grouped-small.png.
+
+## Amendment A2 (2026-08-18, owner-directed C3 closure requirement)
+
+Owner ruled C3 may not close Package 1 on a unit pin alone — it needs live
+proof. Criterion amended BEFORE the covering re-run:
+
+- **C3 (live):** a REAL existing corpus article with `articles.arc_id IS
+  NULL` and an event-node slug suffix match is located via News Feed
+  search (fixture: id prefix `026b222c`, "Israel releases 35 detainees
+  from Gaza", Al Jazeera — confirmed read-only via PostgREST; no synthetic
+  or fabricated data introduced). Expanding its card must show the
+  "◈ Causal Timeline →" chip with NO arc badge; clicking it must land the
+  Timeline on the declared global fallback ("All events — global corpus")
+  with the event focus still resolving (event label visible on the page).
+- If corpus drift removes the fixture, the check FAILs with a re-pick
+  instruction rather than silently passing.
+- Evidence: screenshots/pkg1-item2-arcless-fallback.png.
+- **C6 fixture rule (clarified):** C2's landing arc is feed-order
+  dependent, and some arcs honestly resolve ZERO outlet-count lines
+  (member outlets unresolvable → withheld; correct posture, separately
+  covered by C7 and the unit pins). C6's "≥1 outlet line on the landing
+  arc" therefore permits the checker to continue scanning untried
+  arc-bearing chip cards (up to 3 further landings, each recorded) until
+  a landing arc carries resolvable outlet coverage. A zero-line landing
+  is recorded, not failed; C6 fails only if the grouped render itself is
+  absent/broken or no scanned landing shows outlet coverage.

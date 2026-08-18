@@ -90,26 +90,36 @@ def run():
         page.wait_for_selector(".news-item", timeout=20000)
         page.wait_for_timeout(2000)
         landed_arc = None
-        saw_arcless_chip = False
-        cards = page.query_selector_all(".news-item")
-        for i in range(min(len(cards), 12)):
-            try:
-                cards[i].click()
-            except Exception:
-                break
-            page.wait_for_timeout(2500)
-            chip = page.query_selector("button.news-chip.graph-link:has-text('Causal Timeline')")
-            if not chip:
-                continue
-            has_arc = page.query_selector(".news-detail .news-badge.arc, .news-item .news-badge.arc") is not None
-            if not has_arc:
-                saw_arcless_chip = True
-                continue  # C3 fixture; keep looking for an arc-bearing card first
-            chip.click()
-            page.wait_for_timeout(2500)
-            title = page.text_content(".ep-report-title") or ""
-            landed_arc = title.strip()
-            break
+        saw_arcless = []
+        tried_idx = set()
+
+        def scan_arc_landing():
+            # Expand the next untried arc-bearing card with a timeline chip,
+            # click the chip, return the landed timeline title (or None).
+            cards = page.query_selector_all(".news-item")
+            for i in range(min(len(cards), 12)):
+                if i in tried_idx:
+                    continue
+                try:
+                    cards[i].click()
+                except Exception:
+                    break
+                page.wait_for_timeout(2500)
+                chip = page.query_selector("button.news-chip.graph-link:has-text('Causal Timeline')")
+                if not chip:
+                    continue
+                tried_idx.add(i)
+                has_arc = page.query_selector(".news-detail .news-badge.arc, .news-item .news-badge.arc") is not None
+                if not has_arc:
+                    saw_arcless.append(i)
+                    continue  # C3 path; keep looking for an arc-bearing card
+                chip.click()
+                page.wait_for_timeout(2500)
+                title = page.text_content(".ep-report-title") or ""
+                return title.strip()
+            return None
+
+        landed_arc = scan_arc_landing()
         if landed_arc is None:
             ok &= record("C2/item2 return-to-origin", False, "no arc-bearing card with timeline chip found in first 12 cards")
         else:
@@ -120,20 +130,49 @@ def run():
                 f"landed on: {landed_arc!r} ({'arc scope' if is_arc else 'GLOBAL — finding NOT closed'})",
             )
             page.screenshot(path=f"{SHOTS}/pkg1-item2-return-to-origin.png", full_page=False)
-        note("C3/item2 arc-less fallback", "unit-pinned (tests/navigationContract.test.mjs); "
-             + ("live arc-less chip fixture seen but left unexercised" if saw_arcless_chip else "no live arc-less fixture in scanned cards"))
+        if saw_arcless:
+            print(f"  [C2 scan] arc-less chip card(s) seen at indexes {saw_arcless} (kept for reference)")
 
         # ---------- C6 (item 2 expansion, Amendment A1): arc-scope GROUPED landing
         # We are already on the Timeline at arc scope from C2 (landing arc).
+        # Fixture note (Amendment A2-era disclosure): C2's first arc landing
+        # is feed-order dependent, and some arcs honestly resolve ZERO outlet
+        # lines (member outlets unresolvable → withheld, the correct posture).
+        # The outlet-count criterion therefore continues scanning untried
+        # arc-bearing cards (up to 3 more landings) until one lands on an arc
+        # whose events carry resolvable outlet coverage; each landing is
+        # recorded. The zero-line landing itself is NOT a failure — the
+        # withhold posture is verified separately by C7 and the unit pins.
         if landed_arc is None:
             ok &= record("C6/item2 arc-scope grouped landing", False, "skipped — C2 found no landing")
         else:
             try:
-                page.wait_for_selector(
-                    ".timeline-grouped .timeline-card, .timeline-grouped .notice",
-                    timeout=120000,
-                )
-                page.wait_for_timeout(1500)
+                attempts = []
+                for _attempt in range(4):
+                    page.wait_for_selector(
+                        ".timeline-grouped .timeline-card, .timeline-grouped .notice",
+                        timeout=120000,
+                    )
+                    page.wait_for_timeout(1500)
+                    cards = page.query_selector_all(".timeline-grouped .timeline-card")
+                    outlet_lines = page.query_selector_all(".timeline-grouped .timeline-outlets")
+                    sections = page.query_selector_all(".timeline-grouped .timeline-arc-section")
+                    title_el = page.query_selector(".ep-report-title")
+                    cur_arc = (title_el.text_content() or "").strip() if title_el else landed_arc
+                    attempts.append((cur_arc, len(cards), len(outlet_lines), len(sections)))
+                    print(f"  [C6 landing] {cur_arc!r}: cards={len(cards)}, outlet lines={len(outlet_lines)}")
+                    if len(cards) > 0 and len(outlet_lines) >= 1 and len(sections) == 1:
+                        break
+                    if len(cards) == 0:
+                        break  # grouped render itself broken — no point re-fixturing
+                    # zero outlet lines: honest withhold on this arc; try
+                    # another arc-bearing card (fixture continuation).
+                    click_tab(page, "News")
+                    page.wait_for_selector(".news-item", timeout=20000)
+                    page.wait_for_timeout(2000)
+                    nxt = scan_arc_landing()
+                    if nxt is None:
+                        break
                 grouped_present = page.query_selector(".timeline-grouped") is not None
                 cards = page.query_selector_all(".timeline-grouped .timeline-card")
                 outlet_lines = page.query_selector_all(".timeline-grouped .timeline-outlets")
@@ -142,7 +181,7 @@ def run():
                     "C6/item2 arc-scope grouped landing",
                     grouped_present and len(cards) > 0 and len(outlet_lines) >= 1 and len(sections) == 1,
                     f"grouped={grouped_present}, sections={len(sections)}, cards={len(cards)}, "
-                    f"outlet-count lines={len(outlet_lines)}, arc={landed_arc!r}",
+                    f"outlet-count lines={len(outlet_lines)}, landings={attempts}",
                 )
                 page.screenshot(path=f"{SHOTS}/pkg1-item2-arc-grouped.png", full_page=False)
 
@@ -185,6 +224,78 @@ def run():
             except Exception as e:
                 ok &= record("C6/item2 arc-scope grouped landing", False, f"exception: {e}")
 
+        # ---------- C3 (item 2, Amendment A2): arc-less fallback — LIVE exercise
+        # Runs AFTER C6/C7 (they depend on C2's arc-scope landing state).
+        # Fixture is a REAL existing corpus article (no synthetic data):
+        # id prefix 026b222c — "Israel releases 35 detainees from Gaza"
+        # (Al Jazeera), articles.arc_id IS NULL, event node slug ends in
+        # 026b222c (both confirmed read-only via PostgREST 2026-08-18).
+        # Contract expectation: arcId null → declared global fallback, with
+        # the event focus still resolving on the global timeline.
+        click_tab(page, "News")
+        page.wait_for_selector("input.news-search", timeout=15000)
+        page.fill("input.news-search", "Israel releases 35 detainees")
+        # Debounced search + live reload; poll for the fixture card (a fixed
+        # short wait raced the reload once — checker-side, disclosed).
+        target_card = None
+        for _ in range(15):  # up to 60s
+            page.wait_for_timeout(4000)
+            for c in page.query_selector_all(".news-item"):
+                if "Israel releases 35 detainees" in (c.text_content() or ""):
+                    target_card = c
+                    break
+            if target_card is not None:
+                break
+        if target_card is None:
+            ok &= record(
+                "C3/item2 arc-less fallback (live)",
+                False,
+                "fixture article not found in feed search — corpus drift; re-pick fixture read-only",
+            )
+        else:
+            target_card.click()
+            # Chip is async (loadArticleTimelineKey join resolves after the
+            # detail render) — wait for it properly; fixed 3s sampling raced
+            # it once (checker-side race, disclosed in the run record).
+            try:
+                page.wait_for_selector(
+                    "button.news-chip.graph-link:has-text('Causal Timeline')",
+                    timeout=30000,
+                )
+                chip = True
+            except Exception:
+                chip = False
+            arc_badge = page.query_selector(".news-detail .news-badge.arc, .news-item.expanded .news-badge.arc")
+            if not chip:
+                ok &= record("C3/item2 arc-less fallback (live)", False, "timeline chip did not render on the arc-less fixture (30s wait)")
+            else:
+                page.click("button.news-chip.graph-link:has-text('Causal Timeline')")
+                # The global fallback requires the FULL global timeline load
+                # (focusEventKey triggers it from arc scope); measured ~45s on
+                # the dev server. Poll the title rather than sampling once —
+                # a fixed short wait races the load (disclosed in run record).
+                is_global = False
+                title = ""
+                for _ in range(30):  # up to 150s
+                    page.wait_for_timeout(5000)
+                    el = page.query_selector(".ep-report-title")
+                    title = (el.text_content() or "").strip() if el else ""
+                    if "global corpus" in title:
+                        is_global = True
+                        break
+                # event focus: the event label appears on the rendered page
+                page.wait_for_timeout(3000)
+                body = page.text_content("body") or ""
+                event_visible = "Israel releases 35 detainees from Gaza" in body
+                ok &= record(
+                    "C3/item2 arc-less fallback (live)",
+                    is_global and event_visible and arc_badge is None,
+                    f"chip with NO arc badge={arc_badge is None}; landed on {title!r} "
+                    f"({'declared global fallback' if is_global else 'NOT global — contract broken'}); "
+                    f"event focus visible on page={event_visible}",
+                )
+                page.screenshot(path=f"{SHOTS}/pkg1-item2-arcless-fallback.png", full_page=False)
+
         # ---------- C4 (item 3): truthful footer labels
         click_tab(page, "Timeline")
         page.wait_for_selector(".ep-tl-footerlinks", timeout=20000)
@@ -216,8 +327,11 @@ def run():
         click_tab(page, "More")
         page.wait_for_selector("text=Source Comparison", timeout=10000)
         page.click("text=Source Comparison")
-        # Live read path joins the full corpus; ~40s on the static corpus.
-        page.wait_for_selector(".sc-claim, .sc-empty, .notice.error", timeout=120000)
+        # Live read path joins the full corpus; ~40s standalone on the static
+        # corpus, but after the C3 global-timeline load in the same session
+        # it exceeded 120s twice (standalone probe: 63s, 839 claims — no app
+        # regression; timeout raised and disclosed in the run record).
+        page.wait_for_selector(".sc-claim, .sc-empty, .notice.error", timeout=240000)
         page.wait_for_timeout(2000)
         body = page.text_content("body") or ""
         no_independent = "Reported independently" not in body

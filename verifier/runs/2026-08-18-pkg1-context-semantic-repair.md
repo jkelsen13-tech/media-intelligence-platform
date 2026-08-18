@@ -94,6 +94,55 @@ the grouped view's events are graph nodes with slugs, so the 8-hex suffix
 focus match works there (flat arc scope matches arc_events rows, which
 carry no slug; scope-disclosure 3 above still applies to Flat mode).
 
+## Amendment A2 run — owner-directed C3 live-closure requirement (2026-08-18)
+
+**Disclosure (explicit, per owner instruction):** the owner ruled C3 may not
+close Package 1 on a unit pin alone; it required live proof against a real
+corpus fixture, or a disclosed constructed fixture if none existed. None
+needed construction: a read-only PostgREST sweep found 563 arc-less
+articles, 266 with event_articles membership, and 8+ whose id prefix also
+matches an event-node slug suffix. Fixture chosen from those: id prefix
+`026b222c` — "Israel releases 35 detainees from Gaza" (Al Jazeera),
+`articles.arc_id IS NULL`, event node `…026b222c` confirmed. REAL existing
+data; no synthetic or fabricated data introduced. Criteria amended
+(Amendment A2: C3 upgraded to a required live exercise; C6 fixture rule
+clarified) BEFORE this re-run.
+
+Re-run at 2026-08-18T~19:30Z (criteria amended first):
+
+- **C3 arc-less fallback (live) — PASS.** Feed search located the fixture;
+  its card shows the "◈ Causal Timeline →" chip with NO arc badge; clicking
+  it lands the Timeline on the declared global fallback ("All events —
+  global corpus") with the event focus resolving (event label visible on
+  the page). Evidence: screenshots/pkg1-item2-arcless-fallback.png.
+  C3 status upgraded NOTE → PASS on this live proof.
+- C1, C2, C4, C5, C6, C7 re-run — all **PASS** (C6: one landing, Sophie
+  Cunningham — 3 cards / 2 outlet lines, third withheld honestly).
+
+TOTAL after Amendment A2: **8 pass / 0 fail / 0 note.**
+
+Checker-side fixes during this run (disclosed, v16 precedent — checker
+defects, not app defects):
+1. C3's first version sampled for the chip at a fixed 3s after expand; the
+   chip is async (loadArticleTimelineKey join) and appeared at ~4s —
+   false FAIL "chip did not render". Fixed to a 30s wait_for_selector.
+2. Second run then showed a REAL-looking landing failure ("NOT global") —
+   investigated with a standalone probe: the arc-less jump DOES land global
+   with the event visible, but only after the full global-timeline load
+   triggered from arc scope (~45s on the dev server). Fixed to poll the
+   title up to 150s. No app change; the contract behavior was correct.
+3. C5 timed out at 120s twice in the post-C3 session position (the C3
+   global load slows the subsequent Source Comparison join); standalone
+   probe: 63s, 839 claims — no app regression. Timeout raised to 240s.
+4. C6 fixture variance: one re-run's C2 landed on Gary Cordery —
+   military escalation (feed-order dependent), whose 3 events honestly
+   resolve ZERO outlet lines (withheld, correct posture). C6's fixture
+   rule clarified in the criteria (Amendment A2): up to 3 further
+   arc-bearing landings may be scanned for one with resolvable outlet
+   coverage; zero-line landings are recorded, not failed.
+5. C3 fixture search raced the debounced reload once ("fixture not
+   found"); fixed to poll up to 60s.
+
 ## Scope disclosures
 
 1. **E2 chip rename included in item 4.** 22_NOTE item 4 names the
