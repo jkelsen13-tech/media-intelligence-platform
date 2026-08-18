@@ -710,7 +710,7 @@ export async function loadEventGrouping({ supabaseClient } = {}) {
   const map = new Map()
   for (const m of membersRes.data ?? []) {
     if (!m.article_id || !m.event_id) continue
-    map.set(m.article_id, { eventId: m.event_id, title: titleByEvent.get(m.event_id) ?? null })
+    map.set(m.article_id, { eventId: m.event_id, title: titleByEvent.get(m.eventId) ?? null })
   }
   return map
 }
@@ -956,7 +956,7 @@ export async function loadSkyVerificationForNode(nodeId) {
     const { data, error } = await supabase
       .from('sky_verifications')
       .select(SKY_COLUMNS)
-      .in('id', [...ids])
+      .in('article_id', [...ids])
       .order('captured_at', { ascending: false, nullsFirst: false })
       .limit(1)
     if (error) return null
