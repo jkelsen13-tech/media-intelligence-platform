@@ -66,8 +66,8 @@ function localSubgraph(nodes, edges, hubId, depth = 2) {
           next.push(nb)
         }
       }
-      frontier = next
     }
+    frontier = next
   }
   const subNodes = nodes.filter((n) => seen.has(n.id ?? n.slug))
   const subEdges = edges.filter((e) => seen.has(e.source) && seen.has(e.target))
@@ -85,7 +85,7 @@ function topicSubgraph(nodes, edges, memberIds) {
   })
   return {
     nodes: nodes.filter((n) => keep.has(n.id ?? n.slug)),
-    edges: edges.filter((e) => seen.has(e.source) && seen.has(e.target)),
+    edges: edges.filter((e) => keep.has(e.source) && keep.has(e.target)),
   }
 }
 
