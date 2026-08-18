@@ -19,6 +19,8 @@ import { buildNavViews, buildMoreEntries, isMoreViewKey } from './lib/navViews'
 import { loadGraph, loadTopics, loadCorpusMeta } from './lib/supabase'
 import { liveCorpusLabel } from './lib/newsFeedModel'
 import { computeHubs } from './lib/hubs'
+import { jumpFocusStack } from './lib/jumpReset'
+import { resolveTimelineJump } from './lib/navigationContract'
 import { resolveFocal, focusDepth } from './lib/desktopFocus'
 import AccountPanel from './panels/AccountPanel'
 import { loadAccountUiFlag } from './lib/auth'
@@ -145,7 +147,10 @@ export default function App() {
   const [focusArc, setFocusArc] = useState(null)
   const [focusArticle, setFocusArticle] = useState(null)
   // Doc 05: timeline focus key (8-hex group suffix) and comparison event id.
+  // Package 1 item 2: focusTimelineArc carries the ORIGINATING arc of a
+  // News → Timeline jump (return-to-origin; see lib/navigationContract.js).
   const [focusTimelineEvent, setFocusTimelineEvent] = useState(null)
+  const [focusTimelineArc, setFocusTimelineArc] = useState(null)
   const [focusComparisonEvent, setFocusComparisonEvent] = useState(null)
 
   const isMobile = useMediaQuery('(max-width: 767px)')
@@ -288,42 +293,69 @@ export default function App() {
   }, [selected, policyNode, edgeEvidence, handleClose, closePolicyPanel])
 
   // --- Cross-view navigation ---
+  // Package 1 item 1 (22_NOTE action 1): a cross-view jump REPLACES context.
+  // Every handler below routes through this reset so no endpoint, source,
+  // excerpt, or uncertainty from a prior relationship/panel can survive into
+  // the destination surface (see src/lib/jumpReset.js — JUMP_CLEARS).
+  const resetJumpContext = useCallback(() => {
+    setEdgeEvidence(null)
+    setSelected(null)
+    setPinned(false)
+    setPolicyNode(null)
+  }, [])
+
   const openNodeInGraph = useCallback(
     (nodeKey) => {
       if (!graph) return
+      resetJumpContext()
       const next = graph.nodes.find((n) => (n.id ?? n.slug) === nodeKey)
       setGraphScreen('all')
       setView('graph')
       if (next) {
         setSelected(next)
-        pushFocus(next)
+        // Reset — never append: the jump target becomes the new root crumb,
+        // so no stale focus path from a prior arc's exploration remains.
+        const key = next.id ?? next.slug
+        setFocusStack(jumpFocusStack('node', key, next.label ?? key))
       }
     },
-    [graph, pushFocus],
+    [graph, resetJumpContext],
   )
 
   const openArcInView = useCallback((arcKey) => {
+    resetJumpContext()
     setFocusArc(arcKey)
     setView('arcs')
-  }, [])
+  }, [resetJumpContext])
 
   const openArticleInNews = useCallback((articleId) => {
+    resetJumpContext()
     setFocusArticle(articleId)
     setView('news')
-  }, [])
+  }, [resetJumpContext])
 
-  // Doc 05 pair 3/6 destination: focus an event card in the Causal Timeline
-  // by its 8-hex group suffix.
-  const openEventInTimeline = useCallback((eventKey) => {
-    setFocusTimelineEvent(eventKey)
+  // Doc 05 pair 3/6 destination, now under the Package 1 item 2 navigation
+  // contract: the jump target is resolved through lib/navigationContract.js.
+  // Return-to-origin (Three-Screen Review named finding): when the target
+  // carries its originating arc, the Timeline opens on THAT arc — not the
+  // global corpus. Global is the declared fallback for arc-less targets.
+  // No resolvable target → no jump (honest degradation, never a fabricated
+  // destination).
+  const openEventInTimeline = useCallback((target) => {
+    const resolved = resolveTimelineJump(target)
+    if (!resolved) return
+    resetJumpContext()
+    setFocusTimelineEvent(resolved.eventKey)
+    setFocusTimelineArc(resolved.scope === 'arc' ? resolved.arcId : null)
     setView('timeline')
-  }, [])
+  }, [resetJumpContext])
 
   // Doc 05 pair 5 destination: focus an event in Source Comparison.
   const openComparisonEvent = useCallback((eventId) => {
+    resetJumpContext()
     setFocusComparisonEvent(eventId)
     setView('compare')
-  }, [])
+  }, [resetJumpContext])
 
   // Graph node search: label substring match, top 8 suggestions.
   const nodeMatches = useMemo(() => {
@@ -742,6 +774,7 @@ export default function App() {
             onOpenArc={openArcInView}
             onOpenArticle={openArticleInNews}
             focusEventKey={focusTimelineEvent}
+            focusArcKey={focusTimelineArc}
           />
         )}
         {view === 'arcs' && (
