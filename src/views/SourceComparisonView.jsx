@@ -101,7 +101,9 @@ function ClaimCard({ claim, onOpenArticle }) {
       <p className="sc-claim-text">{claim.canonicalText}</p>
 
       <p className="sc-meta">
-        Reported independently by: {claim.independentOutlets.join(', ') || 'none'}
+        Also reported by: {claim.independentOutlets.join(', ') || 'none'}
+        {' '}
+        <span className="sc-lineage-note">(separate articles; lineage not verified)</span>
         {claim.syndicatedExtra > 0 && (
           <span className="sc-syndicated">
             {' '}· single original source, syndicated {claim.syndicatedExtra + 1} times
@@ -178,7 +180,7 @@ function EventCard({ event, onOpenArticle, onOpenArc, onOpenTimeline, focused, s
                   type="button"
                   className="sc-src sc-xlink"
                   title="Open this arc's events in the Causal Timeline"
-                  onClick={() => onOpenTimeline(l.timelineKey)}
+                  onClick={() => onOpenTimeline({ eventKey: l.timelineKey, arcId: l.arcId })}
                 >
                   Causal Timeline →
                 </button>
