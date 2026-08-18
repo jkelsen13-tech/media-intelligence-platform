@@ -11,7 +11,7 @@
 //   - Unclassified bucket is a first-class section, pinned LAST after all arc
 //     sections, never sorted into them, never silently dropped.
 //   - Pagination is by ARC SECTION (5 sections/page), not by event; the
-//     Unclassified section carries its own internal 25-event pager.
+//     Unclassified section carries its own internal 25-event internal pager.
 //   - A category filter cannot match Unclassified (no category to match) —
 //     it collapses to a one-line placeholder with a toggle, never vanishes.
 
@@ -139,6 +139,51 @@ export function buildArcSections(events, arcsById, articleArcBySuffix, directArc
   }
 }
 
+// Package 1 scope addition (owner-directed 2026-08-18, mid-package): grouped
+// mode extends to ARC scope, and grouped event cards show how many outlets
+// reported the event — the parent-doc Step 4 display rule ("7 outlets
+// reporting rather than seven duplicate cards") carried onto the timeline.
+// Pure seam: eventId -> distinct outlets across the event's member articles
+// (events + event_articles store, the same join News Feed grouping uses).
+// Outlets sorted for deterministic render; articles without an outlet are
+// counted by presence, not invented — an event whose member outlets are all
+// unknown yields count 0 and the card withholds the line entirely.
+export function buildEventOutletIndex(eventArticleRows, outletByArticleId) {
+  const outletsByEvent = new Map()
+  for (const m of eventArticleRows ?? []) {
+    if (!m.event_id || !m.article_id) continue
+    const outlet = outletByArticleId?.get(m.article_id)
+    if (!outlet) continue
+    const set = outletsByEvent.get(m.event_id) ?? new Set()
+    set.add(outlet)
+    outletsByEvent.set(m.event_id, set)
+  }
+  const index = new Map()
+  for (const [eventId, set] of outletsByEvent) {
+    const outlets = [...set].sort()
+    index.set(eventId, { outlets, count: outlets.length })
+  }
+  return index
+}
+
+// Attach the outlet index to canonical events via each event's resolved
+// article (Doc 05 suffix join). Events with no article join, or whose
+// article is not a member of any events-table event, get eventId null and
+// outletCount null — the card withholds rather than showing "1 outlet"
+// for an artifact of the join.
+export function attachEventOutlets(events, eventIdByArticleId, outletIndex) {
+  return (events ?? []).map((evt) => {
+    const eventId = evt.article_id ? (eventIdByArticleId.get(evt.article_id) ?? null) : null
+    const rec = eventId ? outletIndex.get(eventId) : null
+    return {
+      ...evt,
+      eventId: eventId ?? null,
+      outlets: rec?.outlets ?? null,
+      outletCount: rec?.count ?? null,
+    }
+  })
+}
+
 // Hard-count invariant: every canonical event appears exactly once.
 export function verifyExactlyOnce({ sections, unclassified }, totalEvents) {
   const seen = new Set()
@@ -264,7 +309,7 @@ export async function loadTimelineGroupedBetaFlag() {
 export async function loadArcGroupedTimeline({ supabaseClient } = {}) {
   const mod = await getClient()
   const supabase = supabaseClient ?? mod.supabase
-  const { deriveArcStatus, keysetAll, resortRows } = mod
+  const { deriveArcStatus, keysetAll, keysetAllComposite, resortRows } = mod
   const { canonicalizeTimelineEvents, remapTimelineEdges } = await import('./timelineDedup.js')
 
   if (!supabase) {
@@ -288,7 +333,7 @@ export async function loadArcGroupedTimeline({ supabaseClient } = {}) {
   // Doc 13 site 4: identical read set to the flat timeline loader — both
   // keyset-paginate past the 1000-row ceiling so the two views can never
   // disagree on node/edge counts; display order re-applied client-side.
-  const [nodesRes, edgesRes, labelsRes, articlesRes, arcsRes, arcEventsRes, milestonesRes, cfgRes] =
+  const [nodesRes, edgesRes, labelsRes, articlesRes, arcsRes, arcEventsRes, milestonesRes, cfgRes, eventArticlesRes] =
     await Promise.all([
       keysetAll(supabase, 'nodes', 'id, slug, label, description, confidence, summary, occurred_at, arc_id', {
         filter: (q) => q.eq('type', 'event'),
@@ -299,16 +344,20 @@ export async function loadArcGroupedTimeline({ supabaseClient } = {}) {
         filter: (q) => q.in('type', ['causal', 'sequence']),
       }),
       keysetAll(supabase, 'nodes', 'id, slug, label'),
-      // id + arc_id: article derivation (26 events) and News Feed chip join.
-      keysetAll(supabase, 'articles', 'id, arc_id'),
+      // id + arc_id + outlet: article derivation (26 events), News Feed chip
+      // join, and the Package 1 arc-grouped outlet count per event.
+      keysetAll(supabase, 'articles', 'id, arc_id, outlet'),
       keysetAll(supabase, 'story_arcs', 'id, title, category, started_at'),
       // End date + status derive from real signals (loadArcs() pattern).
       // id included: the keyset cursor reads it back off the returned rows.
       keysetAll(supabase, 'arc_events', 'id, arc_id, occurred_at'),
       keysetAll(supabase, 'arc_milestones', 'id, arc_id, status'),
       supabase.from('pipeline_config').select('value').eq('key', 'status_dormant_days').maybeSingle(),
+      // Package 1 arc-grouped addition: event memberships for the per-event
+      // outlet count (composite PK — keysetAllComposite, Doc 13 discipline).
+      keysetAllComposite(supabase, 'event_articles', 'event_id, article_id', { keyCols: ['event_id', 'article_id'] }),
     ])
-  for (const r of [nodesRes, edgesRes, labelsRes, articlesRes, arcsRes, arcEventsRes, milestonesRes]) {
+  for (const r of [nodesRes, edgesRes, labelsRes, articlesRes, arcsRes, arcEventsRes, milestonesRes, eventArticlesRes]) {
     if (r.error) throw r.error
   }
   const dormantDays = Number(cfgRes.data?.value ?? 14) || 14
@@ -317,10 +366,20 @@ export async function loadArcGroupedTimeline({ supabaseClient } = {}) {
 
   const articleIdBySuffix = new Map()
   const articleArcBySuffix = new Map()
+  const outletByArticleId = new Map()
   for (const a of articlesRes.data) {
     const suffix = String(a.id).slice(0, 8)
     articleIdBySuffix.set(suffix, a.id)
     if (a.arc_id) articleArcBySuffix.set(suffix, a.arc_id)
+    if (a.outlet) outletByArticleId.set(a.id, a.outlet)
+  }
+
+  // Package 1 arc-grouped addition: per-event outlet index + per-article
+  // event membership, attached to canonical events below.
+  const outletIndex = buildEventOutletIndex(eventArticlesRes.data, outletByArticleId)
+  const eventIdByArticleId = new Map()
+  for (const m of eventArticlesRes.data ?? []) {
+    if (m.article_id && m.event_id) eventIdByArticleId.set(m.article_id, m.event_id)
   }
 
   const eventsByArc = new Map()
@@ -354,10 +413,14 @@ export async function loadArcGroupedTimeline({ supabaseClient } = {}) {
   )
 
   const grouped = buildArcSections(
-    events.map((evt) => ({
-      ...evt,
-      article_id: articleIdBySuffix.get((evt.slug ?? '').slice(-8)) ?? null,
-    })),
+    attachEventOutlets(
+      events.map((evt) => ({
+        ...evt,
+        article_id: articleIdBySuffix.get((evt.slug ?? '').slice(-8)) ?? null,
+      })),
+      eventIdByArticleId,
+      outletIndex,
+    ),
     arcsById,
     articleArcBySuffix,
     buildMirrorArcMap(nodesRes.data, events),
