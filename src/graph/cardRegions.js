@@ -41,6 +41,9 @@ export const MAX_CARDS = 200
 // event 383 / actor 340 / policy 27). The mockup's semantic regions map onto
 // live types: policy -> Policy & courts; event -> Incidents; actor splits by
 // entity_type (person -> Civil society, organization -> Reporting).
+// 2026-08-18 correction (owner-ruled): institution and other actors fit NONE
+// of the four clusters — they render UNGROUPED (null) rather than being
+// force-fit into Civil society (the "Middle East as Person" defect).
 // Colors are functional only — the dashed stroke + always-visible label
 // carry the meaning with all accent color removed.
 export const REGION_META = {
@@ -55,25 +58,33 @@ export function regionOf(node) {
   if (node.type === 'policy') return 'policy_courts'
   if (node.type === 'event') return 'incidents'
   if (node.type === 'actor') {
-    return node.metadata?.entity_type === 'organization' ? 'reporting' : 'civil_society'
+    const et = node.metadata?.entity_type
+    if (et === 'organization') return 'reporting'
+    if (et === 'person' || et == null) return 'civil_society'
+    return null // institution / other: ungrouped — no cluster honestly fits
   }
   return null
 }
 
 // --- Type labels and icons -----------------------------------------------------
 // Addendum Screen 6: type label beneath the name. Live-vocabulary mapping:
-// event -> Incident / Event; actor(person) -> Person; actor(org) ->
-// Organization; policy -> Policy. Shape carries type independently of color
-// (legend: diamond = incident/event, document = document, octagon =
-// organization, circle = person) — the icon name keys the SVG in GraphView.
+// event -> Incident / Event; policy -> Policy; actor splits by entity_type:
+// person -> Person, organization -> Organization, institution -> Institution,
+// other -> Other (2026-08-18 owner-ruled correction: the binary org/person
+// mapping mislabeled every institution and every geographic/other entity as
+// "Person"). Shape carries type independently of color (legend: diamond =
+// incident/event, document = document, octagon = organization/institution,
+// circle = person) — the icon name keys the SVG in GraphView.
 export function cardTypeInfo(node) {
   if (!node) return { typeLabel: 'Unknown', icon: 'document' }
   if (node.type === 'event') return { typeLabel: 'Incident / Event', icon: 'diamond' }
   if (node.type === 'policy') return { typeLabel: 'Policy', icon: 'document' }
   if (node.type === 'actor') {
-    return node.metadata?.entity_type === 'organization'
-      ? { typeLabel: 'Organization', icon: 'octagon' }
-      : { typeLabel: 'Person', icon: 'circle' }
+    const et = node.metadata?.entity_type
+    if (et === 'organization') return { typeLabel: 'Organization', icon: 'octagon' }
+    if (et === 'institution') return { typeLabel: 'Institution', icon: 'octagon' }
+    if (et === 'other') return { typeLabel: 'Other', icon: 'circle' }
+    return { typeLabel: 'Person', icon: 'circle' } // person, or missing metadata
   }
   return { typeLabel: NODE_TYPE_FALLBACK_LABEL(node.type), icon: 'document' }
 }

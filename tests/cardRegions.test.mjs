@@ -44,6 +44,14 @@ test('regionOf maps the live type vocabulary onto mockup regions', () => {
   assert.equal(regionOf(null), null)
 })
 
+// 2026-08-18 correction (owner-ruled): institution and other actors fit none
+// of the four clusters — they must render UNGROUPED, never force-fit into
+// Civil society (the "Middle East as Person in Civil society" defect).
+test('regionOf: institution and other actors are ungrouped', () => {
+  assert.equal(regionOf({ type: 'actor', metadata: { entity_type: 'institution' } }), null)
+  assert.equal(regionOf({ type: 'actor', metadata: { entity_type: 'other' } }), null)
+})
+
 test('every region has a label and a functional color (accent-removal: label always present)', () => {
   for (const key of ['policy_courts', 'incidents', 'civil_society', 'reporting']) {
     assert.ok(REGION_META[key].label.length > 0)
@@ -57,6 +65,15 @@ test('cardTypeInfo: shape carries type independently of color', () => {
   assert.deepEqual(cardTypeInfo({ type: 'actor', metadata: { entity_type: 'organization' } }), { typeLabel: 'Organization', icon: 'octagon' })
   assert.deepEqual(cardTypeInfo({ type: 'actor', metadata: { entity_type: 'person' } }), { typeLabel: 'Person', icon: 'circle' })
   assert.equal(cardTypeInfo(null).typeLabel, 'Unknown')
+})
+
+// 2026-08-18 correction: the actor branch reads entity_type honestly instead
+// of the binary org/person mapping that labeled every institution and every
+// geographic/other entity "Person". Missing metadata keeps the Person default.
+test('cardTypeInfo: institution and other actors get honest labels', () => {
+  assert.deepEqual(cardTypeInfo({ type: 'actor', metadata: { entity_type: 'institution' } }), { typeLabel: 'Institution', icon: 'octagon' })
+  assert.deepEqual(cardTypeInfo({ type: 'actor', metadata: { entity_type: 'other' } }), { typeLabel: 'Other', icon: 'circle' })
+  assert.deepEqual(cardTypeInfo({ type: 'actor' }), { typeLabel: 'Person', icon: 'circle' })
 })
 
 test('cardName truncates at the carried-forward 40-char policy', () => {
