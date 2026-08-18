@@ -216,7 +216,11 @@ export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey, 
     if (!arc) return
     setAllEvents(false)
     setSelectedSlug(arc.slug)
-  }, [focusArcKey, arcs])
+    // Package 1 scope addition (owner-directed): arc-scope landings render
+    // the grouped view by default when its flag is on; Flat stays one chip
+    // away. (groupedBeta resolves async; the effect re-runs when it lands.)
+    if (groupedBeta) setTimelineMode('grouped')
+  }, [focusArcKey, arcs, groupedBeta])
 
   // Cross-window focus (Doc 05): a News Feed article asked us to open its
   // event. Switch to the global corpus, clear filters, jump to its page.
@@ -431,34 +435,41 @@ export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey, 
                   </button>
                 ))}
               </div>
-              {groupedBeta && (
-                <div className="timeline-filter-chips" role="group" aria-label="Timeline layout">
-                  <button
-                    type="button"
-                    className={`timeline-chip${timelineMode === 'flat' ? ' active' : ''}`}
-                    aria-pressed={timelineMode === 'flat'}
-                    onClick={() => setTimelineMode('flat')}
-                  >
-                    Flat
-                  </button>
-                  <button
-                    type="button"
-                    className={`timeline-chip${timelineMode === 'grouped' ? ' active' : ''}`}
-                    aria-pressed={timelineMode === 'grouped'}
-                    onClick={() => setTimelineMode('grouped')}
-                  >
-                    Grouped by arc (Beta)
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
-          {scopeIsGlobal && timelineMode === 'grouped' && groupedBeta ? (
+          {/* Package 1 scope addition (owner-directed 2026-08-18): the
+              Flat/Grouped layout chips now render at BOTH scopes — arc-scope
+              landings default to the grouped view (richer event cards with
+              per-event outlet counts); Flat remains available at arc scope
+              exactly where it already worked. Additive, not a replacement. */}
+          {groupedBeta && (
+            <div className="timeline-filter-chips" role="group" aria-label="Timeline layout">
+              <button
+                type="button"
+                className={`timeline-chip${timelineMode === 'flat' ? ' active' : ''}`}
+                aria-pressed={timelineMode === 'flat'}
+                onClick={() => setTimelineMode('flat')}
+              >
+                Flat
+              </button>
+              <button
+                type="button"
+                className={`timeline-chip${timelineMode === 'grouped' ? ' active' : ''}`}
+                aria-pressed={timelineMode === 'grouped'}
+                onClick={() => setTimelineMode('grouped')}
+              >
+                Grouped by arc (Beta)
+              </button>
+            </div>
+          )}
+
+          {timelineMode === 'grouped' && groupedBeta ? (
             <GroupedTimelineView
               onOpenArc={onOpenArc}
               onOpenArticle={onOpenArticle}
               focusEventKey={focusEventKey}
+              arcId={scopeIsGlobal ? null : selected.id}
             />
           ) : (
             <>
