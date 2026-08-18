@@ -225,7 +225,8 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
         setError(err.message)
       })
       .finally(() => {
-        loadingMoreRef.current = false
+        if (seq !== requestRef.current) return
+        setLoading(false)
       })
   }
 
@@ -263,6 +264,11 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
 
   // Doc 05 pairs 3 & 5: cross-window chips. Each renders only when its join
   // resolved — never a broken link, never a fabricated destination.
+  // Package 1 item 2: the Causal Timeline jump carries the article's
+  // ORIGINATING arc so the timeline lands on that arc (return-to-origin),
+  // not the global corpus. Arc unknown (focused-miss detail) → arcId null
+  // → the contract's declared global fallback applies.
+  const expandedArcId = articles.find((a) => a.id === expanded)?.arc_id ?? null
   const crossWindowChips = (timelineKey || comparisonEvents.length > 0) && (
     <div className="news-graph-links">
       <span className="ap-label">Other views</span>
@@ -271,7 +277,7 @@ export default function NewsView({ onOpenArc, onOpenNode, focusArticleId, onOpen
           <button
             className="news-chip graph-link"
             title="Open this article's event in the Causal Timeline"
-            onClick={() => onOpenTimeline(timelineKey)}
+            onClick={() => onOpenTimeline({ eventKey: timelineKey, arcId: expandedArcId })}
           >
             ◈ Causal Timeline →
           </button>
