@@ -2586,3 +2586,101 @@ body {
   color: var(--text-secondary, #9ca3af);
   letter-spacing: 0.02em;
 }
+
+/* --- Track B Step 2b: card nodes + region boundaries (2026-08-18) --------
+   Cards and region labels are DOM (200% text scaling applies natively).
+   Boundary dashes render on .graph-regions UNDER the cytoscape canvas, so
+   they can never obscure edges. Meaning never rides on color alone: cards
+   carry icon + name + type label; regions carry a dashed stroke + an
+   always-visible text label. */
+.graph-regions {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+.graph-cards {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+.graph-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 160px;
+  min-height: 64px;
+  padding: 8px 10px;
+  background: var(--bg-panel, #ffffff);
+  border: 1.5px solid var(--border-strong, #8a8a80);
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  grid-template-rows: auto auto auto;
+  column-gap: 6px;
+  align-items: start;
+  pointer-events: auto;
+  cursor: pointer;
+  font-family: Inter, "IBM Plex Sans", system-ui, sans-serif;
+  color: var(--text-primary, #1a1a17);
+  box-sizing: border-box;
+}
+.graph-card-icon {
+  grid-row: 1 / span 3;
+  color: var(--text-secondary, #5c5c55);
+  padding-top: 1px;
+}
+.graph-card-name {
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.graph-card-date {
+  font-size: 10px;
+  color: var(--text-secondary, #5c5c55);
+}
+.graph-card-type {
+  font-size: 10px;
+  color: var(--text-secondary, #5c5c55);
+  letter-spacing: 0.02em;
+}
+.graph-card.selected {
+  background: var(--bg-selected, #dce9f7);
+  border-width: 2.5px;
+}
+.graph-region-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+}
+.graph-region-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary, #1a1a17);
+  background: var(--bg-page, #f7f7f4);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.graph-region-badge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a17);
+  background: var(--bg-panel, #ffffff);
+  border: 1px solid var(--border-strong, #8a8a80);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
