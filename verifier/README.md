@@ -452,5 +452,11 @@ not verified", E2 multi-outlet), truthful Timeline footer tab labels
 arcId/eventKey/nodeId/relationshipId/articleId navigation contract including
 the News→Timeline return-to-origin case (lands on the originating arc, never
 the global corpus when an arc is known).
+Amendment A1 (2026-08-18, owner-directed mid-package scope expansion,
+post-initial-implementation): grouped mode extended to ARC scope — arc-scope
+Timeline landings (return-to-origin) render the grouped view (event cards with
+per-event outlet counts) instead of the flat list; Flat remains available at
+both scopes. Criteria C6 (arc-scope grouped landing) + C7 (small-arc
+degradation) added before the covering re-run: 7 pass / 0 fail / 1 note.
 Details: `pkg1-v1/README.md`. Run log:
 `runs/2026-08-18-pkg1-context-semantic-repair.md`.

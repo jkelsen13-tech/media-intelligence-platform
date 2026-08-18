@@ -40,3 +40,25 @@ http://localhost:5199/media-intelligence-platform/ (live Supabase corpus,
 
 Screenshots (evidence): pkg1-item1-reset.png, pkg1-item2-return-to-origin.png,
 pkg1-item3-footer-labels.png, pkg1-item4-sourcecomparison.png.
+
+## Amendment A1 (2026-08-18, owner-directed mid-package scope expansion)
+
+After the initial implementation passed C1–C5, the owner expanded item 2:
+grouped mode extends to ARC scope — arc-scope Timeline landings
+(return-to-origin) render the grouped view instead of the flat list, so
+context preservation and the richer grouped-events display hold together.
+Flat remains available where it already worked (additive, not replacement).
+Criteria amended BEFORE the re-run covering the addition:
+
+- **C6 (item 2 expansion — arc-scope grouped landing):** the C2 jump lands
+  on the arc AND renders grouped mode at arc scope: `.timeline-grouped`
+  present under the arc header, event cards carry per-event outlet counts
+  ("N outlet(s) reporting", `.timeline-outlets`, ≥1 present on the landing
+  arc), and the flat entry list is not the rendered layout. Flat stays
+  reachable via the Flat chip at arc scope.
+- **C7 (degradation):** small arcs (1–2 graph-resolved events) render
+  gracefully in grouped mode — section header + 1–2 cards, no error
+  notice, honest count line. Recorded with screenshot; an arc with zero
+  graph-resolved events must show the honest empty notice, not a crash.
+- Evidence: screenshots/pkg1-item2-arc-grouped.png,
+  screenshots/pkg1-item2-arc-grouped-small.png.

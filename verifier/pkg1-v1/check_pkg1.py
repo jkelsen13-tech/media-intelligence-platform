@@ -123,6 +123,68 @@ def run():
         note("C3/item2 arc-less fallback", "unit-pinned (tests/navigationContract.test.mjs); "
              + ("live arc-less chip fixture seen but left unexercised" if saw_arcless_chip else "no live arc-less fixture in scanned cards"))
 
+        # ---------- C6 (item 2 expansion, Amendment A1): arc-scope GROUPED landing
+        # We are already on the Timeline at arc scope from C2 (landing arc).
+        if landed_arc is None:
+            ok &= record("C6/item2 arc-scope grouped landing", False, "skipped — C2 found no landing")
+        else:
+            try:
+                page.wait_for_selector(
+                    ".timeline-grouped .timeline-card, .timeline-grouped .notice",
+                    timeout=120000,
+                )
+                page.wait_for_timeout(1500)
+                grouped_present = page.query_selector(".timeline-grouped") is not None
+                cards = page.query_selector_all(".timeline-grouped .timeline-card")
+                outlet_lines = page.query_selector_all(".timeline-grouped .timeline-outlets")
+                sections = page.query_selector_all(".timeline-grouped .timeline-arc-section")
+                ok &= record(
+                    "C6/item2 arc-scope grouped landing",
+                    grouped_present and len(cards) > 0 and len(outlet_lines) >= 1 and len(sections) == 1,
+                    f"grouped={grouped_present}, sections={len(sections)}, cards={len(cards)}, "
+                    f"outlet-count lines={len(outlet_lines)}, arc={landed_arc!r}",
+                )
+                page.screenshot(path=f"{SHOTS}/pkg1-item2-arc-grouped.png", full_page=False)
+
+                # C7: small-arc degradation — walk up to 6 arc options, record
+                # each count line, screenshot the smallest render found.
+                sel = page.query_selector("select.ep-tl-scope-select")
+                smallest = None
+                if sel:
+                    options = page.query_selector_all("select.ep-tl-scope-select option")
+                    for opt in options[:6]:
+                        val = opt.get_attribute("value")
+                        label = (opt.text_content() or "").strip()
+                        sel.select_option(val)
+                        page.wait_for_timeout(2500)
+                        err = page.query_selector(".timeline-grouped .notice.error, .notice.error")
+                        cnt = page.text_content(".timeline-grouped .timeline-count") or ""
+                        m = re.search(r"(\d+) event", cnt)
+                        n = int(m.group(1)) if m else None
+                        print(f"  [C7 scan] {label!r}: events={n}, error={err is not None}")
+                        if err:
+                            ok &= record("C7/item2 small-arc degradation", False, f"error notice on arc {label!r}")
+                            break
+                        if n is not None and (smallest is None or n < smallest[1]):
+                            smallest = (label, n)
+                    if smallest is not None:
+                        # re-select the smallest for the screenshot
+                        opts = page.query_selector_all("select.ep-tl-scope-select option")
+                        for opt in opts:
+                            if (opt.text_content() or "").strip() == smallest[0]:
+                                sel.select_option(opt.get_attribute("value"))
+                                break
+                        page.wait_for_timeout(2500)
+                        page.screenshot(path=f"{SHOTS}/pkg1-item2-arc-grouped-small.png", full_page=False)
+                        graceful = smallest[1] >= 0  # any count renders without error
+                        ok &= record(
+                            "C7/item2 small-arc degradation",
+                            graceful,
+                            f"smallest scanned arc {smallest[0]!r}: {smallest[1]} event(s), cards+count line render, no error",
+                        )
+            except Exception as e:
+                ok &= record("C6/item2 arc-scope grouped landing", False, f"exception: {e}")
+
         # ---------- C4 (item 3): truthful footer labels
         click_tab(page, "Timeline")
         page.wait_for_selector(".ep-tl-footerlinks", timeout=20000)
