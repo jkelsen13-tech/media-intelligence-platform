@@ -95,16 +95,21 @@ export const R_LEVEL_NAMES = {
   R4: 'R4 unvetted-origin',
 }
 
+// Package 1 item 4 (22_NOTE): "corroborated" implies independently verified
+// sourcing. Source lineage is not tracked (write path never persists the
+// syndication union-find; this read path collapses canonical-URL duplicates
+// only), so a wire story surfaced under several URLs would overclaim as
+// corroboration. The chip therefore says what the data actually shows.
 export const E_LEVEL_NAMES = {
   E1: 'E1 documented',
-  E2: 'E2 corroborated',
+  E2: 'E2 multi-outlet (lineage unverified)',
   E4: 'E4 asserted',
 }
 
 /**
  * Claim-level evidence strength (G2 Axis 2 mapping):
  *   primary-evidence link -> E1 documented
- *   >=2 independent outlets -> E2 corroborated
+ *   >=2 outlets after syndicate collapse -> E2 multi-outlet (lineage unverified)
  *   single source -> E4 asserted
  * (E3 circumstantial is not produced by this read path.)
  */
