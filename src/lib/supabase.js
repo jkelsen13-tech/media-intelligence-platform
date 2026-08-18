@@ -710,7 +710,7 @@ export async function loadEventGrouping({ supabaseClient } = {}) {
   const map = new Map()
   for (const m of membersRes.data ?? []) {
     if (!m.article_id || !m.event_id) continue
-    map.set(m.article_id, { eventId: m.event_id, title: titleByEvent.get(m.eventId) ?? null })
+    map.set(m.article_id, { eventId: m.event_id, title: titleByEvent.get(m.event_id) ?? null })
   }
   return map
 }
