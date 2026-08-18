@@ -410,3 +410,23 @@ Includes root-cause record of a smoke-script artifact (fixed 3-press zoom
 straddling CARD_ZOOM_MIN=1.0 from fit ≈0.578) resolved by adaptive zoom —
 no app code change.
 Run log: `runs/2026-08-18-trackb-step2b-final.md`. No schema or source changes.
+
+## trackb2b-v3 — 2026-08-18 — entity_type mapping correction (post-Step-2b)
+Measures: the owner-ruled correction track — 12 live nodes with
+metadata.entity_type='person' contradicting their canonical entities ('other')
+corrected with guarded writes + rollback drills (census proof: 750 nodes
+unchanged, mismatches 12→0); cardTypeInfo/regionOf read entity_type honestly
+(institution → "Institution", other → "Other", both UNGROUPED); loadGraph
+nodes select extended with metadata (root cause: the app never saw the stored
+value). 11 checks re-run against corrected live data; T3.c re-framed for the
+ungrouped-node regime (foreign-region hull violations hard-gated at 0;
+ungrouped enclosures recorded, disambiguated by card labels). Suite 352/352;
+browser smoke: Middle East "Other"/ungrouped, Supreme Court
+"Institution"/ungrouped, grayscale accent-removal PASS.
+Details: `trackb2b-v3/README.md`. Run log:
+`runs/2026-08-18-trackb-step2b-mapping-fix.md`.
+Differs from prior version: v2 verified the shipped Step 2b build; v3 verifies
+the post-correction mapping against corrected data and re-frames T3.c —
+criterion change forced by the owner's ungrouped ruling, not by a failure
+sweep under the rug (v2's failing T3.c against the new mapping is preserved
+in this run log's trajectory).
