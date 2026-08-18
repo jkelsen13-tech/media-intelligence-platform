@@ -60,7 +60,7 @@ const LINK_FILTERS = [
   { id: 'none', label: 'No links' },
 ]
 
-export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey }) {
+export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey, focusArcKey }) {
   // --- arcs + scope -----------------------------------------------------------
   const [arcs, setArcs] = useState(null)
   const [arcsError, setArcsError] = useState(null)
@@ -205,10 +205,24 @@ export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey }
     return { entries, filtered, edges, labels, linksByKey, suppressed: globalData.suppressed ?? 0 }
   }, [globalData, query, linkFilter, month, type])
 
+  // Package 1 item 2 return-to-origin (Three-Screen Review named finding):
+  // a jump that names its originating arc lands on THAT arc's timeline,
+  // never the global corpus. Unknown arc → leave the current scope alone
+  // (honest degradation; the global event-focus path below still applies
+  // when no arc was named).
+  useEffect(() => {
+    if (!focusArcKey || !arcs) return
+    const arc = arcs.find((a) => a.id === focusArcKey || a.slug === focusArcKey)
+    if (!arc) return
+    setAllEvents(false)
+    setSelectedSlug(arc.slug)
+  }, [focusArcKey, arcs])
+
   // Cross-window focus (Doc 05): a News Feed article asked us to open its
   // event. Switch to the global corpus, clear filters, jump to its page.
+  // (Package 1 item 2: only when the jump named NO originating arc.)
   useEffect(() => {
-    if (!focusEventKey || !global) return
+    if (!focusEventKey || focusArcKey || !global) return
     const idx = global.entries.findIndex((e) => (e.slug ?? '').slice(-8) === focusEventKey)
     if (idx === -1) return
     const entry = global.entries[idx]
@@ -219,13 +233,28 @@ export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey }
     setType(null)
     setPage(Math.floor(idx / PAGE_SIZE))
     setPendingFocus(entry.key)
-  }, [focusEventKey, global])
+  }, [focusEventKey, focusArcKey, global])
+
+  // Package 1 item 2: arc-scope event focus. When the jump landed on the
+  // originating arc, highlight the matching event inside that arc if the
+  // suffix join resolves; the arc landing itself is the guaranteed part.
+  useEffect(() => {
+    if (!focusEventKey || !focusArcKey || allEvents || !detail) return
+    const entry = arcEntries.find((e) => (e.key ?? '').slice(-8) === focusEventKey)
+    if (entry) setPendingFocus(entry.key)
+  }, [focusEventKey, focusArcKey, allEvents, detail, arcEntries])
 
   // Complete the focus once the row is rendered on the current page.
   useEffect(() => {
-    if (!pendingFocus || !global) return
-    const pageRows = global.filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
-    if (!pageRows.some((e) => e.key === pendingFocus)) return
+    if (!pendingFocus) return
+    // Arc scope has no pagination: every rendered row is a candidate.
+    const rows =
+      allEvents || !selected
+        ? global
+          ? global.filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+          : null
+        : arcEntries.filter((e) => entryMatchesFilters(e, { month, type }))
+    if (!rows || !rows.some((e) => e.key === pendingFocus)) return
     const el = itemRefs.current.get(pendingFocus)
     setPendingFocus(null)
     if (!el) return
@@ -233,7 +262,7 @@ export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey }
     setFocusHighlight(pendingFocus)
     const t = setTimeout(() => setFocusHighlight(null), 4000)
     return () => clearTimeout(t)
-  }, [pendingFocus, global, page])
+  }, [pendingFocus, global, page, allEvents, selected, arcEntries, month, type])
 
   // --- render ---------------------------------------------------------------
 
@@ -609,10 +638,13 @@ export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey }
       )}
 
       {/* Footer links with LIVE counts (D6) — never literals; they navigate
-          to the tab where the underlying records are listed. */}
+          to the tab where the underlying records are listed.
+          Package 1 item 3 (22_NOTE): these buttons switch tabs in place —
+          they do not navigate anywhere — so the labels say "Open <tab>",
+          not "View articles"/"See connections" (which imply navigation). */}
       <div className="ep-tl-footerlinks">
         <button type="button" className="ep-tl-footerlink" onClick={() => setActiveTab('evidence')}>
-          View {foot.articles} related article{foot.articles === 1 ? '' : 's'}
+          Open Evidence ({foot.articles} article{foot.articles === 1 ? '' : 's'})
         </button>
         <span className="ep-tl-footerlink-sep" aria-hidden="true" />
         <button
@@ -620,8 +652,8 @@ export default function TimelineView({ onOpenArc, onOpenArticle, focusEventKey }
           className="ep-tl-footerlink"
           onClick={() => setActiveTab('connections')}
         >
-          See {connectionsError && !scopeIsGlobal ? '' : `${foot.connections} `}graph connection
-          {foot.connections === 1 ? '' : 's'}
+          Open Connections (
+          {connectionsError && !scopeIsGlobal ? 'count unavailable' : foot.connections})
         </button>
       </div>
 
