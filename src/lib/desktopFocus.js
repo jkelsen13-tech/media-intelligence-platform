@@ -24,3 +24,12 @@ export function resolveFocal({ isMobile, desktopShowAll, focusStack, topHub }) {
   }
   return null
 }
+
+// Track B Step 2b, owner-ruled adjustment 5 (2026-08-18): mobile focused
+// views render at depth-1, never depth-2. Pre-build verification (verifier/
+// trackb2b-v1) showed depth-2 card nodes fit a 390px viewport only at zoom
+// 0.377 — below the legibility floor — while depth-1 fits at 0.465 and
+// renders cards at 74.5px. Desktop keeps depth-2 (wider canvas, fits).
+export function focusDepth(isMobile) {
+  return isMobile ? 1 : 2
+}

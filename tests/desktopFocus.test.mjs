@@ -50,3 +50,11 @@ test('slug-keyed hubs fall back to slug for the focal id', () => {
   })
   assert.equal(focal.id, 'hub-slug')
 })
+
+// Track B Step 2b, owner-ruled adjustment 5: mobile focused depth.
+import { focusDepth } from '../src/lib/desktopFocus.js'
+
+test('mobile focused views are depth-1, never depth-2 (Step 2b adjustment 5)', () => {
+  assert.equal(focusDepth(true), 1)
+  assert.equal(focusDepth(false), 2)
+})
