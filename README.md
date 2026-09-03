@@ -13,13 +13,13 @@ With no Supabase credentials configured, the app renders the bundled demo datase
 
 ## Status
 
-- Backend: **live** — Supabase project `niejaejtbxgakyrsntxm` (us-west-2).
-- Graph: 11 nodes / 14 edges (Fort Campbell accountability arc), anon read-only RLS.
-- Live news: `ingest-rss` edge function deployed (v2), scheduled via pg_cron every 6 hours — first run ingested 200 articles from 8 international outlets into `public.articles`.
+- Backend target: **V2** — `mip-v2-account-verification-20260831` (`qikvmopbtijoebdqosyq`, us-west-1), via `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. The paused original (`niejaejtbxgakyrsntxm`) is not a client fallback.
+- World View reads `public.spatial_projection_v1` (anon SELECT). Zero rows → explicit empty UI; no fabricated pins.
 - Frontend builds clean (`npm run build`). With `.env` configured, header shows `data: supabase`.
 
 ## Features
 
+- **World View** (R4 launch-minimum) — Map / Graph / Split over `public.spatial_projection_v1`; selected-event inspector; recorded-time scrubber; weather panel is honest-unavailable until an authorized weather path exists.
 - **Knowledge graph** (primary interface) — octagonal nodes typed by color (event/actor/institution/document/anomaly), degree-scaled sizing, typed + weighted edges, hover focus (connected edges light up, the rest fades).
 - **Article panel** (§4.4) — click any node: slide-in panel with category tag, confidence score (red→green gradient), synthesis summary, source list (outlet / headline / date / link), and connected-node navigation. Pinnable.
 - **Causal timeline** (§2.4) — events ordered by date with documented causal links between them; confidence labels throughout.
@@ -54,6 +54,8 @@ With no Supabase credentials configured, the app renders the bundled demo datase
 - `src/panels/ArticlePanel.jsx` — node article panel (confidence, sources, connections)
 - `src/views/TimelineView.jsx` — causal timeline
 - `src/views/ArcsView.jsx` — story arcs list + arc panel
+- `src/views/WorldView.jsx` — R4 World View (Map / Graph / Split + inspector)
+- `src/lib/spatialProjection.js` — `public.spatial_projection_v1` read path
 - `src/data/demoData.js` — demo story dataset (mirrors the DB seed)
 - `src/lib/supabase.js` — Supabase client + loaders with demo fallback
 - `supabase/schema.sql`, `supabase/seed.sql` — original graph schema and seed

@@ -9,11 +9,13 @@ import {
 } from '../data/demoData.js'
 import { canonicalizeTimelineEvents, remapTimelineEdges } from './timelineDedup.js'
 
-// Env vars are used when present (local dev). The hardcoded fallbacks let the
-// static GitHub Pages build reach the live project — the anon key is a
-// publishable key and all tables are protected by read-only RLS policies.
-const url = import.meta.env?.VITE_SUPABASE_URL ?? 'https://niejaejtbxgakyrsntxm.supabase.co'
-const anonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY ?? 'sb_publishable_rlHzgeDjVuw9kO3cqcVa-g_ZavxEY7V'
+// Env contract: VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY. No hardcoded
+// project fallback — the paused original (niejaejtbxgakyrsntxm) and Manus
+// sandbox (yhbwnrtlqbjtcrrlpbge) must never be silently targeted. When env
+// is unset the graph loaders fall back to bundled demo data; World View
+// renders an explicit unavailable state instead of inventing spatial rows.
+const url = import.meta.env?.VITE_SUPABASE_URL ?? ''
+const anonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY ?? ''
 
 // Client construction can fail outside the browser (e.g. Node test runs
 // without a WebSocket implementation); fall back to the demo-data path.

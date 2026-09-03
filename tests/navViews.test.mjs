@@ -1,6 +1,6 @@
-// Track B nav restructure (2026-08-16): nav bar is 4 core tabs + "More";
-// Legal & Policy ('phase3') and Source Comparison ('compare') live inside
-// the More sheet. These tests lock the structure so a future edit cannot
+// Track B nav restructure (2026-08-16): nav bar is core tabs (News, Graph,
+// Timeline, Arcs, World View) + "More"; Legal & Policy ('phase3') and Source
+// Comparison ('compare') live inside the More sheet. These tests lock the structure so a future edit cannot
 // silently re-add top-level beta tabs, resurrect the "(Beta)" suffixes, or
 // break the withhold posture (More hidden entirely when both flags off).
 import { test } from 'node:test'
@@ -15,33 +15,33 @@ import {
   isMoreViewKey,
 } from '../src/lib/navViews.js'
 
-test('both flags on: 5 tabs, More last, core order unchanged', () => {
+test('both flags on: 6 tabs, More last, core order unchanged plus World View', () => {
   const nav = buildNavViews({ phase3Beta: true, sourceComparisonBeta: true })
   assert.deepEqual(
     nav.map((v) => v.key),
-    ['news', 'graph', 'timeline', 'arcs', 'more'],
+    ['news', 'graph', 'timeline', 'arcs', 'world', 'more'],
   )
-  assert.equal(nav.length, 5)
+  assert.equal(nav.length, 6)
 })
 
-test('both flags off: More hides entirely — 4 core tabs, no trace', () => {
+test('both flags off: More hides entirely — 5 core tabs including World View, no trace', () => {
   const nav = buildNavViews({ phase3Beta: false, sourceComparisonBeta: false })
   assert.deepEqual(
     nav.map((v) => v.key),
-    ['news', 'graph', 'timeline', 'arcs'],
+    ['news', 'graph', 'timeline', 'arcs', 'world'],
   )
   assert.equal(buildMoreEntries({ phase3Beta: false, sourceComparisonBeta: false }).length, 0)
 })
 
 test('single flag on: More still appears; sheet lists only the authorized surface', () => {
   const phase3Only = buildNavViews({ phase3Beta: true, sourceComparisonBeta: false })
-  assert.equal(phase3Only.length, 5)
+  assert.equal(phase3Only.length, 6)
   assert.deepEqual(
     buildMoreEntries({ phase3Beta: true, sourceComparisonBeta: false }).map((v) => v.key),
     ['phase3'],
   )
   const compareOnly = buildNavViews({ phase3Beta: false, sourceComparisonBeta: true })
-  assert.equal(compareOnly.length, 5)
+  assert.equal(compareOnly.length, 6)
   assert.deepEqual(
     buildMoreEntries({ phase3Beta: false, sourceComparisonBeta: true }).map((v) => v.key),
     ['compare'],
@@ -73,6 +73,15 @@ test('view keys for gated surfaces are unchanged (cross-jump stability)', () => 
   assert.ok(isMoreViewKey('compare'))
   assert.ok(!isMoreViewKey('news'))
   assert.ok(!isMoreViewKey('more'))
+  assert.ok(!isMoreViewKey('world'))
+})
+
+test('World View is a core tab; Timeline and Arcs remain distinct views', () => {
+  assert.deepEqual(
+    CORE_VIEWS.map((v) => v.key),
+    ['news', 'graph', 'timeline', 'arcs', 'world'],
+  )
+  assert.equal(CORE_VIEWS.find((v) => v.key === 'world').label, 'World View')
 })
 
 test('More member views never appear as top-level tabs', () => {
@@ -85,5 +94,6 @@ test('More member views never appear as top-level tabs', () => {
     const keys = buildNavViews(flags).map((v) => v.key)
     assert.ok(!keys.includes('phase3'))
     assert.ok(!keys.includes('compare'))
+    assert.ok(keys.includes('world'))
   }
 })

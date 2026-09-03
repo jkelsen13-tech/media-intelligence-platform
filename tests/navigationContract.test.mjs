@@ -17,8 +17,8 @@ const appSrc = readFileSync(
   'utf8',
 )
 
-test('item2: contract covers exactly the four core views plus compare', () => {
-  assert.deepEqual([...NAV_VIEWS].sort(), ['arcs', 'compare', 'graph', 'news', 'timeline'])
+test('item2: contract covers the core views plus World View and compare', () => {
+  assert.deepEqual([...NAV_VIEWS].sort(), ['arcs', 'compare', 'graph', 'news', 'timeline', 'world'])
 })
 
 test('item2: target vocabulary is arcId/eventKey/nodeId/relationshipId/articleId', () => {
