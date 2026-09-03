@@ -42,6 +42,7 @@ import {
   sourceNativeTimeFields,
   inspectorTitle,
   displayCoordinateText,
+  spatialProjectionUnavailableCopy,
 } from '../src/lib/spatialProjection.js'
 
 function fakePostgrest(tables, { error } = {}) {
@@ -335,18 +336,20 @@ test('UI and loader never import demoData spatial events', () => {
   assert.doesNotMatch(worldSrc, /demoData/)
   assert.doesNotMatch(worldSrc, /Port Meridian|Gulf Coast|Fort Campbell|Cleveland/)
   assert.doesNotMatch(spatialSrc, /Port Meridian|Gulf Coast|Fort Campbell|Cleveland/)
+  assert.match(worldSrc, /spatialProjectionUnavailableCopy/)
 })
 
-test('paused original project is not a supabase.js fallback', () => {
+test('paused original / Manus / github.io are not supabase.js fallbacks', () => {
   const client = readFileSync(new URL('../src/lib/supabase.js', import.meta.url), 'utf8')
-  const urlLine = client.split('\n').find((l) => l.includes('const url ='))
-  const keyLine = client.split('\n').find((l) => l.includes('const anonKey ='))
-  assert.ok(urlLine && urlLine.includes('VITE_SUPABASE_URL'))
-  assert.ok(keyLine && keyLine.includes('VITE_SUPABASE_ANON_KEY'))
-  assert.doesNotMatch(urlLine, /niejaejtbxgakyrsntxm|yhbwnrtlqbjtcrrlpbge/)
-  assert.doesNotMatch(keyLine, /niejaejtbxgakyrsntxm|yhbwnrtlqbjtcrrlpbge|sb_publishable_|eyJ/)
+  const origin = readFileSync(new URL('../src/lib/supabaseOrigin.js', import.meta.url), 'utf8')
+  assert.match(origin, /qikvmopbtijoebdqosyq\.supabase\.co/)
+  assert.match(client, /resolveV2SupabaseUrl/)
+  assert.match(client, /readViteSupabaseAnonKey/)
   assert.doesNotMatch(client, /https:\/\/niejaejtbxgakyrsntxm/)
   assert.doesNotMatch(client, /https:\/\/yhbwnrtlqbjtcrrlpbge/)
+  assert.doesNotMatch(client, /jkelsen13-tech\.github\.io/)
+  assert.doesNotMatch(client, /sb_publishable_|eyJ[A-Za-z0-9]/)
+  assert.match(spatialProjectionUnavailableCopy('origin_not_v2'), /V2 origin/)
 })
 
 test('App wires World View into the existing selected-node seam', () => {

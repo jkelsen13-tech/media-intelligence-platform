@@ -2,12 +2,19 @@
 //
 // Spatial is a projection of MIP knowledge, not a source of truth. This
 // module never fabricates coordinates, weather, events, or historical state.
-// Empty / missing / unreadable all resolve to an explicit unavailable or
-// empty result. Demo datasets are intentionally not consulted.
+// Empty / missing / unreadable / non-V2 origin all resolve to an explicit
+// unavailable or empty result. Demo datasets are intentionally not consulted.
+// Spatial fetch runs only after VITE_SUPABASE_URL allowlists V2
+// (https://qikvmopbtijoebdqosyq.supabase.co).
 //
 // Column contract: only the view columns listed below. Do not invent fields.
 
 import { supabase } from './supabase.js'
+import {
+  readViteSupabaseUrl,
+  rejectNonV2Client,
+  resolveV2SupabaseUrl,
+} from './supabaseOrigin.js'
 
 export const SPATIAL_PROJECTION_TABLE = 'spatial_projection_v1'
 
@@ -550,17 +557,48 @@ export function weatherPanelState() {
   })
 }
 
-export async function loadSpatialProjection({ supabaseClient } = {}) {
-  const client = supabaseClient ?? supabase
-  if (!client) {
-    return {
-      status: 'unavailable',
-      reason: 'client_not_configured',
-      rows: [],
-      error: null,
-      loadedAt: null,
-    }
+export function spatialProjectionUnavailableCopy(reason, error) {
+  if (reason === 'missing' || reason === 'empty') {
+    return 'World View is unavailable: VITE_SUPABASE_URL is missing or empty. This client talks only to V2 (https://qikvmopbtijoebdqosyq.supabase.co). No spatial fetch ran and no demo pins are drawn.'
   }
+  if (reason === 'origin_not_v2') {
+    return 'World View is unavailable: VITE_SUPABASE_URL is not the V2 origin (https://qikvmopbtijoebdqosyq.supabase.co). GitHub Pages hosts (including /media-intelligence-platform-v2/), Manus, the paused original, and any other supabase.co project are rejected. No spatial fetch ran and no demo pins are drawn.'
+  }
+  if (error) return `Spatial projection unavailable: ${error} No location is inferred.`
+  return `Spatial projection unavailable (${reason ?? 'client_not_configured'}). No location is inferred.`
+}
+
+function unavailableResult(reason, error = null) {
+  return {
+    status: 'unavailable',
+    reason,
+    rows: [],
+    error,
+    loadedAt: null,
+  }
+}
+
+/**
+ * Read public.spatial_projection_v1 from V2 only.
+ *
+ * Default path (no injected client): if VITE_SUPABASE_URL is missing, empty,
+ * or not V2, return honest unavailable and do not call .from().
+ * Injected clients used by unit tests may omit a URL; a client that does
+ * carry a URL is still origin-checked and rejected when it is not V2.
+ */
+export async function loadSpatialProjection(options = {}) {
+  const injected = Object.hasOwn(options, 'supabaseClient')
+  if (!injected) {
+    const origin = resolveV2SupabaseUrl(options.envUrl ?? readViteSupabaseUrl())
+    if (!origin.ok) return unavailableResult(origin.reason)
+  }
+
+  const client = injected ? options.supabaseClient : supabase
+  if (!client) return unavailableResult('client_not_configured')
+
+  const badClient = rejectNonV2Client(client)
+  if (badClient) return unavailableResult(badClient)
+
   const cols = SPATIAL_PROJECTION_COLUMNS.join(', ')
   const out = []
   let last = null

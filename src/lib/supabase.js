@@ -8,21 +8,26 @@ import {
   demoArcEvents,
 } from '../data/demoData.js'
 import { canonicalizeTimelineEvents, remapTimelineEdges } from './timelineDedup.js'
+import {
+  readViteSupabaseAnonKey,
+  readViteSupabaseUrl,
+  resolveV2SupabaseUrl,
+} from './supabaseOrigin.js'
 
-// Env contract: VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY. No hardcoded
-// project fallback — the paused original (niejaejtbxgakyrsntxm) and Manus
-// sandbox (yhbwnrtlqbjtcrrlpbge) must never be silently targeted. When env
-// is unset the graph loaders fall back to bundled demo data; World View
-// renders an explicit unavailable state instead of inventing spatial rows.
-const url = import.meta.env?.VITE_SUPABASE_URL ?? ''
-const anonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY ?? ''
-
-// Client construction can fail outside the browser (e.g. Node test runs
-// without a WebSocket implementation); fall back to the demo-data path.
+// Env contract: VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY, allowlisted to
+// V2 only (https://qikvmopbtijoebdqosyq.supabase.co). Any other host —
+// GitHub Pages github.io (including media-intelligence-platform-v2),
+// Manus, the paused original, other supabase.co projects — yields a null
+// client. Graph loaders then use bundled demo data; World View stays
+// honest-unavailable and never fetches spatial rows or demo pins.
+// Client construction can also fail outside the browser (Node tests
+// without WebSocket); same null-client path.
 function makeClient() {
-  if (!url || !anonKey) return null
+  const origin = resolveV2SupabaseUrl(readViteSupabaseUrl())
+  const anonKey = readViteSupabaseAnonKey()
+  if (!origin.ok || !anonKey) return null
   try {
-    return createClient(url, anonKey)
+    return createClient(origin.url, anonKey)
   } catch {
     return null
   }

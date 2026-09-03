@@ -13,9 +13,10 @@ With no Supabase credentials configured, the app renders the bundled demo datase
 
 ## Status
 
-- Backend target: **V2** — `mip-v2-account-verification-20260831` (`qikvmopbtijoebdqosyq`, us-west-1), via `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. The paused original (`niejaejtbxgakyrsntxm`) is not a client fallback.
-- World View reads `public.spatial_projection_v1` (anon SELECT). Zero rows → explicit empty UI; no fabricated pins.
-- Frontend builds clean (`npm run build`). With `.env` configured, header shows `data: supabase`.
+- Backend target: **V2 only** — `mip-v2-account-verification-20260831` (`https://qikvmopbtijoebdqosyq.supabase.co`). `VITE_SUPABASE_URL` is allowlisted to that host; missing, empty, GitHub Pages `github.io` (including `/media-intelligence-platform-v2/`), Manus, the paused original (`niejaejtbxgakyrsntxm`), and any other `supabase.co` project fail closed (null client). World View then shows honest unavailable — no spatial fetch, no demo pins.
+- GitHub Pages at `https://jkelsen13-tech.github.io/media-intelligence-platform/` is **not** a live V2 origin until `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` are injected from GitHub secrets at **build** time without printing them. The current Pages workflow (`blank.yml`) builds without those env vars. Do not treat `https://jkelsen13-tech.github.io/media-intelligence-platform-v2/` as V2 (that origin is not this client).
+- World View reads `public.spatial_projection_v1` (anon SELECT) from V2. Zero rows → explicit empty UI; no fabricated pins.
+- Frontend builds clean (`npm run build`). With a **V2** `.env` configured, header shows `data: supabase`.
 
 ## Features
 

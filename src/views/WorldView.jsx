@@ -25,6 +25,7 @@ import {
   displayCoordinateText,
   inspectorTitle,
   mapViewBoxForPositions,
+  spatialProjectionUnavailableCopy,
 } from '../lib/spatialProjection'
 import './worldview.css'
 
@@ -253,10 +254,7 @@ function EventInspector({ loadStatus, selected, visibleRow, atMs }) {
   if (loadStatus.status === 'unavailable') {
     body = (
       <p className="wv-empty-state">
-        Spatial projection unavailable
-        {loadStatus.error ? `: ${loadStatus.error}` : ` (${loadStatus.reason ?? 'client_not_configured'}).`}
-        {' '}
-        No location is inferred.
+        {spatialProjectionUnavailableCopy(loadStatus.reason, loadStatus.error)}
       </p>
     )
   } else if (loadStatus.status === 'empty') {
@@ -527,7 +525,7 @@ export default function WorldView({
 
   const emptyMessage =
     loadStatus.status === 'unavailable'
-      ? 'Spatial projection unavailable — nothing is drawn.'
+      ? spatialProjectionUnavailableCopy(loadStatus.reason, loadStatus.error)
       : loadStatus.status === 'empty'
         ? 'No spatial projection rows. The map stays empty.'
         : selected && selectedRows.length === 0
