@@ -13,7 +13,7 @@
 // corpus. Global scope is the declared fallback for an article with no
 // arc, and only then.
 
-export const NAV_VIEWS = Object.freeze(['news', 'timeline', 'arcs', 'graph', 'compare'])
+export const NAV_VIEWS = Object.freeze(['news', 'timeline', 'arcs', 'graph', 'world', 'compare'])
 
 export const NAV_TARGET_KEYS = Object.freeze([
   'articleId',

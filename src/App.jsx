@@ -13,10 +13,12 @@ import ArcsView from './views/ArcsView'
 import NewsView from './views/NewsView'
 import Phase3View from './views/Phase3View'
 import SourceComparisonView from './views/SourceComparisonView'
+import WorldView from './views/WorldView'
 import { loadPhase3BetaFlag } from './lib/phase3ReadPath'
 import { loadSourceComparisonBetaFlag } from './lib/sourceComparisonReadPath'
 import { buildNavViews, buildMoreEntries, isMoreViewKey } from './lib/navViews'
 import { loadGraph, loadTopics, loadCorpusMeta } from './lib/supabase'
+import { graphSelectionId } from './lib/spatialProjection'
 import { liveCorpusLabel } from './lib/newsFeedModel'
 import { computeHubs } from './lib/hubs'
 import { jumpFocusStack } from './lib/jumpReset'
@@ -26,9 +28,10 @@ import AccountPanel from './panels/AccountPanel'
 import { loadAccountUiFlag } from './lib/auth'
 
 // Nav structure lives in ./lib/navViews (Track B 6->5 restructure,
-// 2026-08-16): four core tabs + "More"; the flag-gated Legal & Policy and
-// Source Comparison surfaces moved into the More sheet. View keys and
-// render blocks below are unchanged.
+// 2026-08-16; R4 added World View as a fifth core tab): core tabs + "More";
+// the flag-gated Legal & Policy and Source Comparison surfaces moved into
+// the More sheet. View keys and render blocks below are unchanged aside
+// from the World View addition.
 
 // Mobile-first graph entry: the top N hubs by degree centrality.
 const HUB_LIST_SIZE = 30
@@ -232,6 +235,18 @@ export default function App() {
     setPolicyNode(node)
   }, [])
 
+  const handleSelectProjection = useCallback(
+    (nodeOrStub) => {
+      if (!nodeOrStub) {
+        if (!pinned) setSelected(null)
+        return
+      }
+      setSelected(nodeOrStub)
+      if (!nodeOrStub.fromSpatialProjection) pushFocus(nodeOrStub)
+    },
+    [pinned, pushFocus],
+  )
+
   const closePolicyPanel = useCallback(() => setPolicyNode(null), [])
 
   const handleNavigate = useCallback(
@@ -406,7 +421,7 @@ export default function App() {
     [graph],
   )
 
-  // Nav entries — 4 core tabs + "More" while at least one gated surface is
+  // Nav entries — core tabs + "More" while at least one gated surface is
   // authorized. Withhold posture: an unreadable flag resolves false above,
   // and with both flags false the More tab hides entirely (not grayed out).
   const navViews = buildNavViews({ phase3Beta, sourceComparisonBeta })
@@ -476,7 +491,7 @@ export default function App() {
             </div>
             <p className="sheet-body">
               MIP tracks news stories through their full consequence arc — knowledge graph, causal
-              timeline, story arcs, and the live article feed.
+              timeline, story arcs, live article feed, and the spatial World View.
             </p>
             {graph && <p className="sheet-body muted">Data source: {graph.source}</p>}
           </div>
@@ -694,6 +709,7 @@ export default function App() {
                         onEdgeSelect={setEdgeEvidence}
                         allNodes={graph?.nodes ?? null}
                         focused={subgraph != null}
+                        selectedId={graphSelectionId(selected)}
                       />
                       {edgeListOpen && (
                         <EdgeList
@@ -782,6 +798,15 @@ export default function App() {
             focusArcId={focusArc}
             onOpenArticle={openArticleInNews}
             onOpenNode={openNodeInGraph}
+          />
+        )}
+        {view === 'world' && (
+          <WorldView
+            graph={graph}
+            graphError={error}
+            selected={selected}
+            onSelectProjection={handleSelectProjection}
+            onSelectGraphNode={handleSelect}
           />
         )}
         {view === 'phase3' && phase3Beta && <Phase3View />}

@@ -180,6 +180,9 @@ export default function GraphView({
   // focused-view-only, owner-ruled adjustment 4).
   allNodes = null,
   focused = false,
+  // R4: shared Graph / World View selection. Optional — the Graph tab
+  // keeps working when omitted; World View passes the same selected id.
+  selectedId = null,
 }) {
   const containerRef = useRef(null)
   const gridRef = useRef(null)
@@ -882,6 +885,21 @@ export default function GraphView({
       n.toggleClass('isolated-dim', visible === 0)
     })
   }, [minReliability, showInferred, nodes, edges])
+
+  // Keep cytoscape selection coherent with App's selected node so Graph,
+  // Map, and Split highlight the same mip_object_id / graph node id.
+  useEffect(() => {
+    const cy = cyRef.current
+    if (!cy || cy.destroyed()) return
+    cy.nodes().unselect()
+    if (selectedId == null || selectedId === '') return
+    const wanted = String(selectedId)
+    const match = cy.nodes().filter((n) => {
+      const d = n.data()
+      return String(n.id()) === wanted || String(d.id ?? '') === wanted || String(d.slug ?? '') === wanted
+    })
+    if (match.nonempty()) match.select()
+  }, [selectedId, nodes, edges])
 
   // Panel open/close: after the container settles at its new width, refit
   // the graph into the remaining viewport so nothing sits under the panel.
